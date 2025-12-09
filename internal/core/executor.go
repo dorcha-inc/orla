@@ -36,6 +36,28 @@ func (e *execCommand) SetStdin(r io.Reader) {
 	e.Cmd.Stdin = r
 }
 
+// Explicitly forward methods from *exec.Cmd to satisfy the Command interface
+// (even though they're already available through embedding, this makes it explicit for the linter)
+func (e *execCommand) Start() error {
+	return e.Cmd.Start()
+}
+
+func (e *execCommand) Wait() error {
+	return e.Cmd.Wait()
+}
+
+func (e *execCommand) StdinPipe() (io.WriteCloser, error) {
+	return e.Cmd.StdinPipe()
+}
+
+func (e *execCommand) StdoutPipe() (io.ReadCloser, error) {
+	return e.Cmd.StdoutPipe()
+}
+
+func (e *execCommand) StderrPipe() (io.ReadCloser, error) {
+	return e.Cmd.StderrPipe()
+}
+
 // Interface guard for execCommand
 var _ Command = &execCommand{}
 

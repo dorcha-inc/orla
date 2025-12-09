@@ -259,6 +259,27 @@ func (e *execCommandWrapper) SetStdin(r io.Reader) {
 	e.Cmd.Stdin = r
 }
 
+// Explicitly forward methods from *exec.Cmd to satisfy the Command interface
+func (e *execCommandWrapper) Start() error {
+	return e.Cmd.Start()
+}
+
+func (e *execCommandWrapper) Wait() error {
+	return e.Cmd.Wait()
+}
+
+func (e *execCommandWrapper) StdinPipe() (io.WriteCloser, error) {
+	return e.Cmd.StdinPipe()
+}
+
+func (e *execCommandWrapper) StdoutPipe() (io.ReadCloser, error) {
+	return e.Cmd.StdoutPipe()
+}
+
+func (e *execCommandWrapper) StderrPipe() (io.ReadCloser, error) {
+	return e.Cmd.StderrPipe()
+}
+
 // timeoutMockCommandRunner creates commands that simulate timeout behavior
 // for testing timeout detection without real processes
 type timeoutMockCommandRunner struct {
