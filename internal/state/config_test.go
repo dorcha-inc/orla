@@ -16,12 +16,17 @@ func TestNewDefaultOrlaConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer os.Chdir(originalDir)
+	defer func() {
+		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
+			t.Logf("Failed to restore working directory: %v", err)
+		}
+	}()
 
 	// Change to temp directory and create tools subdirectory
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err = os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
@@ -45,7 +50,11 @@ func TestNewDefaultOrlaConfig_NonexistentToolsDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer os.Chdir(originalDir)
+	defer func() {
+		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
+			t.Logf("Failed to restore working directory: %v", err)
+		}
+	}()
 
 	// Change to temp directory but don't create tools subdirectory
 	err = os.Chdir(tmpDir)
@@ -65,11 +74,13 @@ func TestNewOrlaConfigFromPath_ValidConfig(t *testing.T) {
 
 	// Create a tools directory
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err := os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
 	// Create a test tool
 	toolPath := filepath.Join(toolsDir, "test-tool.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(toolPath, []byte("#!/bin/sh\necho hello\n"), 0755)
 	require.NoError(t, err)
 
@@ -84,6 +95,7 @@ func TestNewOrlaConfigFromPath_ValidConfig(t *testing.T) {
 
 	configJSON, err := json.Marshal(config)
 	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(configPath, configJSON, 0644)
 	require.NoError(t, err)
 
@@ -112,11 +124,13 @@ func TestNewOrlaConfigFromPath_AbsoluteToolsDir(t *testing.T) {
 
 	// Create a tools directory
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err := os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
 	// Create a test tool
 	toolPath := filepath.Join(toolsDir, "test-tool.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(toolPath, []byte("#!/bin/sh\necho hello\n"), 0755)
 	require.NoError(t, err)
 
@@ -131,6 +145,7 @@ func TestNewOrlaConfigFromPath_AbsoluteToolsDir(t *testing.T) {
 
 	configJSON, err := json.Marshal(config)
 	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(configPath, configJSON, 0644)
 	require.NoError(t, err)
 
@@ -170,6 +185,7 @@ func TestNewOrlaConfigFromPath_WithToolsRegistry(t *testing.T) {
 
 	configJSON, err := json.Marshal(config)
 	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(configPath, configJSON, 0644)
 	require.NoError(t, err)
 
@@ -199,6 +215,7 @@ func TestNewOrlaConfigFromPath_NoToolsDirNoRegistry(t *testing.T) {
 
 	configJSON, err := json.Marshal(config)
 	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(configPath, configJSON, 0644)
 	require.NoError(t, err)
 
@@ -215,6 +232,7 @@ func TestNewOrlaConfigFromPath_InvalidJSON(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "orla.json")
 
 	// Create invalid JSON
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(configPath, []byte("{ invalid json }"), 0644)
 	require.NoError(t, err)
 
@@ -246,6 +264,7 @@ func TestNewOrlaConfigFromPath_NonexistentToolsDir(t *testing.T) {
 
 	configJSON, err := json.Marshal(config)
 	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(configPath, configJSON, 0644)
 	require.NoError(t, err)
 

@@ -19,6 +19,8 @@ import (
 	"github.com/dorcha-inc/orla/internal/state"
 )
 
+const windowsOS = "windows"
+
 // TestNewOrlaToolExecutor tests the creation of a new tool executor
 func TestNewOrlaToolExecutor(t *testing.T) {
 	executor := NewOrlaToolExecutor(30)
@@ -43,7 +45,7 @@ func TestExecute_BinarySuccess(t *testing.T) {
 	// Use a real binary executable (echo) to test binary execution
 	var toolPath string
 	var expectedOutput string
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		toolPath = "cmd.exe"
 		expectedOutput = "hello world"
 	} else {
@@ -58,7 +60,7 @@ func TestExecute_BinarySuccess(t *testing.T) {
 	}
 
 	var args []string
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		args = []string{"/c", "echo", "hello world"}
 	} else {
 		args = []string{"hello world"}
@@ -98,7 +100,7 @@ func TestExecute_PipeErrors(t *testing.T) {
 
 // TestExecute_ScriptWithInterpreter tests successful execution of a script with interpreter
 func TestExecute_ScriptWithInterpreter(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping interpreter test on Windows")
 	}
 
@@ -108,6 +110,7 @@ func TestExecute_ScriptWithInterpreter(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "test-script.sh")
 	scriptContent := "echo hello from script\n"
 
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
@@ -128,7 +131,7 @@ func TestExecute_ScriptWithInterpreter(t *testing.T) {
 
 // TestExecute_WithArgs tests execution with command-line arguments
 func TestExecute_WithArgs(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping args test on Windows")
 	}
 
@@ -138,6 +141,7 @@ func TestExecute_WithArgs(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "test-script.sh")
 	scriptContent := "#!/bin/sh\necho $1 $2\n"
 
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
@@ -156,7 +160,7 @@ func TestExecute_WithArgs(t *testing.T) {
 
 // TestExecute_WithStdin tests execution with stdin input
 func TestExecute_WithStdin(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping stdin test on Windows")
 	}
 
@@ -166,6 +170,7 @@ func TestExecute_WithStdin(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "test-script.sh")
 	scriptContent := "#!/bin/sh\nread input\necho \"received: $input\"\n"
 
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
@@ -184,7 +189,7 @@ func TestExecute_WithStdin(t *testing.T) {
 
 // TestExecute_NonZeroExitCode tests handling of non-zero exit codes
 func TestExecute_NonZeroExitCode(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping exit code test on Windows")
 	}
 
@@ -194,6 +199,7 @@ func TestExecute_NonZeroExitCode(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "test-script.sh")
 	scriptContent := "#!/bin/sh\necho error message >&2\nexit 42\n"
 
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
@@ -214,7 +220,7 @@ func TestExecute_NonZeroExitCode(t *testing.T) {
 
 // TestExecute_StderrCapture tests that stderr is properly captured
 func TestExecute_StderrCapture(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping stderr test on Windows")
 	}
 
@@ -224,6 +230,7 @@ func TestExecute_StderrCapture(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "test-script.sh")
 	scriptContent := "#!/bin/sh\necho stdout message\necho stderr message >&2\n"
 
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
@@ -242,8 +249,11 @@ func TestExecute_StderrCapture(t *testing.T) {
 
 // mockCommandRunner creates commands that respect context cancellation from fake clocks
 // This allows us to test timeouts without relying on real system time
+//
+//nolint:unused // Reserved for future test scenarios
 type mockCommandRunner struct{}
 
+//nolint:unused // Reserved for future test scenarios
 func (m *mockCommandRunner) CommandContext(ctx context.Context, name string, arg ...string) Command {
 	// Use the real exec.CommandContext - it respects context cancellation
 	// When the fake clock expires the context, exec.CommandContext will kill the process
@@ -251,31 +261,40 @@ func (m *mockCommandRunner) CommandContext(ctx context.Context, name string, arg
 }
 
 // execCommandWrapper wraps exec.Cmd to implement Command interface for testing
+//
+//nolint:unused // Reserved for future test scenarios
 type execCommandWrapper struct {
 	*exec.Cmd
 }
 
+//nolint:unused // Reserved for future test scenarios
 func (e *execCommandWrapper) SetStdin(r io.Reader) {
-	e.Cmd.Stdin = r
+	e.Stdin = r
 }
 
 // Explicitly forward methods from *exec.Cmd to satisfy the Command interface
+//
+//nolint:unused // Reserved for future test scenarios
 func (e *execCommandWrapper) Start() error {
 	return e.Cmd.Start()
 }
 
+//nolint:unused // Reserved for future test scenarios
 func (e *execCommandWrapper) Wait() error {
 	return e.Cmd.Wait()
 }
 
+//nolint:unused // Reserved for future test scenarios
 func (e *execCommandWrapper) StdinPipe() (io.WriteCloser, error) {
 	return e.Cmd.StdinPipe()
 }
 
+//nolint:unused // Reserved for future test scenarios
 func (e *execCommandWrapper) StdoutPipe() (io.ReadCloser, error) {
 	return e.Cmd.StdoutPipe()
 }
 
+//nolint:unused // Reserved for future test scenarios
 func (e *execCommandWrapper) StderrPipe() (io.ReadCloser, error) {
 	return e.Cmd.StderrPipe()
 }
@@ -302,7 +321,7 @@ type timeoutMockCommand struct {
 
 type mockReadCloser struct {
 	io.ReadCloser
-	closed bool
+	closed bool //nolint:unused // Reserved for future test scenarios
 }
 
 func (m *timeoutMockCommand) StdinPipe() (io.WriteCloser, error) {
@@ -408,7 +427,7 @@ func TestExecute_CommandNotFound(t *testing.T) {
 
 // TestExecute_ContextCancellation tests that context cancellation works
 func TestExecute_ContextCancellation(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping context cancellation test on Windows")
 	}
 
@@ -419,6 +438,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "test-script.sh")
 	scriptContent := "#!/bin/sh\nsleep 5\necho done\n"
 
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
@@ -455,7 +475,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 
 // TestExecute_EmptyStdin tests execution with empty stdin string
 func TestExecute_EmptyStdin(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping empty stdin test on Windows")
 	}
 
@@ -465,6 +485,7 @@ func TestExecute_EmptyStdin(t *testing.T) {
 	scriptPath := filepath.Join(tmpDir, "test-script.sh")
 	scriptContent := "#!/bin/sh\necho success\n"
 
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 

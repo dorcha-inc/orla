@@ -53,12 +53,17 @@ func TestLoadConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer os.Chdir(originalDir)
+	defer func() {
+		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
+			t.Logf("Failed to restore working directory: %v", restoreErr)
+		}
+	}()
 
 	// Change to temp directory and create tools subdirectory
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err = os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
@@ -77,6 +82,7 @@ func TestLoadConfig(t *testing.T) {
 		"log_format": "json",
 		"log_level": "info"
 	}`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	require.NoError(t, err)
 
@@ -180,12 +186,17 @@ func TestRunServer(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer os.Chdir(originalDir)
+	defer func() {
+		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
+			t.Logf("Failed to restore working directory: %v", restoreErr)
+		}
+	}()
 
 	// Change to temp directory and create tools subdirectory
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err = os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
@@ -218,12 +229,17 @@ func TestTestableMain(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer os.Chdir(originalDir)
+	defer func() {
+		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
+			t.Logf("Failed to restore working directory: %v", restoreErr)
+		}
+	}()
 
 	// Change to temp directory and create tools subdirectory
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err = os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
@@ -265,11 +281,16 @@ func TestTestableMain_PortValidationError(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer os.Chdir(originalDir)
+	defer func() {
+		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
+			t.Logf("Failed to restore working directory: %v", restoreErr)
+		}
+	}()
 
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err = os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
@@ -294,6 +315,7 @@ func TestTestableMain_WithConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "orla.json")
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err := os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
@@ -305,6 +327,7 @@ func TestTestableMain_WithConfigFile(t *testing.T) {
 		"log_format": "json",
 		"log_level": "info"
 	}`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	require.NoError(t, err)
 

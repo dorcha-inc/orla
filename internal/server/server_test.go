@@ -15,16 +15,20 @@ import (
 	"github.com/dorcha-inc/orla/internal/state"
 )
 
+const windowsOS = "windows"
+
 // createTestConfig creates a test configuration with a tools directory
 func createTestConfig(t *testing.T) *state.OrlaConfig {
 	tmpDir := t.TempDir()
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err := os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
 	// Create a test tool
 	toolPath := filepath.Join(toolsDir, "test-tool.sh")
 	toolContent := "#!/bin/sh\necho hello world\n"
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
@@ -101,7 +105,8 @@ func TestRebuildServer(t *testing.T) {
 		Path:        "/path/to/new-tool",
 		Interpreter: "/bin/sh",
 	}
-	cfg.ToolsRegistry.AddTool(newTool)
+	err := cfg.ToolsRegistry.AddTool(newTool)
+	require.NoError(t, err)
 
 	// Rebuild server
 	srv.rebuildServer()
@@ -113,7 +118,7 @@ func TestRebuildServer(t *testing.T) {
 
 // TestHandleToolCall_Success tests successful tool execution
 func TestHandleToolCall_Success(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping tool execution test on Windows")
 	}
 
@@ -149,7 +154,7 @@ func TestHandleToolCall_Success(t *testing.T) {
 // TestHandleToolCall_WithArgs tests tool execution with arguments
 // Note: Arguments are passed as --key value flags, not positional arguments
 func TestHandleToolCall_WithArgs(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping tool execution test on Windows")
 	}
 
@@ -179,6 +184,7 @@ while [ $# -gt 0 ]; do
 done
 echo "$name: $message"
 `
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
@@ -208,7 +214,7 @@ echo "$name: $message"
 
 // TestHandleToolCall_WithStdin tests tool execution with stdin
 func TestHandleToolCall_WithStdin(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping tool execution test on Windows")
 	}
 
@@ -223,6 +229,7 @@ func TestHandleToolCall_WithStdin(t *testing.T) {
 read input
 echo "received: $input"
 `
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
@@ -250,7 +257,7 @@ echo "received: $input"
 
 // TestHandleToolCall_Error tests tool execution with an error
 func TestHandleToolCall_Error(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsOS {
 		t.Skip("Skipping tool execution test on Windows")
 	}
 
@@ -262,6 +269,7 @@ func TestHandleToolCall_Error(t *testing.T) {
 	tmpDir := t.TempDir()
 	toolPath := filepath.Join(tmpDir, "error-tool.sh")
 	toolContent := "#!/bin/sh\necho error >&2\nexit 1\n"
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
@@ -311,11 +319,13 @@ func TestHandleToolCall_CommandNotFound(t *testing.T) {
 func TestReload(t *testing.T) {
 	tmpDir := t.TempDir()
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err := os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
 	// Create initial tool
 	tool1Path := filepath.Join(toolsDir, "tool1.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(tool1Path, []byte("#!/bin/sh\necho tool1\n"), 0755)
 	require.NoError(t, err)
 
@@ -331,6 +341,7 @@ func TestReload(t *testing.T) {
 
 	configPath := filepath.Join(tmpDir, "orla.json")
 	configJSON := `{"tools_dir": "./tools", "port": 9000, "timeout": 60}`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(configPath, []byte(configJSON), 0644)
 	require.NoError(t, err)
 
@@ -339,6 +350,7 @@ func TestReload(t *testing.T) {
 
 	// Add a new tool to the directory
 	tool2Path := filepath.Join(toolsDir, "tool2.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(tool2Path, []byte("#!/bin/sh\necho tool2\n"), 0755)
 	require.NoError(t, err)
 
@@ -365,11 +377,16 @@ func TestReload_DefaultConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer os.Chdir(originalDir)
+	defer func() {
+		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
+			t.Logf("Failed to restore working directory: %v", restoreErr)
+		}
+	}()
 
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err = os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
@@ -385,6 +402,7 @@ func TestReload_DefaultConfig(t *testing.T) {
 func TestReload_InvalidConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "invalid.json")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err := os.WriteFile(configPath, []byte("{ invalid json }"), 0644)
 	require.NoError(t, err)
 

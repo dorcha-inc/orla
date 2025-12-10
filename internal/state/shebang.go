@@ -37,7 +37,7 @@ func (e *ShebangFileReadError) Error() string {
 	return fmt.Sprintf("failed to read shebang file: %s", e.Path)
 }
 
-// NewShebangIncorrectFileError creates a new ShebangIncorrectFileError
+// NewShebangFileReadError creates a new ShebangFileReadError
 func NewShebangFileReadError(path string) *ShebangFileReadError {
 	return &ShebangFileReadError{Path: path}
 }
@@ -68,11 +68,14 @@ var _ error = &ShebangInvalidPrefixError{}
 // ParseShebangFromPath parses the shebang line to determine the interpreter
 func ParseShebangFromPath(path string) (string, error) {
 	// Open the file
+	// #nosec G304 -- path is validated and comes from tool discovery, not direct user input
 	file, err := os.Open(path)
 	if err != nil {
 		return "", NewShebangFileReadError(path)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close() // Ignore close errors - file is already read
+	}()
 
 	// Read the file
 	scanner := bufio.NewScanner(file)

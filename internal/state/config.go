@@ -1,3 +1,4 @@
+// Package state provides all the functionality for managing the state of the Orla server.
 package state
 
 import (
@@ -48,13 +49,14 @@ func NewDefaultOrlaConfig() (*OrlaConfig, error) {
 
 // NewOrlaConfigFromPath loads configuration from a JSON file, or returns defaults if no file is provided
 func NewOrlaConfigFromPath(path string) (*OrlaConfig, error) {
+	// #nosec G304 -- path is provided by user configuration, not user input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	var cfg OrlaConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	if err = json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 

@@ -1,0 +1,130 @@
+{
+    // Go language server settings (gopls is enabled by default)
+    "go.languageServerFlags": [
+        "-rpc.trace",
+        "serve",
+        "--debug=localhost:6060"
+    ],
+    // Formatting
+    "go.formatTool": "goimports",
+    "go.formatFlags": [],
+    "editor.formatOnSave": true,
+    "[go]": {
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        },
+        "editor.defaultFormatter": "golang.go"
+    },
+    // Trigger Task on Save extension configuration
+    // Install extension: "Trigger Task on Save" by Gruntfuggly
+    // This will automatically run the golangci-lint task when you save Go files
+    // The task's problemMatcher will show errors in the Problems panel
+    "triggerTaskOnSave.on": true,
+    "triggerTaskOnSave.tasks": {
+        "golangci-lint: Current Package": [
+            "**/*.go"
+        ]
+    },
+    // Allow automatic tasks (for golangci-lint to run on folder open)
+    "task.allowAutomaticTasks": "on",
+    // Run golangci-lint task automatically
+    "task.autoDetect": "on",
+    // Linting configuration
+    "go.vetOnSave": "workspace",
+    "go.diagnostic.vulncheck": "Imports",
+    // Configure Go extension to use golangci-lint (terminal output only)
+    "go.lintTool": "golangci-lint",
+    "go.lintOnSave": "workspace",
+    "go.alternateTools": {
+        "golangci-lint": "/opt/homebrew/bin/golangci-lint"
+    },
+    // Testing
+    "go.testFlags": [
+        "-v",
+        "-cover"
+    ],
+    "go.testTimeout": "30s",
+    "go.coverOnSave": false,
+    "go.coverOnSingleTest": true,
+    "go.coverOnTestPackage": true,
+    "go.coverMode": "atomic",
+    "go.coverShowCounts": true,
+    // Build and install
+    "go.installDependenciesWhenBuilding": true,
+    "go.buildTags": "",
+    "go.buildFlags": [],
+    // Code navigation and completion
+    "go.autocompleteUnimportedPackages": true,
+    "go.gotoSymbol.includeImports": true,
+    "go.docsTool": "godoc",
+    "go.useCodeSnippetsOnFunctionSuggest": true,
+    "go.useCodeSnippetsOnFunctionSuggestWithoutType": true,
+    // Tools
+    "go.toolsManagement.checkForUpdates": "local",
+    "go.toolsManagement.autoUpdate": false,
+    // Interface implementation
+    "go.implementationsCodeLens": true,
+    "go.referencesCodeLens": true,
+    // Gopls (Go language server) specific settings
+    "gopls": {
+        "build.directoryFilters": [
+            "-**/node_modules",
+            "-**/.git"
+        ],
+        "ui.completion.usePlaceholders": true,
+        "ui.completion.completeUnimported": true,
+        "ui.diagnostic.analyses": {
+            "staticcheck": true,
+            "unusedparams": true,
+            "unusedwrite": true,
+            "nilness": true,
+            "shadow": true,
+            "unusedvariable": true,
+            "unusedresult": true
+        },
+        "ui.diagnostic.staticcheck": true,
+        "ui.diagnostic.diagnosticsDelay": "250ms",
+        "ui.diagnostic.completionDocumentation": true,
+        "ui.semanticTokens": true,
+        "ui.codelenses": {
+            "gc_details": false,
+            "generate": true,
+            "regenerate_cgo": true,
+            "test": true,
+            "tidy": true,
+            "upgrade_dependency": true,
+            "vendor": false
+        },
+        "ui.diagnostic.annotations": {
+            "bounds": true,
+            "escape": true,
+            "inline": true
+        }
+    },
+    // File associations
+    "files.associations": {
+        "*.mod": "go.mod",
+        "*.sum": "go.sum"
+    },
+    // Exclude patterns
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/build": true
+    },
+    // Search exclude patterns
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/build": true,
+        "**/.git": true,
+        "**/vendor": true
+    },
+    // Editor settings for Go
+    "editor.suggest.snippetsPreventQuickSuggestions": false,
+    "editor.snippetSuggestions": "top",
+    // Terminal settings
+    "terminal.integrated.env.osx": {
+        "PATH": "${env:PATH}:/opt/homebrew/bin"
+    }
+}

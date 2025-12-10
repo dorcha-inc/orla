@@ -27,12 +27,14 @@ func TestScanToolsFromDirectory(t *testing.T) {
 
 	for filename, content := range testFiles {
 		filePath := filepath.Join(tmpDir, filename)
+		// #nosec G306 -- test file permissions are acceptable for temporary test files
 		err := os.WriteFile(filePath, []byte(content), 0755)
 		require.NoError(t, err, "Failed to create test file %s", filename)
 	}
 
 	// Create a subdirectory (should be ignored)
 	subDir := filepath.Join(tmpDir, "subdir")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err := os.Mkdir(subDir, 0755)
 	require.NoError(t, err, "Failed to create subdirectory")
 
@@ -104,6 +106,7 @@ func TestScanToolsFromDirectory_ToolNameExtraction(t *testing.T) {
 
 	for _, tc := range testCases {
 		filePath := filepath.Join(tmpDir, tc.filename)
+		// #nosec G306 -- test file permissions are acceptable for temporary test files
 		err := os.WriteFile(filePath, []byte(tc.content), 0755)
 		require.NoError(t, err, "Failed to create test file %s", tc.filename)
 	}
@@ -131,6 +134,7 @@ func TestScanToolsFromDirectory_DuplicateNames(t *testing.T) {
 
 	for filename, content := range files {
 		filePath := filepath.Join(tmpDir, filename)
+		// #nosec G306 -- test file permissions are acceptable for temporary test files
 		err := os.WriteFile(filePath, []byte(content), 0755)
 		require.NoError(t, err, "Failed to create test file %s", filename)
 	}

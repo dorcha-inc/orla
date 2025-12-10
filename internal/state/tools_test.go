@@ -97,7 +97,8 @@ func TestToolsRegistry_GetTool(t *testing.T) {
 		Interpreter: "",
 	}
 
-	registry.AddTool(tool)
+	err := registry.AddTool(tool)
+	require.NoError(t, err)
 
 	// Test successful retrieval
 	retrievedTool, err := registry.GetTool("test-tool")
@@ -142,9 +143,12 @@ func TestToolsRegistry_ListTools(t *testing.T) {
 		Interpreter: "/usr/bin/python3",
 	}
 
-	registry.AddTool(tool1)
-	registry.AddTool(tool2)
-	registry.AddTool(tool3)
+	err := registry.AddTool(tool1)
+	require.NoError(t, err)
+	err = registry.AddTool(tool2)
+	require.NoError(t, err)
+	err = registry.AddTool(tool3)
+	require.NoError(t, err)
 
 	// List tools
 	tools = registry.ListTools()
@@ -177,6 +181,7 @@ func TestNewToolsRegistryFromDirectory(t *testing.T) {
 
 	for filename, content := range testFiles {
 		filePath := filepath.Join(tmpDir, filename)
+		// #nosec G306 -- test file permissions are acceptable for temporary test files
 		err := os.WriteFile(filePath, []byte(content), 0755)
 		require.NoError(t, err)
 	}

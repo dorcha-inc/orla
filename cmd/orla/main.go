@@ -128,7 +128,9 @@ func testableMain(ctx context.Context) error {
 		fmt.Printf("Failed to initialize logger: %v", err)
 		return err
 	}
-	defer zap.L().Sync()
+	defer func() {
+		_ = zap.L().Sync() // Ignore sync errors on stdout/stderr - they're not critical
+	}()
 
 	// Create server
 	srv := server.NewOrlaServer(cfg, flags.configPath)

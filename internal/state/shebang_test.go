@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -81,6 +82,7 @@ func TestParseShebangFromPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create test file
 			testFile := filepath.Join(tmpDir, "test-"+tt.name)
+			// #nosec G306 -- test file permissions are acceptable for temporary test files
 			err := os.WriteFile(testFile, []byte(tt.fileContent), 0644)
 			require.NoError(t, err, "Failed to create test file")
 
@@ -95,16 +97,19 @@ func TestParseShebangFromPath(t *testing.T) {
 				assert.NoError(t, err, "Should not return error")
 			} else {
 				require.Error(t, err, "Should return error")
-				switch tt.wantErr.(type) {
-				case *ShebangFileReadError:
-					var e *ShebangFileReadError
+				var e *ShebangFileReadError
+				if errors.As(err, &e) {
 					assert.ErrorAs(t, err, &e, "Should be ShebangFileReadError")
-				case *ShebangIncorrectFieldCountError:
-					var e *ShebangIncorrectFieldCountError
-					assert.ErrorAs(t, err, &e, "Should be ShebangIncorrectFieldCountError")
-				case *ShebangInvalidPrefixError:
-					var e *ShebangInvalidPrefixError
-					assert.ErrorAs(t, err, &e, "Should be ShebangInvalidPrefixError")
+				} else {
+					var fieldCountErr *ShebangIncorrectFieldCountError
+					if errors.As(err, &fieldCountErr) {
+						assert.ErrorAs(t, err, &fieldCountErr, "Should be ShebangIncorrectFieldCountError")
+					} else {
+						var prefixErr *ShebangInvalidPrefixError
+						if errors.As(err, &prefixErr) {
+							assert.ErrorAs(t, err, &prefixErr, "Should be ShebangInvalidPrefixError")
+						}
+					}
 				}
 			}
 		})

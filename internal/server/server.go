@@ -1,3 +1,4 @@
+// Package server implements the Orla MCP server.
 package server
 
 import (
@@ -213,8 +214,9 @@ func (o *OrlaServer) Serve(ctx context.Context, addr string) error {
 	mux.Handle("/mcp", o.httpHandler)
 
 	server := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	zap.L().Info("Server listening", zap.String("address", addr))

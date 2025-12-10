@@ -1,7 +1,9 @@
+// Package core implements the core functionality for orla that is shared across all components.
 package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -33,7 +35,7 @@ type execCommand struct {
 }
 
 func (e *execCommand) SetStdin(r io.Reader) {
-	e.Cmd.Stdin = r
+	e.Stdin = r
 }
 
 // Explicitly forward methods from *exec.Cmd to satisfy the Command interface
@@ -146,7 +148,8 @@ func (e *OrlaToolExecutor) Execute(ctx context.Context, tool *state.ToolEntry, a
 	}
 
 	// Start command
-	if err := cmd.Start(); err != nil {
+	err = cmd.Start()
+	if err != nil {
 		return nil, fmt.Errorf("failed to start command: %w", err)
 	}
 
@@ -155,13 +158,13 @@ func (e *OrlaToolExecutor) Execute(ctx context.Context, tool *state.ToolEntry, a
 	done := make(chan error, 2)
 
 	go func() {
-		_, err := io.Copy(&stdoutBuf, stdout)
-		done <- err
+		_, copyErr := io.Copy(&stdoutBuf, stdout)
+		done <- copyErr
 	}()
 
 	go func() {
-		_, err := io.Copy(&stderrBuf, stderr)
-		done <- err
+		_, copyErr := io.Copy(&stderrBuf, stderr)
+		done <- copyErr
 	}()
 
 	// Wait for output reading to complete
@@ -178,7 +181,8 @@ func (e *OrlaToolExecutor) Execute(ctx context.Context, tool *state.ToolEntry, a
 	}
 
 	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
 			result.ExitCode = exitError.ExitCode()
 		} else {
 			result.Error = err
