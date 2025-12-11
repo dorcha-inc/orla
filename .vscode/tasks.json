@@ -7,6 +7,7 @@
             "command": "/opt/homebrew/bin/golangci-lint",
             "args": [
                 "run",
+                "--timeout=5m",
                 "./..."
             ],
             "problemMatcher": {
@@ -17,7 +18,7 @@
                 ],
                 "pattern": [
                     {
-                        "regexp": "^(.*?):(\\d+):(\\d+):\\s+(.*?)\\s+\\((.*?)\\)$",
+                        "regexp": "^([^:]+):(\\d+):(\\d+):\\s+(.+?)\\s+\\((\\w+)\\)$",
                         "file": 1,
                         "line": 2,
                         "column": 3,
@@ -46,6 +47,7 @@
             "command": "/opt/homebrew/bin/golangci-lint",
             "args": [
                 "run",
+                "--timeout=5m",
                 "${relativeFileDirname}/..."
             ],
             "options": {
@@ -59,7 +61,7 @@
                 ],
                 "pattern": [
                     {
-                        "regexp": "^(.*?):(\\d+):(\\d+):\\s+(.*?)\\s+\\((.*?)\\)$",
+                        "regexp": "^([^:]+):(\\d+):(\\d+):\\s+(.+?)\\s+\\((\\w+)\\)$",
                         "file": 1,
                         "line": 2,
                         "column": 3,

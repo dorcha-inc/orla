@@ -33,9 +33,14 @@
     // Linting configuration
     "go.vetOnSave": "workspace",
     "go.diagnostic.vulncheck": "Imports",
-    // Configure Go extension to use golangci-lint (terminal output only)
+    // Configure Go extension to use golangci-lint
+    // Note: The Go extension's built-in linting may not show all golangci-lint errors
+    // Use the tasks (golangci-lint task) to see all errors in the Problems panel
     "go.lintTool": "golangci-lint",
     "go.lintOnSave": "workspace",
+    "go.lintFlags": [
+        "--timeout=5m"
+    ],
     "go.alternateTools": {
         "golangci-lint": "/opt/homebrew/bin/golangci-lint"
     },
