@@ -1,5 +1,7 @@
 # orla
 
+<img src="share/orla_gemini_upscaled.png" alt="orla logo" width="128">
+
 [![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/dorcha-inc/orla)](https://goreportcard.com/report/github.com/dorcha-inc/orla)
