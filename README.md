@@ -2,6 +2,11 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/dorcha-inc/orla)](https://goreportcard.com/report/github.com/dorcha-inc/orla)
+[![Test](https://github.com/dorcha-inc/orla/actions/workflows/test.yml/badge.svg)](https://github.com/dorcha-inc/orla/actions/workflows/test.yml)
+[![Lint](https://github.com/dorcha-inc/orla/actions/workflows/lint.yml/badge.svg)](https://github.com/dorcha-inc/orla/actions/workflows/lint.yml)
+[![Build](https://github.com/dorcha-inc/orla/actions/workflows/build.yml/badge.svg)](https://github.com/dorcha-inc/orla/actions/workflows/build.yml)
+[![Coverage](https://codecov.io/gh/dorcha-inc/orla/branch/main/graph/badge.svg)](https://codecov.io/gh/dorcha-inc/orla)
 
 orla is a runtime for model context protocol ([MCP](https://modelcontextprotocol.io/docs/getting-started/intro)) servers that automatically discovers and executes tools from the filesystem. Just drop executable files in a `tools/` directory and orla makes them available as MCP tools! No configuration required.
 
@@ -125,3 +130,7 @@ See the RFCs in `docs/rfcs/` for the full vision and roadmap.
 ## contributing
 
 Thank you so much for considering contributing to orla! orla is designed to be a community-focused project and runs on individual contributions from amazing people around the world. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+## contributors
+
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for a list of all contributors to orla.
