@@ -117,6 +117,16 @@ Options:
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
 
+### git hooks
+
+orla includes pre-commit hooks for secret detection, linting, and testing. to enable them, run this once:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+this configures git to automatically use hooks from `.githooks/` - no setup script needed!
+
 ## testing
 
 orla comes with extensive tests which can be run using

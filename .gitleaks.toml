@@ -1,0 +1,16 @@
+# gitleaks configuration for orla
+# This file configures which paths and patterns to allow
+
+[allowlist]
+  # Allow test files (they may contain example patterns)
+  paths = [
+    '''.*_test\.go$''',
+    '''.*test\.go$''',
+    '''.*\.md$''',
+    '''.*\.txt$''',
+  ]
+
+  # You can also add specific regex patterns to allow
+  # regexes = [
+  #   '''example.*pattern''',
+  # ]

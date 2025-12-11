@@ -1,0 +1,7 @@
+# Git configuration for orla
+# This file can be used to set up git hooks automatically
+# Run: git config --local include.path .gitconfig
+# Or manually set: git config core.hooksPath .githooks
+
+[core]
+    hooksPath = .githooks

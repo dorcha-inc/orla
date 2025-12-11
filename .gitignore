@@ -31,3 +31,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Git hooks (installed from .githooks/)
+.git/hooks/pre-commit

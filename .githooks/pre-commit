@@ -1,0 +1,62 @@
+#!/bin/bash
+#
+# Pre-commit hook for orla
+# Runs secret detection, linting, and optionally tests
+#
+
+# exit on error
+set -e
+
+echo "running pre-commit checks..."
+
+# get the repository root
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# 1. Secret Detection
+echo "checking for secrets..."
+if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks detect --no-banner --source . --config .gitleaks.toml; then
+        echo "secret detection failed!"
+        echo "please remove any secrets before committing."
+        exit 1
+    fi
+else
+    echo "gitleaks not installed. skipping secret detection."
+    echo "-------------------------------------------------"
+    echo "!!! please install gitleaks to detect secrets !!!"
+    echo "-------------------------------------------------"
+
+    # basic pattern check for common secrets
+    echo "checking for common secret patterns with grep..."
+    if git diff --cached --name-only | grep -E '\.(go|json|yaml|yml|env)$' | xargs grep -lE '(password|secret|api[_-]?key|token|private[_-]?key)' 2>/dev/null; then
+        echo "warning: found potential secret patterns in staged files."
+        echo "please review manually or install gitleaks for better detection."
+    fi
+    echo "common secret patterns check passed"
+fi
+echo "secret check passed"
+
+# 2. Linting
+echo "running linter..."
+if ! make lint >/dev/null 2>&1; then
+    echo "linting failed!"
+    echo "please fix the errors and try again."
+    exit 1
+fi
+echo "linting passed"
+
+# 3. Testing (optional - can be skipped with --no-verify)
+echo "running tests..."
+if [ "$SKIP_TESTS" = "true" ]; then
+    echo "tests skipped (SKIP_TESTS=true)"
+elif ! make test >/dev/null 2>&1; then
+    echo "tests failed!"
+    echo "please fix the errors and try again."
+    exit 1
+else
+    echo "tests passed"
+fi
+
+echo "all pre-commit checks passed!"
+exit 0

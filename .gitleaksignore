@@ -1,0 +1,10 @@
+# gitleaks ignore file
+# This file contains fingerprints of secrets that should be ignored
+# To ignore a secret, run gitleaks detect and copy the fingerprint from the output
+# Then add it here, one per line
+#
+# Example:
+# abc123def456...
+#
+# Note: File patterns don't work here. Use .gitleaks.toml for path-based allowlists
+# or use inline comments: # gitleaks:allow

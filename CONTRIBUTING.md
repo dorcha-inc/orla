@@ -57,6 +57,23 @@ try building the project using
 make build
 ```
 
+### git hooks (optional but recommended)
+
+orla includes a pre-commit hook that runs secret detection, linting, and tests before each commit. to enable it, run this once:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+this configures git to automatically use hooks from the `.githooks/` directory. no setup script needed!
+
+the pre-commit hook will:
+- check for secrets using gitleaks (if installed)
+- run linting (`make lint`)
+- run tests (`make test`)
+
+to skip tests in a commit, set `SKIP_TESTS=true` before committing, or use `git commit --no-verify` to skip all checks.
+
 ## making changes
 
 ### Workflow

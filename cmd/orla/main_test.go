@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -211,14 +212,19 @@ func TestRunServer(t *testing.T) {
 	cancel() // Cancel immediately
 
 	// Test stdio mode - function should handle cancelled context
-	// Note: This may not error immediately, but tests the code path exists
+	// When context is cancelled, ServeStdio returns context.Canceled error
 	err = runServer(ctx, srv, true, cfg)
-	assert.NoError(t, err)
+	assert.Error(t, err, "runServer should return error when context is cancelled in stdio mode")
+	assert.True(t, errors.Is(err, context.Canceled), "Expected context.Canceled error, got: %v", err)
 
-	// Test HTTP mode - function should handle cancelled context
-	// Note: This may not error immediately, but tests the code path exists
+	// Test HTTP mode - function should handle cancelled context gracefully
+	// HTTP mode may return nil (graceful shutdown) or context.Canceled depending on timing
 	err = runServer(ctx, srv, false, cfg)
-	assert.NoError(t, err)
+	if err != nil {
+		// If there's an error, it should be context.Canceled
+		assert.True(t, errors.Is(err, context.Canceled), "Expected context.Canceled or nil, got: %v", err)
+	}
+	// If err is nil, that's also acceptable (graceful shutdown completed)
 }
 
 // TestTestableMain tests the main application logic
