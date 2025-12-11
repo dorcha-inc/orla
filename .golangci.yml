@@ -2,20 +2,6 @@
 # See https://golangci-lint.run/usage/configuration/
 version: "2"
 
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-  staticcheck:
-    checks: ["all"]
-  gosec:
-    # Exclude G204 (subprocess launched with variable) - we intentionally use variables for tool paths
-    excludes:
-      - G204
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-
 linters:
   enable:
     - errcheck
@@ -28,9 +14,21 @@ linters:
     - copyloopvar    # Detect loop variable copying issues
     - goconst        # Find repeated strings that could be constants
     - misspell       # Find common typos
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    staticcheck:
+      checks: ["all"]
+    gosec:
+      # Exclude G204 (subprocess launched with variable) - we intentionally use variables for tool paths
+      excludes:
+        - G204
+    goconst:
+      min-len: 3
+      min-occurrences: 3
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
 
