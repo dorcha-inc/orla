@@ -129,7 +129,10 @@ func testableMain(ctx context.Context) error {
 		return err
 	}
 	defer func() {
-		_ = zap.L().Sync() // Ignore sync errors on stdout/stderr - they're not critical
+		err := zap.L().Sync() // Ignore sync errors on stdout/stderr - they're not critical
+		if err != nil {
+			zap.L().Error("Failed to sync logger", zap.Error(err))
+		}
 	}()
 
 	// Create server

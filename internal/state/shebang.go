@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // ShebangIncorrectFieldCountError is an error that is returned when a shebang line has an incorrect number of fields
@@ -74,7 +76,10 @@ func ParseShebangFromPath(path string) (string, error) {
 		return "", NewShebangFileReadError(path)
 	}
 	defer func() {
-		_ = file.Close() // Ignore close errors - file is already read
+		err := file.Close() // Ignore close errors - file is already read
+		if err != nil {
+			zap.L().Error("Failed to close file", zap.Error(err))
+		}
 	}()
 
 	// Read the file

@@ -212,11 +212,13 @@ func TestRunServer(t *testing.T) {
 
 	// Test stdio mode - function should handle cancelled context
 	// Note: This may not error immediately, but tests the code path exists
-	_ = runServer(ctx, srv, true, cfg)
+	err = runServer(ctx, srv, true, cfg)
+	assert.NoError(t, err)
 
 	// Test HTTP mode - function should handle cancelled context
 	// Note: This may not error immediately, but tests the code path exists
-	_ = runServer(ctx, srv, false, cfg)
+	err = runServer(ctx, srv, false, cfg)
+	assert.NoError(t, err)
 }
 
 // TestTestableMain tests the main application logic
