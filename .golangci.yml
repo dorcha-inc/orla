@@ -1,13 +1,10 @@
 # golangci-lint configuration file
 # See https://golangci-lint.run/usage/configuration/
-version: "2"
 
 linters-settings:
   errcheck:
     check-type-assertions: true
     check-blank: true
-  govet:
-    check-shadowing: true
   staticcheck:
     checks: ["all"]
   gosec:
