@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: discussions
+    url: https://github.com/dorcha-inc/orla/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: documentation
+    url: https://github.com/dorcha-inc/orla#readme
+    about: Check the README and documentation

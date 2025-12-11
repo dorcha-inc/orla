@@ -31,3 +31,7 @@ install:
 .PHONY: run
 run:
 	./$(BUILD_DIR)/$(BINARY_NAME)
+
+.PHONY: deps
+deps:
+	go mod download
