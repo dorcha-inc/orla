@@ -12,6 +12,8 @@
 
 orla is a runtime for model context protocol ([MCP](https://modelcontextprotocol.io/docs/getting-started/intro)) servers that automatically discovers and executes tools from the filesystem. Just drop executable files in a `tools/` directory and orla makes them available as MCP tools! No configuration required.
 
+> To see all the amazing folks who have taken their time to contribute something cool to orla, please take a look at [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
 ## getting started
 
 to install orla, you can either just run
@@ -135,14 +137,10 @@ orla comes with extensive tests which can be run using
 make test
 ```
 
-## roadmap
+### roadmap
 
 See the RFCs in `docs/rfcs/` for the full vision and roadmap.
 
-## contributing
+### contributing
 
-Thank you so much for considering contributing to orla! orla is designed to be a community-focused project and runs on individual contributions from amazing people around the world. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-## contributors
-
-See [CONTRIBUTORS.md](CONTRIBUTORS.md) for a list of all contributors to orla.
+Thank you so much for considering contributing to orla! orla is an open-source project and runs on individual contributions from amazing people around the world. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.

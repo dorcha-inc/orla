@@ -5,10 +5,11 @@ codecov:
   require_ci_to_pass: false
 
 coverage:
-  # Exclude cmd/orla-test (testing tool) and examples (demonstration code)
+  # Exclude cmd/ (CLI applications) and examples (demonstration code)
+  # Using "folder/" pattern ignores the folder and all its contents recursively
   ignore:
-    - "cmd/orla-test/**/*"
-    - "examples/**/*"
+    - "cmd/"
+    - "examples/"
 
   # Status settings
   status:
