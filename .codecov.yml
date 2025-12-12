@@ -1,0 +1,22 @@
+# Codecov configuration for orla
+# See https://docs.codecov.com/docs/codecov-yaml
+
+codecov:
+  require_ci_to_pass: false
+
+coverage:
+  # Exclude cmd/orla-test (testing tool) and examples (demonstration code)
+  ignore:
+    - "cmd/orla-test/**/*"
+    - "examples/**/*"
+
+  # Status settings
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+        threshold: 1%

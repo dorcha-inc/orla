@@ -116,12 +116,12 @@
     "files.exclude": {
         "**/.git": true,
         "**/.DS_Store": true,
-        "**/build": true
+        "**/bin": true
     },
     // Search exclude patterns
     "search.exclude": {
         "**/node_modules": true,
-        "**/build": true,
+        "**/bin": true,
         "**/.git": true,
         "**/vendor": true
     },

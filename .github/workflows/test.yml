@@ -36,3 +36,6 @@ jobs:
 
     - name: Run tests
       run: make test
+
+    - name: Run e2e tests
+      run: make e2e-test

@@ -1,0 +1,45 @@
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+)
+
+var (
+	version = "1.0.0"
+	// build time date
+	buildDate = "2025-12-12"
+)
+
+func main() {
+	// set up zap logger
+	logger, err := zap.NewProduction()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Sync() //nolint:errcheck // Ignore close errors on logger
+	zap.ReplaceGlobals(logger)
+
+	rootCmd := &cobra.Command{
+		Use:   "orla-test",
+		Short: "Test orla MCP tools via HTTP or stdio transports",
+		Long: `orla-test is a CLI tool for testing orla MCP tools.
+
+It supports both HTTP and stdio transports and can initialize sessions,
+call tools, and display their output.`,
+		Version: fmt.Sprintf("%s (built: %s)", version, buildDate),
+	}
+
+	// add commands
+	rootCmd.AddCommand(newInitCmd())
+	rootCmd.AddCommand(newCallCmd())
+
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}

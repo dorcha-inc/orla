@@ -32,11 +32,11 @@ jobs:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
       run: |
-        mkdir -p build
-        go build -o build/orla-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/orla
+        mkdir -p bin
+        go build -o bin/orla-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/orla
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: orla-${{ matrix.goos }}-${{ matrix.goarch }}
-        path: build/orla-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
+        path: bin/orla-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}

@@ -1,5 +1,7 @@
 # RFC 1: Orla Runtime
 
+status: complete
+
 The vision behind orla's single-server runtime is to build something
 that can be meaningfully used without having to set up a configuration.
 

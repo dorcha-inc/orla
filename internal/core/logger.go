@@ -61,3 +61,12 @@ func LogRequest(method string, duration float64, err error) {
 
 	zap.L().Info("Request completed successfully", fields...)
 }
+
+// LogPanicRecovery logs a recovered panic with stack trace
+func LogPanicRecovery(component string, r interface{}) {
+	zap.L().Error("Panic recovered",
+		zap.String("component", component),
+		zap.Any("panic_value", r),
+		zap.Stack("stack_trace"),
+	)
+}

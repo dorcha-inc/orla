@@ -86,11 +86,30 @@ func (o *OrlaServer) rebuildServer() {
 // registerTool registers a single tool with the MCP server
 func (o *OrlaServer) registerTool(tool *state.ToolEntry) {
 	// Create a handler function for this tool using map[string]any for input
+	// Wrap with panic recovery at the handler boundary since this is the single point
+	// where we can return proper MCP error responses
 	handler := func(ctx context.Context, req *mcp.CallToolRequest, input map[string]any) (
-		*mcp.CallToolResult,
-		map[string]any,
-		error,
+		result *mcp.CallToolResult,
+		output map[string]any,
+		err error,
 	) {
+		// Panic recovery at the handler boundary
+		defer func() {
+			if r := recover(); r != nil {
+				core.LogPanicRecovery("tool handler", r)
+				// Return error response on panic
+				result = &mcp.CallToolResult{
+					IsError: true,
+					Content: []mcp.Content{
+						&mcp.TextContent{
+							Text: fmt.Sprintf("internal error: panic recovered in tool execution: %v", r),
+						},
+					},
+				}
+				output = nil
+				err = fmt.Errorf("panic recovered: %v", r)
+			}
+		}()
 		return o.handleToolCall(ctx, tool, input)
 	}
 
@@ -107,6 +126,7 @@ func (o *OrlaServer) handleToolCall(
 	tool *state.ToolEntry,
 	input map[string]any,
 ) (*mcp.CallToolResult, map[string]any, error) {
+
 	startTime := time.Now()
 
 	// Convert input map to arguments
@@ -183,6 +203,13 @@ func (o *OrlaServer) handleToolCall(
 
 // Reload reloads configuration and rescans tools directory
 func (o *OrlaServer) Reload() error {
+	// Panic recovery for reload operation
+	defer func() {
+		if r := recover(); r != nil {
+			core.LogPanicRecovery("reload", r)
+		}
+	}()
+
 	var newCfg *state.OrlaConfig
 	var err error
 

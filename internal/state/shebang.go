@@ -73,9 +73,7 @@ func ParseShebangFromPath(path string) (string, error) {
 	if err != nil {
 		return "", NewShebangFileReadError(path)
 	}
-	defer func() {
-		_ = file.Close() //nolint:errcheck // Ignore close errors - file is already read
-	}()
+	defer file.Close() //nolint:errcheck // Ignore close errors - file is already read
 
 	// Read the file
 	scanner := bufio.NewScanner(file)
