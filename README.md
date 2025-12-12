@@ -14,6 +14,11 @@ orla is a runtime for model context protocol ([MCP](https://modelcontextprotocol
 
 > To see all the amazing folks who have taken their time to contribute something cool to orla, please take a look at [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
+Join other orla users and developers on our discord. 
+
+[![Discord](https://img.shields.io/badge/Discord-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/QawsSFnR)
+
+
 ## getting started
 
 to install orla, you can either just run
@@ -129,7 +134,7 @@ git config core.hooksPath .githooks
 
 this configures git to automatically use hooks from `.githooks/` - no setup script needed!
 
-## testing
+### testing
 
 orla comes with extensive tests which can be run using
 
