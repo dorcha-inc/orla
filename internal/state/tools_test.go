@@ -219,8 +219,10 @@ func TestNewToolsRegistryFromDirectory_EmptyDirectory(t *testing.T) {
 }
 
 // TestNewToolsRegistryFromDirectory_NonexistentDirectory tests creating a registry from a non-existent directory
+// It should return an empty registry, not an error, to allow graceful degradation
 func TestNewToolsRegistryFromDirectory_NonexistentDirectory(t *testing.T) {
 	registry, err := NewToolsRegistryFromDirectory("/nonexistent/directory")
-	assert.Error(t, err)
-	assert.Nil(t, registry)
+	require.NoError(t, err, "Should not return error for non-existent directory (graceful degradation)")
+	assert.NotNil(t, registry, "Should return a registry")
+	assert.Empty(t, registry.ListTools(), "Should have no tools when directory doesn't exist")
 }

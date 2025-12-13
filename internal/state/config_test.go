@@ -44,8 +44,7 @@ func TestNewDefaultOrlaConfig(t *testing.T) {
 	assert.Equal(t, "info", cfg.LogLevel)
 }
 
-// TestNewDefaultOrlaConfig_NonexistentToolsDir tests error handling when tools directory doesn't exist
-// Note: filepath.Abs() doesn't fail for non-existent paths, but NewToolsRegistryFromDirectory will
+// TestNewDefaultOrlaConfig_NonexistentToolsDir tests graceful handling when tools directory doesn't exist
 func TestNewDefaultOrlaConfig_NonexistentToolsDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
@@ -60,11 +59,11 @@ func TestNewDefaultOrlaConfig_NonexistentToolsDir(t *testing.T) {
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)
 
-	// NewDefaultOrlaConfig should fail because tools directory doesn't exist
+	// NewDefaultOrlaConfig should succeed even if tools directory doesn't exist (graceful degradation)
 	cfg, err := NewDefaultOrlaConfig()
-	assert.Error(t, err)
-	assert.Nil(t, cfg)
-	assert.Contains(t, err.Error(), "failed to create tools registry")
+	require.NoError(t, err, "Should succeed even without tools directory")
+	assert.NotNil(t, cfg, "Config should be created")
+	assert.Empty(t, cfg.ToolsRegistry.ListTools(), "Should have no tools when directory doesn't exist")
 }
 
 // TestNewOrlaConfigFromPath_ValidConfig tests loading a valid config file
@@ -251,7 +250,7 @@ func TestNewOrlaConfigFromPath_NonexistentFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to read config file")
 }
 
-// TestNewOrlaConfigFromPath_NonexistentToolsDir tests loading config with non-existent tools directory
+// TestNewOrlaConfigFromPath_NonexistentToolsDir tests graceful handling when tools directory doesn't exist
 func TestNewOrlaConfigFromPath_NonexistentToolsDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "orla.json")
@@ -268,9 +267,9 @@ func TestNewOrlaConfigFromPath_NonexistentToolsDir(t *testing.T) {
 	err = os.WriteFile(configPath, configJSON, 0644)
 	require.NoError(t, err)
 
-	// Load config should fail
+	// Load config should succeed even if tools directory doesn't exist (graceful degradation)
 	cfg, err := NewOrlaConfigFromPath(configPath)
-	assert.Error(t, err)
-	assert.Nil(t, cfg)
-	assert.Contains(t, err.Error(), "failed to create tools registry")
+	require.NoError(t, err, "Should succeed even without tools directory")
+	assert.NotNil(t, cfg, "Config should be created")
+	assert.Empty(t, cfg.ToolsRegistry.ListTools(), "Should have no tools when directory doesn't exist")
 }

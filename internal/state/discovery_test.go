@@ -68,12 +68,14 @@ func TestScanToolsFromDirectory(t *testing.T) {
 }
 
 // TestScanToolsFromDirectory_NonExistentDirectory tests the ScanToolsFromDirectory function's
-// error handling for a directory that does not exist.
+// handling for a directory that does not exist. It should return an empty map, not an error,
+// to allow the server to start even if the tools directory doesn't exist yet.
 func TestScanToolsFromDirectory_NonExistentDirectory(t *testing.T) {
 	nonExistentDir := "/nonexistent/directory/path"
-	_, err := ScanToolsFromDirectory(nonExistentDir)
+	tools, err := ScanToolsFromDirectory(nonExistentDir)
 
-	assert.Error(t, err, "Should return error for non-existent directory")
+	require.NoError(t, err, "Should not return error for non-existent directory (graceful degradation)")
+	assert.Empty(t, tools, "Should return empty map for non-existent directory")
 }
 
 // TestScanToolsFromDirectory_EmptyDirectory tests the ScanToolsFromDirectory function's
@@ -147,4 +149,30 @@ func TestScanToolsFromDirectory_DuplicateNames(t *testing.T) {
 
 	// Test Error() method to get coverage
 	assert.Contains(t, duplicateToolNameErr.Error(), "tool with name tool already exists")
+}
+
+// TestScanToolsFromDirectory_NonExecutableFiles tests that non-executable files are skipped
+func TestScanToolsFromDirectory_NonExecutableFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create an executable file
+	executablePath := filepath.Join(tmpDir, "executable.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err := os.WriteFile(executablePath, []byte("#!/bin/sh\necho hello"), 0755)
+	require.NoError(t, err, "Failed to create executable file")
+
+	// Create a non-executable file (mode 0644)
+	nonExecutablePath := filepath.Join(tmpDir, "non-executable.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(nonExecutablePath, []byte("#!/bin/sh\necho hello"), 0644)
+	require.NoError(t, err, "Failed to create non-executable file")
+
+	// Scan the directory
+	tools, err := ScanToolsFromDirectory(tmpDir)
+	require.NoError(t, err, "Should scan directory without error")
+
+	// Should only find the executable file
+	assert.Len(t, tools, 1, "Should find only executable file")
+	assert.Contains(t, tools, "executable", "Should find executable tool")
+	assert.NotContains(t, tools, "non-executable", "Should not find non-executable file")
 }

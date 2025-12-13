@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -76,9 +77,21 @@ func (o *OrlaServer) rebuildServer() {
 
 	// Use the tools registry loaded from config (state.Load builds it)
 	tools := o.config.ToolsRegistry
+	toolList := tools.ListTools()
+
+	// Log tool discovery results
+	if len(toolList) == 0 {
+		zap.L().Warn("No tools found in tools directory",
+			zap.String("directory", o.config.ToolsDir),
+			zap.String("hint", "Add executable files to the tools directory to enable MCP tools"))
+	} else {
+		zap.L().Info("Discovered tools",
+			zap.Int("count", len(toolList)),
+			zap.String("directory", o.config.ToolsDir))
+	}
 
 	// Register each discovered tool
-	for _, tool := range tools.ListTools() {
+	for _, tool := range toolList {
 		o.registerTool(tool)
 	}
 }
@@ -150,11 +163,20 @@ func (o *OrlaServer) handleToolCall(
 
 	if err != nil {
 		core.LogToolExecution(tool.Name, duration, err)
+		// Provide more helpful error messages
+		errorMsg := fmt.Sprintf("Tool execution failed: %v", err)
+		if result != nil && result.Error != nil {
+			// Check for timeout errors and provide helpful message
+			timeoutErrMsg := result.Error.Error()
+			if strings.Contains(timeoutErrMsg, "timed out") {
+				errorMsg = fmt.Sprintf("Tool '%s' timed out after %d seconds. Consider increasing the 'timeout' value in your configuration file.", tool.Name, o.config.Timeout)
+			}
+		}
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{
 				&mcp.TextContent{
-					Text: fmt.Sprintf("Tool execution failed: %v", err),
+					Text: errorMsg,
 				},
 			},
 		}, nil, nil

@@ -74,11 +74,13 @@ You can specify a custom port
 orla --port 3000
 ```
 
-You can also specify a custom configuration file
+You can also specify a custom configuration file:
 
 ```bash
 orla --config orla.json
 ```
+
+If no configuration file is specified, orla will automatically check for `orla.json` in the current directory. If not found, default configuration is used.
 
 3. You can hot reload orla, i.e., get it to refresh its tools and configuration without restarting.
 
@@ -145,6 +147,10 @@ make test
 ### roadmap
 
 See the RFCs in `docs/rfcs/` for the full vision and roadmap.
+
+### integration guides
+
+- [Claude Desktop Integration](docs/integrations/claude-desktop.md)
 
 ### contributing
 

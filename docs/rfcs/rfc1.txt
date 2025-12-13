@@ -87,10 +87,11 @@ Table of Contents
 
    The runtime MUST support the following command:
 
-      orla run
+      orla
 
    This command MUST start an MCP server on a default port (8080) or
-   stdio, depending on configuration.
+   stdio, depending on configuration.  Command-line flags MAY be used
+   to override configuration options.
 
 3. Architecture
 
@@ -194,7 +195,7 @@ Table of Contents
 
    The configuration file MAY be specified via command-line argument:
 
-      orla run --config orla.json
+      orla --config orla.json
 
    If no configuration file is specified, the runtime MUST check for
    orla.json in the current directory.  If not found, default

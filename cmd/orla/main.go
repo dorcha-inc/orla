@@ -17,10 +17,11 @@ import (
 )
 
 type Flags struct {
-	configPath string
-	useStdio   bool
-	prettyLog  bool
-	portFlag   int
+	configPath   string
+	useStdio     bool
+	prettyLog    bool
+	portFlag     int
+	toolsDirFlag string
 }
 
 // parseFlags parses command-line flags and returns their values
@@ -30,13 +31,21 @@ func parseFlags() Flags {
 	flag.IntVar(&flags.portFlag, "port", 0, "Port to listen on (ignored if stdio is used)")
 	flag.BoolVar(&flags.useStdio, "stdio", false, "Use stdio instead of TCP port")
 	flag.BoolVar(&flags.prettyLog, "pretty", false, "Use pretty-printed logs instead of JSON")
+	flag.StringVar(&flags.toolsDirFlag, "tools-dir", "", "Directory containing tools (overrides config file)")
 	flag.Parse()
 	return flags
 }
 
 // loadConfig loads configuration from a file path, or returns defaults if path is empty
+// Per RFC 1 section 6.3: if no config path is specified, check for orla.json in current directory
 func loadConfig(configPath string) (*state.OrlaConfig, error) {
 	if configPath == "" {
+		// Check for orla.json in current directory (RFC 1 section 6.3)
+		if _, err := os.Stat("orla.json"); err == nil {
+			zap.L().Info("Found orla.json in current directory, using it")
+			return state.NewOrlaConfigFromPath("orla.json")
+		}
+		// No config file found, use defaults
 		return state.NewDefaultOrlaConfig()
 	}
 	return state.NewOrlaConfigFromPath(configPath)
@@ -120,6 +129,13 @@ func testableMain(ctx context.Context) error {
 		return err
 	}
 
+	// Apply tools directory override if provided via flag (before creating server)
+	if flags.toolsDirFlag != "" {
+		if err := cfg.SetToolsDir(flags.toolsDirFlag); err != nil {
+			return err
+		}
+	}
+
 	// Resolve logging format: CLI flag wins; otherwise config
 	_ = resolveLogFormat(cfg, flags.prettyLog)
 
@@ -130,14 +146,14 @@ func testableMain(ctx context.Context) error {
 	}
 	defer zap.L().Sync() //nolint:errcheck // Ignore sync errors on stdout/stderr, they're not critical and common in test environments
 
-	// Create server
-	srv := server.NewOrlaServer(cfg, flags.configPath)
-
 	// Validate and apply port configuration
 	if err := validateAndApplyPort(cfg, flags.portFlag, flags.useStdio); err != nil {
 		fmt.Printf("%s\n", err)
 		return err
 	}
+
+	// Create server (after all config overrides are applied)
+	srv := server.NewOrlaServer(cfg, flags.configPath)
 
 	// Set up signal handling for hot reload
 	ctx, cancel := setupSignalHandling(ctx, srv)
