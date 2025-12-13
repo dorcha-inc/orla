@@ -1,0 +1,378 @@
+Orla Agentic AI Working Group                                  Orla Project
+Request for Comments: 2                                        December 2025
+Category: Experimental
+
+
+                    RFC 2: Tool Capsules for Orla MCP Servers
+
+Status of This Memo
+
+   This document specifies an experimental protocol and architecture
+   for Tool Capsules in the Orla MCP server.  This memo provides
+   information for the community.  It does not specify an Internet
+   standard of any kind.  Distribution of this memo is unlimited.
+
+Abstract
+
+   This document defines Tool Capsules, an advanced, optional packaging
+   format for MCP tools in the Orla runtime.  Tool Capsules provide
+   structured lifecycle management, hot-reload capabilities, and
+   process supervision for complex tools, while remaining fully
+   compatible with the simple executable-based tool discovery defined
+   in RFC 1.  Tools are automatically detected as either simple
+   executables (RFC 1 mode) or Tool Capsules (RFC 2 mode) based on the
+   presence of a manifest file.
+
+Table of Contents
+
+   1. Introduction
+   2. Terminology
+   3. Design Goals
+   4. Non-Goals
+   5. Tool Capsule Definition
+   6. Capsule Manifest
+   7. Capsule Lifecycle
+   8. Process Execution Model
+   9. Startup Handshake
+   10. Hot-Reload Semantics
+   11. Failure Handling
+   12. Rationale
+   13. Security Considerations
+   14. Open Issues
+   15. Relationship to RFC 1
+   16. References
+
+1. Introduction
+
+   Orla supports two modes of tool execution:
+
+   1. Simple Mode (RFC 1): Executable files discovered automatically
+      in the tools directory.  No configuration required.
+
+   2. Tool Capsule Mode (RFC 2): Directory-based tools with structured
+      manifests, lifecycle management, and hot-reload capabilities.
+
+   Orla automatically detects which mode to use based on the presence
+   of an orla-tool.json manifest file.  If a directory contains
+   orla-tool.json, it is treated as a Tool Capsule.  Otherwise, the
+   tool is executed using simple mode as specified in RFC 1.
+
+   Tool Capsules are designed for tools that require:
+
+   - Process supervision and lifecycle management
+   - Hot-reload during development
+   - Multi-file tool structures
+   - Advanced configuration (environment variables, arguments)
+   - Startup handshake and readiness signaling
+
+   Simple executables continue to work without any changes, preserving
+   the zero-configuration experience defined in RFC 1.
+
+   This document formally defines the Tool Capsule abstraction, its
+   manifest, lifecycle, and process-level contract.
+
+2. Terminology
+
+   Orla: The MCP server runtime responsible for discovering, launching,
+   and supervising Tool Capsules.
+
+   Tool Capsule: A directory-based packaging unit representing a single
+   MCP tool.
+
+   Capsule Process: The operating-system process created by Orla to
+   execute a Tool Capsule.
+
+   Manifest: A JSON document (orla-tool.json) describing the Tool
+   Capsule.
+
+   Entrypoint: The executable file invoked by Orla to start a capsule.
+
+3. Design Goals
+
+   Tool Capsules are designed to meet the following goals:
+
+   1. Provide an optional, advanced packaging format for complex tools
+      without breaking simple tool execution.
+
+   2. Enable deterministic lifecycle management (start, ready, reload,
+      crash) for tools that require supervision.
+
+   3. Support fast local development via hot-reload semantics.
+
+   4. Maintain strict separation between Orla and tool implementations.
+
+   5. Remain fully compatible with MCP over stdio.
+
+   6. Preserve zero-configuration simplicity for basic tools (RFC 1
+      mode).
+
+4. Non-Goals
+
+   Tool Capsules explicitly do not:
+
+   - Provide sandboxing or security isolation guarantees.
+
+   - Define containerization or deployment formats.
+
+   - Prescribe tool internal architecture or libraries.
+
+   - Modify or extend the MCP protocol itself.
+
+5. Tool Capsule Definition
+
+5.1. Detection
+
+   Orla MUST detect Tool Capsules by scanning for directories
+   containing a file named orla-tool.json.  If such a file is found,
+   the directory MUST be treated as a Tool Capsule.  If no manifest is
+   found, the tool MUST be executed using simple mode as specified in
+   RFC 1.
+
+   This auto-detection ensures backward compatibility: existing simple
+   executables continue to work without modification.
+
+5.2. Structure
+
+   A Tool Capsule is a directory that Orla treats as a single
+   executable MCP tool.  A valid Tool Capsule MUST contain:
+
+   1. A manifest file named orla-tool.json at the root of the
+      directory.
+
+   2. An entrypoint executable referenced by the manifest.
+
+   Orla MUST treat the capsule directory as an opaque unit and MUST NOT
+   inspect or modify tool source code.
+
+6. Capsule Manifest (orla-tool.json)
+
+6.1. Manifest Format
+
+   The manifest MUST be a valid JSON object encoded in UTF-8.
+
+6.2. Required Fields
+
+   The following fields are REQUIRED:
+
+   {
+     "name": "example-tool",
+     "version": "1.2.3",
+     "entrypoint": "main.py"
+   }
+
+   name: A string identifying the tool.  It MUST be unique within an
+   Orla instance.
+
+   version: A semantic version string identifying the capsule version.
+
+   entrypoint: A relative path to the executable invoked to start the
+   capsule.
+
+6.3. Optional Fields
+
+   {
+     "language": "python",
+     "hot_load": {
+       "watch": ["./"],
+       "mode": "restart",
+       "debounce_ms": 100
+     },
+     "env": {
+       "LOG_LEVEL": "debug"
+     },
+     "args": ["--fast"],
+     "startup_timeout_ms": 5000
+   }
+
+   language: A string identifying the intended runtime environment
+   (e.g., "python", "node", "go").  This field is purely informational
+   and MAY be used for tooling, documentation, or future validation.
+   It MUST NOT affect execution semantics.
+
+   hot_load.watch: A list of paths that SHOULD trigger reload on
+   modification.
+
+   hot_load.mode: Reload strategy.  The only valid value in this
+   specification is "restart".
+
+   hot_load.debounce_ms: Minimum debounce interval for file change
+   events.
+
+   env: Environment variables injected into the capsule process.
+
+   args: Command-line arguments appended to the entrypoint invocation.
+
+   startup_timeout_ms: Maximum time Orla will wait for the startup
+   handshake.
+
+7. Capsule Lifecycle
+
+   Each Tool Capsule is managed as a supervised process with the
+   following states:
+
+   CREATED: Capsule discovered but not started.
+
+   STARTING: Process launched; handshake pending.
+
+   READY: Handshake complete; MCP requests may be sent.
+
+   RELOADING: Capsule restarting due to file change.
+
+   CRASHED: Capsule exited unexpectedly.
+
+   STOPPED: Capsule intentionally stopped by Orla.
+
+7.1. State Invariants
+
+   - At most one capsule process MAY be active per Tool Capsule.
+
+   - MCP requests MUST NOT be sent to a capsule unless it is in the
+     READY state.
+
+8. Process Execution Model
+
+8.1. Invocation
+
+   Orla MUST invoke the capsule entrypoint as a child process with:
+
+   - Working directory set to the capsule root.
+
+   - Environment variables as specified in the manifest.
+
+   - Standard input/output/error streams connected.
+
+8.2. IO Contract
+
+   stdin:  MCP JSON-RPC requests from Orla.
+   stdout: MCP JSON-RPC responses and notifications.
+   stderr: Diagnostic output only; MUST NOT be parsed.
+
+9. Startup Handshake
+
+   Tool Capsules MUST implement a startup handshake to signal
+   readiness.  After process start, the capsule MUST emit the following
+   JSON-RPC notification on stdout:
+
+   {
+     "jsonrpc": "2.0",
+     "method": "orla.hello",
+     "params": {
+       "name": "example-tool",
+       "version": "0.1.0",
+       "capabilities": ["tools", "resources"]
+     }
+   }
+
+   The capsule MUST emit this message exactly once per process start.
+
+   Orla MUST NOT transition the capsule to READY until this message is
+   received.
+
+   Failure to emit the handshake within startup_timeout_ms MUST be
+   treated as a startup failure.
+
+   Note: Simple mode tools (RFC 1) do not require this handshake and
+   are considered ready immediately after process start.
+
+10. Hot-Reload Semantics
+
+   When a watched file changes:
+
+   1. Orla MUST transition the capsule to RELOADING.
+
+   2. Orla MUST terminate the existing process gracefully.
+
+   3. Orla MUST start a new capsule process using the same manifest.
+
+   Hot-reload is process-based.  In-process code patching is explicitly
+   out of scope.
+
+11. Failure Handling
+
+   - Unexpected process termination MUST transition the capsule to
+     CRASHED.
+
+   - Orla SHOULD apply exponential backoff before restart.
+
+   - After a configurable number of failures, Orla MAY transition the
+     capsule to STOPPED.
+
+12. Rationale
+
+   Tool Capsules provide an optional, advanced abstraction that
+   enables:
+
+   - Consistent multi-language behavior for complex tools.
+
+   - Reliable hot-reload semantics during development.
+
+   - Process supervision and lifecycle management.
+
+   - A stable foundation for future scheduling, isolation, and
+     deployment features.
+
+   By making Tool Capsules optional and auto-detected, Orla preserves
+   the zero-configuration simplicity of RFC 1 while providing advanced
+   capabilities for tools that need them.  Developers can start with
+   simple executables and migrate to Tool Capsules only when they need
+   the additional features.
+
+   They define what an advanced tool is without overreaching into how
+   a tool is written, and without breaking the simplicity of basic
+   tools.
+
+13. Security Considerations
+
+   Tool Capsules execute with the privileges of the Orla process.  No
+   isolation or sandboxing guarantees are provided by this
+   specification.
+
+14. Open Issues
+
+   1. Support for additional reload modes.
+
+   2. Optional health-check extensions beyond startup handshake.
+
+   3. Whether "language" field should be used for validation or
+      tooling in future revisions.
+
+15. Relationship to RFC 1
+
+   RFC 1 defines the simple, zero-configuration tool execution model
+   where executables are automatically discovered and executed.  RFC 2
+   (this document) extends Orla with an optional, advanced packaging
+   format for tools that require additional capabilities.
+
+   The two modes coexist:
+
+   - Simple executables (RFC 1): tools/foo.sh, tools/bar.py, etc.
+     No manifest required.  Zero configuration.
+
+   - Tool Capsules (RFC 2): tools/complex-tool/orla-tool.json
+     Manifest required.  Advanced features enabled.
+
+   Orla automatically detects which mode to use based on the presence
+   of orla-tool.json.  This ensures backward compatibility and allows
+   developers to choose the appropriate level of structure for their
+   tools.
+
+16. References
+
+16.1. Normative References
+
+   [MCP]  Model Context Protocol Specification,
+          https://modelcontextprotocol.io/specification
+
+   [RFC1]  Orla Project, "RFC 1: Orla Runtime Specification",
+          December 2025.
+
+   [RFC2119]
+          Bradner, S., "Key words for use in RFCs to Indicate
+          Requirement Levels", BCP 14, RFC 2119,
+          DOI 10.17487/RFC2119, March 1997,
+          <https://www.rfc-editor.org/info/rfc2119>.
+
+Author's Address
+
+   Orla Project
+   https://github.com/dorcha-inc/orla

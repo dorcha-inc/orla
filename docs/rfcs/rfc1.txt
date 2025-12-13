@@ -1,0 +1,339 @@
+Orla Agentic AI Working Group                                  Orla Project
+Request for Comments: 1                                        December 2025
+Category: Informational 
+
+
+                    RFC 1: Orla Runtime Specification
+
+Status of This Memo
+
+   This document specifies the Orla Runtime for the Orla project
+   community.  This memo provides information for the community.  It
+   does not specify an Internet standard of any kind.  Distribution of
+   this memo is unlimited.
+
+Abstract
+
+   This document specifies the Orla Runtime, a single-server runtime
+   for Model Context Protocol (MCP) servers that can be meaningfully
+   used without configuration.  The runtime automatically discovers
+   and executes tools from the filesystem, supports hot reloading via
+   signal handling, and provides robust logging and error handling.
+
+Table of Contents
+
+   1. Introduction
+   2. Requirements
+   3. Architecture
+   4. Tool Discovery
+   5. Tool Execution
+   6. Configuration
+   7. Hot Reloading
+   8. Logging
+   9. Scope and Limitations
+   10. Security Considerations
+   11. References
+
+1. Introduction
+
+   The Orla Runtime is designed to provide a zero-configuration MCP
+   server that automatically discovers and executes tools from the
+   filesystem.  The primary goal is to enable users to create MCP
+   tools by simply placing executable files in a directory, without
+   requiring configuration files or manual tool registration.
+
+1.1. Motivation
+
+   Traditional MCP server implementations require explicit
+   configuration of each tool, including paths, arguments, and
+   metadata.  This creates friction for users who want to quickly
+   expose existing scripts and executables as MCP tools.  The Orla
+   Runtime eliminates this friction by providing automatic discovery
+   and execution.
+
+1.2. Terminology
+
+   Tool: An executable file that can be invoked by the Orla Runtime
+
+   Tool Discovery: The process of automatically finding executable
+   files in a directory
+
+   Hot Reload: The ability to reload configuration and tools without
+   restarting the server
+
+   MCP Server: A server implementing the Model Context Protocol
+   specification
+
+2. Requirements
+
+2.1. Core Requirements
+
+   The Orla Runtime MUST:
+
+   1. Support a single-port MCP server that can be hot reloaded via
+      SIGHUP
+
+   2. Automatically discover executable files in a ./tools/ directory
+
+   3. Execute tools using exec.CommandContext or equivalent
+
+   4. Enforce a timeout per request (default: 30 seconds)
+
+   5. Support both HTTP and stdio transport modes
+
+   6. Provide robust logging with JSON format by default
+
+2.2. Command-Line Interface
+
+   The runtime MUST support the following command:
+
+      orla run
+
+   This command MUST start an MCP server on a default port (8080) or
+   stdio, depending on configuration.
+
+3. Architecture
+
+   The Orla Runtime consists of the following components:
+
+   1. Tool Discovery Engine: Scans the filesystem for executable
+      files
+
+   2. Tool Executor: Executes discovered tools with proper timeout
+      and cancellation
+
+   3. MCP Server: Implements the MCP protocol using the official Go
+      SDK
+
+   4. Configuration Manager: Loads and manages configuration
+      (optional)
+
+   5. Signal Handler: Handles SIGHUP for hot reloading
+
+   6. Logger: Provides structured logging with JSON and pretty-print
+      modes
+
+4. Tool Discovery
+
+4.1. Discovery Process
+
+   The runtime MUST automatically search for a ./tools/ directory (or
+   a directory specified in configuration) and load each executable
+   file as a tool.
+
+4.2. Tool Naming
+
+   Tools MUST be named using the filename without extension.  For
+   example:
+
+      tools/
+        ls.sh        -> tool name: "ls"
+        summarize.py -> tool name: "summarize"
+        convert      -> tool name: "convert"
+
+4.3. Interpreter Detection
+
+   The runtime MUST infer the interpreter via shebang if present.
+   For example:
+
+      #!/bin/bash -> interpreter: "bash"
+      #!/usr/bin/env python3 -> interpreter: "python3"
+      No shebang -> binary executable
+
+4.4. Executable Detection
+
+   A file is considered executable if it has the executable bit set
+   (mode & 0111 != 0).
+
+5. Tool Execution
+
+5.1. Execution Method
+
+   Tools MUST be executed using exec.CommandContext or equivalent,
+   which provides:
+
+   - Proper cancellation propagation via context
+   - Timeout enforcement
+   - Correct stdout/stderr handling
+
+5.2. Timeout
+
+   The runtime MUST enforce a timeout per request.  The default
+   timeout MUST be 30 seconds.  This timeout MUST be configurable.
+
+5.3. Input/Output Handling
+
+   stdin:  Piped from MCP request parameters
+   stdout: Captured and returned in MCP response
+   stderr: Captured and included in MCP response
+   exit code: Included in MCP response
+
+5.4. Error Handling
+
+   The runtime MUST handle the following error conditions:
+
+   - Tool not found
+   - Tool execution timeout
+   - Tool execution failure (non-zero exit code)
+   - Tool execution error (system errors)
+
+6. Configuration
+
+6.1. Zero Configuration
+
+   The runtime MUST work without any configuration file.  Default
+   values MUST be used when no configuration is provided.
+
+6.2. Configuration File Format
+
+   If a user provides a configuration file, it MUST be in JSON
+   format, following the pattern established by Anthropic's desktop
+   extensions.
+
+6.3. Configuration File Location
+
+   The configuration file MAY be specified via command-line argument:
+
+      orla run --config orla.json
+
+   If no configuration file is specified, the runtime MUST check for
+   orla.json in the current directory.  If not found, default
+   configuration MUST be used.
+
+6.4. Configuration Options
+
+   The configuration file MUST support the following options:
+
+   - tools_dir: Directory containing executable tools (default: ./tools)
+   - port: HTTP server port (default: 8080, ignored in stdio mode)
+   - timeout: Tool execution timeout in seconds (default: 30)
+   - log_format: "json" or "pretty" (default: "json")
+   - log_level: "debug", "info", "warn", "error", or "fatal"
+     (default: "info")
+
+7. Hot Reloading
+
+7.1. Signal Handling
+
+   The runtime MUST support hot reloading via the SIGHUP signal:
+
+      kill -HUP $(pgrep orla)
+
+7.2. Reload Behavior
+
+   When SIGHUP is received, the runtime MUST:
+
+   1. Reload configuration (if a configuration file was provided)
+   2. Re-scan the tools directory
+   3. Re-register all discovered tools
+   4. Apply changes without restarting the server
+
+7.3. Active Connections
+
+   Hot reloading MUST NOT break existing connections.  Old server
+   instances MUST remain active until their connections are closed.
+   New connections MUST use the reloaded server instance.
+
+8. Logging
+
+8.1. Log Format
+
+   The runtime MUST log in JSON format by default.  An optional
+   pretty-print mode MAY be available for terminal use.
+
+8.2. Log Events
+
+   The runtime MUST log the following events:
+
+   - Tool executions (with duration, success/failure, errors)
+   - Request timings
+   - Errors
+   - Failures
+   - Panic recovery
+
+8.3. Log Levels
+
+   The runtime MUST support configurable log levels: debug, info,
+   warn, error, fatal.
+
+9. Scope and Limitations
+
+9.1. In Scope
+
+   The following capabilities are within the scope of the Orla
+   Runtime:
+
+   1. Invoking tool execution requests
+   2. Listing available tools
+   3. Prompt to tool execution flow
+   4. Cancellation tokens
+   5. Error messages
+
+9.2. Out of Scope (Future Work)
+
+   The following features are explicitly out of scope for this RFC
+   but may be added in future RFCs:
+
+   1. Routing
+   2. Policies
+   3. Support for plugins
+   4. Queues
+   5. Multi-backend support
+
+10. Security Considerations
+
+10.1. Tool Execution
+
+   The runtime executes arbitrary executables from the filesystem.
+   Users MUST ensure that:
+
+   - The tools directory contains only trusted executables
+   - File permissions are appropriately restricted
+   - Tools do not perform unauthorized operations
+
+10.2. Timeout Enforcement
+
+   The timeout mechanism prevents tools from running indefinitely,
+   mitigating denial-of-service attacks through long-running tools.
+
+10.3. Input Validation
+
+   Tool arguments are passed directly to executables.  Tools MUST
+   validate their own inputs.  The runtime does not perform input
+   validation beyond timeout enforcement.
+
+10.4. Network Security
+
+   When using HTTP transport, the runtime implements Origin validation
+   as provided by the MCP SDK's StreamableHTTPHandler.  Additional
+   authentication and authorization mechanisms are deployment-specific
+   and should be implemented at the network layer (e.g., reverse proxy,
+   API gateway) or application layer as needed for the deployment
+   environment.
+
+11. References
+
+12.1. Normative References
+
+   [MCP]  Model Context Protocol Specification,
+          https://modelcontextprotocol.io/specification
+
+   [Anthropic]
+          Anthropic Desktop Extensions Configuration,
+          https://www.anthropic.com/engineering/desktop-extensions
+
+12.2. Informative References
+
+   [Go exec]
+          Go os/exec package documentation,
+          https://pkg.go.dev/os/exec
+
+   [MCP Go SDK]
+          Model Context Protocol Go SDK,
+          https://github.com/modelcontextprotocol/go-sdk
+
+Author's Address
+
+   Orla Project
+   https://github.com/dorcha-inc/orla
+
