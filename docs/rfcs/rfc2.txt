@@ -12,6 +12,14 @@ Status of This Memo
    information for the community.  It does not specify an Internet
    standard of any kind.  Distribution of this memo is unlimited.
 
+   DEPRECATED: This RFC is superseded by RFC 3 (Tool Package and Install
+   System).  RFC 3 incorporates all Tool Capsule concepts (lifecycle
+   management, hot-reload, startup handshake) into a unified tool.yaml
+   manifest format.  The orla-tool.json format defined in this document
+   is replaced by tool.yaml with a runtime section.  New implementations
+   SHOULD use RFC 3 instead.  This document is retained for historical
+   reference only.
+
 Abstract
 
    This document defines Tool Capsules, an advanced, optional packaging
@@ -22,6 +30,11 @@ Abstract
    in RFC 1.  Tools are automatically detected as either simple
    executables (RFC 1 mode) or Tool Capsules (RFC 2 mode) based on the
    presence of a manifest file.
+
+   NOTE: This RFC is DEPRECATED.  All Tool Capsule functionality has
+   been incorporated into RFC 3 via the runtime section of tool.yaml.
+   See RFC 3 Section 5.3 for the unified manifest format that replaces
+   orla-tool.json.
 
 Table of Contents
 
@@ -336,25 +349,29 @@ Table of Contents
    3. Whether "language" field should be used for validation or
       tooling in future revisions.
 
-15. Relationship to RFC 1
+15. Relationship to RFC 1 and RFC 3
 
    RFC 1 defines the simple, zero-configuration tool execution model
    where executables are automatically discovered and executed.  RFC 2
-   (this document) extends Orla with an optional, advanced packaging
-   format for tools that require additional capabilities.
+   (this document) was intended to extend Orla with an optional,
+   advanced packaging format for tools that require additional
+   capabilities.
 
-   The two modes coexist:
+   However, RFC 2 is now DEPRECATED and superseded by RFC 3.  RFC 3
+   incorporates all Tool Capsule concepts into a unified tool.yaml
+   manifest format:
 
    - Simple executables (RFC 1): tools/foo.sh, tools/bar.py, etc.
      No manifest required.  Zero configuration.
 
-   - Tool Capsules (RFC 2): tools/complex-tool/orla-tool.json
-     Manifest required.  Advanced features enabled.
+   - Tool Packages (RFC 3): ~/.orla/tools/tool-name/VERSION/tool.yaml
+     Unified manifest format.  Use runtime.mode: "simple" for RFC 1
+     behavior, or runtime.mode: "capsule" for lifecycle management.
 
-   Orla automatically detects which mode to use based on the presence
-   of orla-tool.json.  This ensures backward compatibility and allows
-   developers to choose the appropriate level of structure for their
-   tools.
+   RFC 3's tool.yaml replaces RFC 2's orla-tool.json.  All runtime
+   features (hot-reload, process supervision, startup handshake) are
+   configured via the runtime section in tool.yaml.  See RFC 3 Section
+   5.3 for details.
 
 16. References
 
@@ -365,6 +382,9 @@ Table of Contents
 
    [RFC1]  Orla Project, "RFC 1: Orla Runtime Specification",
           December 2025.
+
+   [RFC3]  Orla Project, "RFC 3: Tool Package and Install System",
+          December 2025.  RFC 3 supersedes this document (RFC 2).
 
    [RFC2119]
           Bradner, S., "Key words for use in RFCs to Indicate

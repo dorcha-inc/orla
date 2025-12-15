@@ -1,6 +1,6 @@
 Orla Agentic AI Working Group                                  Orla Project
 Request for Comments: 1                                        December 2025
-Category: Informational 
+Category: Standards Track
 
 
                     RFC 1: Orla Runtime Specification
@@ -8,9 +8,9 @@ Category: Informational
 Status of This Memo
 
    This document specifies the Orla Runtime for the Orla project
-   community.  This memo provides information for the community.  It
-   does not specify an Internet standard of any kind.  Distribution of
-   this memo is unlimited.
+   community.  This memo provides information for the Orla community.  
+   It does not specify an Internet standard of any kind.  Distribution 
+   of this memo is unlimited.
 
 Abstract
 

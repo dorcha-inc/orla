@@ -1,0 +1,655 @@
+Orla Agentic AI Working Group                                  Orla Project
+Request for Comments: 3                                        December 2025
+Category: Standards Track
+
+
+                    RFC 3: Tool Package and Install System
+
+Status of This Memo
+
+   This document specifies the Tool Package format and Install System for
+   the Orla MCP server.  This memo provides information for Orla the
+   community.  It does not specify an Internet standard of any kind.
+   Distribution of this memo is unlimited.
+
+Abstract
+
+   This document defines the Orla Tool Package format, Tool Registry
+   architecture, and installation mechanism.  The system enables users
+   to discover, install, and manage MCP tools via a simple command-line
+   interface, similar to package managers like Homebrew, npm, and pip.
+   Tools are distributed as self-contained packages with metadata
+   manifests, enabling zero-configuration installation and automatic
+   registration with the Orla runtime.
+
+   This RFC supersedes RFC 2 (Tool Capsules) by incorporating lifecycle
+   management features (process supervision, hot-reload, startup
+   handshake) into the unified tool.yaml manifest format.
+
+Table of Contents
+
+   1. Introduction
+   2. Terminology
+   3. Design Goals
+   4. Tool Package Format
+   5. Tool Package Manifest (tool.yaml)
+   6. Tool Registry
+   7. Installation Process
+   8. Version Resolution
+   9. Tool Discovery and Registration
+   10. Command-Line Interface
+   11. Security Considerations
+   12. Relationship to RFC 1 and RFC 2
+   13. Future Work
+   14. References
+
+1. Introduction
+
+   Orla currently supports two tool discovery mechanisms:
+
+   1. Directory-Based Discovery (RFC 1): Automatic scanning of a tools
+      directory for executable files.
+
+   2. Tool Capsules (RFC 2): Directory-based tools with structured
+      manifests and lifecycle management.
+
+   While these mechanisms enable local tool development, they do not
+   address the need for tool distribution, discovery, and installation.
+   Users must manually download, configure, and register tools, creating
+   friction that limits adoption.
+
+   RFC 3 introduces a package-based distribution system that enables:
+
+   - One-command tool installation: orla install TOOL
+   - Centralized tool discovery via a registry
+   - Version management and updates
+   - Automatic tool registration
+   - Zero-configuration tool usage
+
+   This system positions Orla as "the package manager and runtime for
+   MCP tools," enabling an ecosystem of reusable, installable tools.
+
+1.1. Motivation
+
+   A major barrier to MCP adoption is tool installation friction.
+   Users expect to install tools as easily as they install packages via
+   Homebrew, npm, or pip.  Without a distribution mechanism, Orla
+   remains a development tool rather than a production platform.
+
+   The Tool Package and Install System addresses this by providing:
+
+   - A standardized tool package format
+   - A registry for tool discovery
+   - An installation mechanism that "just works"
+   - Automatic integration with the Orla runtime
+
+2. Terminology
+
+   Tool Package: A self-contained distribution unit containing a tool
+   executable, metadata manifest, and optional dependencies.
+
+   Tool Registry: A centralized index of available tools and their
+   versions, locations, and metadata.
+
+   Tool Manifest: A YAML file (tool.yaml) describing a tool package's
+   metadata, entrypoint, and requirements.
+
+   Registry Index: A file (registry.yaml) listing all tools available in
+   a registry, their versions, and repository locations.
+
+   Installation: The process of downloading a tool package, validating
+   its manifest, placing it in the tools directory, and registering it
+   with Orla.
+
+3. Design Goals
+
+   The Tool Package and Install System is designed to meet the
+   following goals:
+
+   1. Zero-configuration installation: orla install TOOL must work
+      without manual configuration.
+
+   2. Version management: Support multiple tool versions and version
+      resolution.
+
+   3. Trust and security: Enable tool verification, maintainer identity,
+      and permission management.
+
+   4. Ecosystem growth: Lower the barrier for tool authors to distribute
+      tools.
+
+   5. Backward compatibility: Existing tools (RFC 1) continue to work 
+      without modification.
+
+   6. Offline capability: Registry and tools can be cached for offline
+      use.
+
+   7. Forkability: Registry and tools can be forked and customized.
+
+4. Tool Package Format
+
+4.1. Package Structure
+
+   A Tool Package MUST be a directory or archive containing:
+
+      tool-package/
+      - tool.yaml          (Required: Package manifest)
+      - bin/               (Required: Tool executables)
+        - entrypoint
+      - README.md          (Optional: Documentation)
+      - LICENSE            (Optional: License file)
+
+   The tool.yaml manifest MUST be present at the root of the package.
+   The entrypoint executable MUST exist at the path specified in the
+   manifest.
+
+4.2. Package Distribution
+
+   Tool packages MAY be distributed as:
+
+   - Git repositories (preferred for v0)
+   - Release tarballs/zip archives
+   - Direct directory references
+
+   The registry specifies the distribution method and location for each
+   tool.
+
+5. Tool Package Manifest (tool.yaml)
+
+5.1. Manifest Format
+
+   The manifest MUST be a valid YAML file encoded in UTF-8.
+
+5.2. Required Fields
+
+      name: tool-name
+      version: 1.0.0
+      description: Brief description of the tool
+      entrypoint: bin/tool-executable
+
+   name: A string identifying the tool.  MUST be unique within a
+   registry.  SHOULD follow naming conventions (lowercase, hyphens).
+
+   version: A semantic version string (SemVer 2.0) identifying the
+   package version.
+
+   description: A human-readable string describing the tool's purpose.
+
+   entrypoint: A relative path from the package root to the executable
+   that will be invoked.  MUST reference an existing file.
+
+5.3. Optional Fields
+
+      author: Tool Author
+      license: MIT
+      repository: https://git.example.com/user/orla-tool-name
+      homepage: https://example.com
+      keywords:
+        - filesystem
+        - file-access
+      dependencies:
+        - python>=3.8
+      mcp:
+        input_schema:
+          path: string
+          mode: string
+        output_schema:
+          content: string
+      permissions:
+        - filesystem:read
+        - filesystem:write
+      runtime:
+        mode: capsule
+        startup_timeout_ms: 5000
+        hot_load:
+          watch: ["./"]
+          mode: restart
+          debounce_ms: 100
+        env:
+          LOG_LEVEL: debug
+        args: ["--fast"]
+
+   Note: The runtime section enables lifecycle management.  See Section
+   5.3.1 for details.
+
+   author: Tool maintainer name or organization.
+
+   license: SPDX license identifier.
+
+   repository: Source code repository URL.
+
+   homepage: Project homepage URL.
+
+   keywords: List of strings for tool discovery.
+
+   dependencies: List of runtime dependencies (interpreters, libraries).
+
+   mcp: MCP-specific metadata including input/output schemas.
+
+   permissions: List of capabilities required by the tool (for security
+   sandboxing).
+
+   runtime: Runtime behavior configuration.  When present, enables
+   lifecycle management (process supervision, hot-reload, startup
+   handshake).  If omitted, tool executes in simple mode (RFC 1).
+
+   runtime.mode: Execution mode.  "simple" executes on-demand per
+   request.  "capsule" enables long-running process with lifecycle
+   management.  Default: "simple" (if runtime section is absent).
+
+   runtime.startup_timeout_ms: Maximum time Orla will wait for startup
+   handshake (capsule mode only).
+
+   runtime.hot_load: Hot-reload configuration for development.  Enables
+   automatic restart on file changes.
+
+   runtime.hot_load.watch: List of paths to watch for changes.
+
+   runtime.hot_load.mode: Reload strategy.  Currently only "restart" is
+   supported.
+
+   runtime.hot_load.debounce_ms: Minimum debounce interval for file
+   change events.
+
+   runtime.env: Environment variables injected into the tool process.
+
+   runtime.args: Command-line arguments appended to the entrypoint.
+
+5.3.1. Capsule Mode Startup Handshake
+
+   When runtime.mode is "capsule", tools MUST implement a startup
+   handshake to signal readiness.  After process start, the tool MUST
+   emit the following JSON-RPC notification on stdout:
+
+      {
+        "jsonrpc": "2.0",
+        "method": "orla.hello",
+        "params": {
+          "name": "tool-name",
+          "version": "1.0.0",
+          "capabilities": ["tools", "resources"]
+        }
+      }
+
+   The tool MUST emit this message exactly once per process start.
+
+   Orla MUST NOT transition the tool to READY until this message is
+   received.  Failure to emit the handshake within
+   runtime.startup_timeout_ms MUST be treated as a startup failure.
+
+   Simple mode tools (runtime.mode = "simple" or no runtime section) do
+   not require this handshake and are considered ready immediately after
+   process start.
+
+5.4. Manifest Validation
+
+   Orla MUST validate manifests during installation:
+
+   1. Required fields MUST be present and non-empty.
+
+   2. Version MUST be a valid semantic version.
+
+   3. Entrypoint path MUST exist and be executable (or have an explicit
+      interpreter).
+
+   4. Entrypoint MUST be within the package directory (no path
+      traversal).
+
+6. Tool Registry
+
+6.1. Registry Architecture
+
+   The Tool Registry is a Git-based index repository (v0).  The registry
+   is a standard Git repository that can be hosted on any Git hosting
+   platform (GitHub, GitLab, Bitbucket, self-hosted Git, etc.).  This
+   design provides:
+
+   - Zero infrastructure cost
+   - Public auditability
+   - Forkability
+   - Version control
+   - Pull/Merge request-based contributions
+
+   Future versions MAY migrate to a service-based registry while
+   maintaining compatibility.
+
+6.2. Registry Repository Structure
+
+      orla-registry/
+      - registry.yaml      (Index of all tools)
+      - tools/             (Optional: Tool metadata)
+        - tool-name/
+          - README.md
+
+6.3. Registry Index (registry.yaml)
+
+   The registry index MUST be a YAML file with the following structure:
+
+      version: 1
+      registry_url: https://github.com/dorcha-inc/orla-registry
+      tools:
+        - name: fs
+          description: Local filesystem access
+          repository: https://github.com/dorcha-inc/orla-tool-fs
+          versions:
+            - version: 0.1.0
+              tag: v0.1.0
+              checksum: sha256:abc123...
+          maintainer: dorcha-inc
+          keywords:
+            - filesystem
+            - file-access
+        - name: http
+          description: HTTP request tool
+          repository: https://github.com/dorcha-inc/orla-tool-http
+          versions:
+            - version: 0.2.0
+              tag: v0.2.0
+
+   Note: The registry_url and repository fields accept any Git repository
+   URL (GitHub, GitLab, Bitbucket, self-hosted, etc.).  The examples
+   above use GitHub URLs for illustration only.
+
+   Each tool entry MUST contain:
+
+   - name: Unique tool identifier
+   - description: Brief tool description
+   - repository: Git repository URL (any Git hosting platform) or
+     download location
+   - versions: List of available versions
+
+   Version entries MAY include:
+
+   - version: Semantic version string
+   - tag: Git tag or release identifier
+   - checksum: Optional integrity checksum
+
+6.4. Tool Repository Structure
+
+   Each tool SHOULD live in its own repository:
+
+      orla-tool-fs/
+      - tool.yaml
+      - bin/
+        - fs
+      - README.md
+      - LICENSE
+
+   This structure enables:
+
+   - Independent versioning
+   - Clear ownership
+   - Easy contribution
+   - Forkability
+
+7. Installation Process
+
+7.1. Installation Command
+
+   Users install tools via:
+
+      orla install TOOL-NAME
+
+   Orla MUST:
+
+   1. Fetch the registry index
+   2. Resolve tool name to repository and version
+   3. Download the tool package
+   4. Validate the manifest
+   5. Install to ~/.orla/tools/TOOL-NAME/VERSION/
+   6. Register with Orla runtime
+   7. Optionally run post-install hooks
+
+7.2. Installation Directory
+
+   Tools MUST be installed to:
+
+      ~/.orla/tools/TOOL-NAME/VERSION/
+
+   This structure enables:
+
+   - Multiple versions per tool
+   - Clean uninstallation
+   - Version switching
+
+7.3. Version Resolution
+
+   When a version is not specified, Orla MUST install the latest stable
+   version from the registry.  Version resolution rules:
+
+   1. Prefer latest stable version (not pre-release)
+   2. Respect version constraints if specified
+   3. Cache registry index for offline use
+
+7.4. Registration
+
+   After installation, Orla MUST automatically register the tool:
+
+   - If tool.yaml has runtime.mode: "capsule": Register with lifecycle
+     management
+   - Otherwise: Register as simple executable (RFC 1)
+
+   Registration happens automatically; no manual configuration required.
+
+8. Version Resolution
+
+8.1. Version Selection
+
+   Users MAY specify versions:
+
+      orla install fs@0.1.0
+      orla install fs@latest
+      orla install fs@^0.1.0
+
+   Version constraints follow SemVer rules:
+
+   - Exact: 0.1.0
+   - Latest: latest
+   - Range: ^0.1.0, ~0.1.0, >=0.1.0
+
+8.2. Version Conflicts
+
+   Multiple versions of the same tool MAY coexist.  Orla MUST:
+
+   - Install each version in a separate directory
+   - Register tools with versioned names (optional) or use latest
+   - Allow explicit version selection
+
+9. Tool Discovery and Registration
+
+9.1. Installed Tools Discovery
+
+   Orla MUST discover installed tools by scanning:
+
+      ~/.orla/tools/*/VERSION/
+
+   For each installed tool, Orla MUST:
+
+   1. Read tool.yaml manifest
+   2. Validate entrypoint exists
+   3. Register tool with Orla runtime
+   4. Expose tool via MCP
+
+9.2. Tool Naming
+
+   Tools are registered with their package name.  If multiple versions
+   are installed, Orla SHOULD use the latest version by default, with
+   an option to specify versions explicitly.
+
+9.3. Execution Mode Detection
+
+   Orla MUST detect execution mode from the tool.yaml manifest:
+
+   - If runtime.mode is "capsule" or runtime section is present:
+     Use lifecycle management (process supervision, startup handshake,
+     hot-reload if configured).
+
+   - If runtime.mode is "simple" or runtime section is absent:
+     Use simple execution mode (RFC 1) - execute on-demand per request.
+
+   This detection enables backward compatibility: simple tools work
+   without runtime configuration, while complex tools can opt into
+   lifecycle management.
+
+10. Command-Line Interface
+
+10.1. Installation Commands
+
+      orla install TOOL-NAME[@VERSION]
+
+   Install a tool from the registry.
+
+      orla install --registry URL TOOL-NAME
+
+   Install from a custom registry.
+
+      orla install --local PATH
+
+   Install from a local directory or archive.
+
+10.2. Management Commands
+
+      orla list
+
+   List installed tools and versions.
+
+      orla search QUERY
+
+   Search the registry for tools.
+
+      orla uninstall TOOL-NAME
+
+   Remove an installed tool.
+
+      orla update TOOL-NAME
+
+   Update a tool to the latest version.
+
+      orla registry add URL
+
+   Add a custom registry.
+
+10.3. Registry Commands
+
+      orla registry list
+
+   List configured registries.
+
+      orla registry update
+
+   Update the registry index cache.
+
+11. Security Considerations
+
+11.1. Tool Verification
+
+   Orla SHOULD verify tool integrity:
+
+   - Validate checksums when provided
+   - Verify Git tags match repository state
+   - Check maintainer signatures (future)
+
+11.2. Permission Model
+
+   Tools MAY declare required permissions in their manifest.  Orla
+   SHOULD:
+
+   - Prompt users before installing tools with permissions
+   - Enforce permission boundaries during execution
+   - Log permission usage
+
+11.3. Sandboxing
+
+   Tool execution SHOULD be sandboxed:
+
+   - Limit filesystem access to declared paths
+   - Restrict network access unless declared
+   - Enforce resource limits (CPU, memory, time)
+
+11.4. Registry Trust
+
+   The default registry SHOULD be:
+
+   - Publicly auditable (hosted on a public Git platform)
+   - Maintained by trusted organization
+   - Pull/Merge request-based contribution model
+
+   Users MAY use custom registries (including private Git repositories),
+   but SHOULD verify trust and ensure the registry is from a trusted
+   source.
+
+12. Relationship to RFC 1
+
+   RFC 3 extends Orla with tool distribution and installation while
+   maintaining full backward compatibility with RFC 1:
+
+   - RFC 1 (Directory Discovery): Continues to work.  Installed tools
+     are placed in a directory that RFC 1 can discover.
+
+   - RFC 3 (Package System): Provides distribution and installation
+     mechanism.  Installed tools use RFC 1 simple execution by default,
+     or lifecycle management if runtime configuration is present.
+
+   The two RFCs work together:
+
+      RFC 3: Install tool → ~/.orla/tools/fs/0.1.0/
+      tool.yaml: runtime.mode = "simple" → Use RFC 1 execution
+      tool.yaml: runtime.mode = "capsule" → Use lifecycle management
+
+   Note: RFC 2 (Tool Capsules) concepts are merged into RFC 3 via the
+   runtime section of tool.yaml.  RFC 2's orla-tool.json format is
+   superseded by RFC 3's unified tool.yaml manifest.
+
+13. Future Work
+
+   The following features are explicitly out of scope for v0 but MAY be
+   added in future revisions:
+
+   1. Signed tool packages
+   2. Dependency resolution
+   3. Tool update notifications
+   4. Web-based registry UI
+   5. Tool analytics and metrics
+   6. Multi-registry federation
+   7. Private registries with authentication
+   8. Tool marketplace and monetization
+
+14. References
+
+14.1. Normative References
+
+   [RFC1]  Orla Project, "RFC 1: Orla Runtime Specification",
+          December 2025.
+
+   [SemVer]
+          Preston-Werner, T., "Semantic Versioning 2.0.0",
+          <https://semver.org/spec/v2.0.0.html>.
+
+   [RFC2119]
+          Bradner, S., "Key words for use in RFCs to Indicate
+          Requirement Levels", BCP 14, RFC 2119,
+          DOI 10.17487/RFC2119, March 1997,
+          <https://www.rfc-editor.org/info/rfc2119>.
+
+14.2. Informative References
+
+   [RFC2]  Orla Project, "RFC 2: Tool Capsules for Orla MCP Servers",
+          December 2025.  Note: RFC 2 concepts are incorporated into
+          RFC 3 via the runtime section of tool.yaml.  RFC 2 is
+          superseded by this document.
+
+   [Homebrew]
+          Homebrew Project, "Homebrew: The Missing Package Manager for
+          macOS", <https://brew.sh>.
+
+   [npm]   npm, Inc., "npm: The Package Manager for JavaScript",
+          <https://www.npmjs.com>.
+
+   [pip]   Python Packaging Authority, "pip: The Python Package
+          Installer", <https://pip.pypa.io>.
+
+Author's Address
+
+   Orla Project
+   https://github.com/dorcha-inc/orla
+
