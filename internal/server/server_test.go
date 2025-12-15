@@ -67,7 +67,7 @@ func TestNewOrlaServer(t *testing.T) {
 // TestNewOrlaServer_WithConfigPath tests server creation with a config path
 func TestNewOrlaServer_WithConfigPath(t *testing.T) {
 	cfg := createTestConfig(t)
-	configPath := "/path/to/config.json"
+	configPath := "/path/to/config.yaml"
 
 	srv := NewOrlaServer(cfg, configPath)
 	require.NotNil(t, srv)
@@ -339,10 +339,13 @@ func TestReload(t *testing.T) {
 		Timeout:       30,
 	}
 
-	configPath := filepath.Join(tmpDir, "orla.json")
-	configJSON := `{"tools_dir": "./tools", "port": 9000, "timeout": 60}`
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+	configYAML := `tools_dir: ./tools
+port: 9000
+timeout: 60
+`
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err = os.WriteFile(configPath, []byte(configJSON), 0644)
+	err = os.WriteFile(configPath, []byte(configYAML), 0644)
 	require.NoError(t, err)
 
 	srv := NewOrlaServer(cfg, configPath)

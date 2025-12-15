@@ -1,13 +1,13 @@
 package state
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // TestNewDefaultOrlaConfig tests the creation of a default configuration
@@ -69,7 +69,7 @@ func TestNewDefaultOrlaConfig_NonexistentToolsDir(t *testing.T) {
 // TestNewOrlaConfigFromPath_ValidConfig tests loading a valid config file
 func TestNewOrlaConfigFromPath_ValidConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "orla.json")
+	configPath := filepath.Join(tmpDir, "orla.yaml")
 
 	// Create a tools directory
 	toolsDir := filepath.Join(tmpDir, "tools")
@@ -92,10 +92,10 @@ func TestNewOrlaConfigFromPath_ValidConfig(t *testing.T) {
 		LogLevel:  "debug",
 	}
 
-	configJSON, err := json.Marshal(config)
+	configYAML, err := yaml.Marshal(config)
 	require.NoError(t, err)
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err = os.WriteFile(configPath, configJSON, 0644)
+	err = os.WriteFile(configPath, configYAML, 0644)
 	require.NoError(t, err)
 
 	// Load config
@@ -119,7 +119,7 @@ func TestNewOrlaConfigFromPath_ValidConfig(t *testing.T) {
 // TestNewOrlaConfigFromPath_AbsoluteToolsDir tests loading config with absolute tools directory
 func TestNewOrlaConfigFromPath_AbsoluteToolsDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "orla.json")
+	configPath := filepath.Join(tmpDir, "orla.yaml")
 
 	// Create a tools directory
 	toolsDir := filepath.Join(tmpDir, "tools")
@@ -142,10 +142,10 @@ func TestNewOrlaConfigFromPath_AbsoluteToolsDir(t *testing.T) {
 		LogLevel:  "debug",
 	}
 
-	configJSON, err := json.Marshal(config)
+	configYAML, err := yaml.Marshal(config)
 	require.NoError(t, err)
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err = os.WriteFile(configPath, configJSON, 0644)
+	err = os.WriteFile(configPath, configYAML, 0644)
 	require.NoError(t, err)
 
 	// Load config
@@ -161,7 +161,7 @@ func TestNewOrlaConfigFromPath_AbsoluteToolsDir(t *testing.T) {
 // TestNewOrlaConfigFromPath_WithToolsRegistry tests loading config with tools registry defined
 func TestNewOrlaConfigFromPath_WithToolsRegistry(t *testing.T) {
 	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "orla.json")
+	configPath := filepath.Join(tmpDir, "orla.yaml")
 
 	// Create config file with tools registry
 	toolEntry := &ToolEntry{
@@ -182,10 +182,10 @@ func TestNewOrlaConfigFromPath_WithToolsRegistry(t *testing.T) {
 		Timeout:       60,
 	}
 
-	configJSON, err := json.Marshal(config)
+	configYAML, err := yaml.Marshal(config)
 	require.NoError(t, err)
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err = os.WriteFile(configPath, configJSON, 0644)
+	err = os.WriteFile(configPath, configYAML, 0644)
 	require.NoError(t, err)
 
 	// Load config
@@ -203,7 +203,7 @@ func TestNewOrlaConfigFromPath_WithToolsRegistry(t *testing.T) {
 // TestNewOrlaConfigFromPath_NoToolsDirNoRegistry tests error when neither tools dir nor registry is provided
 func TestNewOrlaConfigFromPath_NoToolsDirNoRegistry(t *testing.T) {
 	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "orla.json")
+	configPath := filepath.Join(tmpDir, "orla.yaml")
 
 	// Create config file without tools dir or registry
 	config := OrlaConfig{
@@ -212,10 +212,10 @@ func TestNewOrlaConfigFromPath_NoToolsDirNoRegistry(t *testing.T) {
 		Port:          9000,
 	}
 
-	configJSON, err := json.Marshal(config)
+	configYAML, err := yaml.Marshal(config)
 	require.NoError(t, err)
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err = os.WriteFile(configPath, configJSON, 0644)
+	err = os.WriteFile(configPath, configYAML, 0644)
 	require.NoError(t, err)
 
 	// Load config should fail
@@ -225,14 +225,14 @@ func TestNewOrlaConfigFromPath_NoToolsDirNoRegistry(t *testing.T) {
 	assert.Contains(t, err.Error(), "tools dir is unset and tools registry is not defined")
 }
 
-// TestNewOrlaConfigFromPath_InvalidJSON tests loading an invalid JSON config file
-func TestNewOrlaConfigFromPath_InvalidJSON(t *testing.T) {
+// TestNewOrlaConfigFromPath_InvalidYAML tests loading an invalid YAML config file
+func TestNewOrlaConfigFromPath_InvalidYAML(t *testing.T) {
 	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "orla.json")
+	configPath := filepath.Join(tmpDir, "orla.yaml")
 
-	// Create invalid JSON
+	// Create invalid YAML
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err := os.WriteFile(configPath, []byte("{ invalid json }"), 0644)
+	err := os.WriteFile(configPath, []byte("invalid: yaml: [unclosed"), 0644)
 	require.NoError(t, err)
 
 	// Load config should fail
@@ -244,7 +244,7 @@ func TestNewOrlaConfigFromPath_InvalidJSON(t *testing.T) {
 
 // TestNewOrlaConfigFromPath_NonexistentFile tests loading a non-existent config file
 func TestNewOrlaConfigFromPath_NonexistentFile(t *testing.T) {
-	cfg, err := NewOrlaConfigFromPath("/nonexistent/path/orla.json")
+	cfg, err := NewOrlaConfigFromPath("/nonexistent/path/orla.yaml")
 	assert.Error(t, err)
 	assert.Nil(t, cfg)
 	assert.Contains(t, err.Error(), "failed to read config file")
@@ -253,7 +253,7 @@ func TestNewOrlaConfigFromPath_NonexistentFile(t *testing.T) {
 // TestNewOrlaConfigFromPath_NonexistentToolsDir tests graceful handling when tools directory doesn't exist
 func TestNewOrlaConfigFromPath_NonexistentToolsDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "orla.json")
+	configPath := filepath.Join(tmpDir, "orla.yaml")
 
 	// Create config file with non-existent tools directory
 	config := OrlaConfig{
@@ -261,10 +261,10 @@ func TestNewOrlaConfigFromPath_NonexistentToolsDir(t *testing.T) {
 		Port:     9000,
 	}
 
-	configJSON, err := json.Marshal(config)
+	configYAML, err := yaml.Marshal(config)
 	require.NoError(t, err)
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err = os.WriteFile(configPath, configJSON, 0644)
+	err = os.WriteFile(configPath, configYAML, 0644)
 	require.NoError(t, err)
 
 	// Load config should succeed even if tools directory doesn't exist (graceful degradation)

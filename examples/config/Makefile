@@ -2,7 +2,7 @@
 
 ORLA_BIN ?= ../../bin/orla
 ORLA_TEST_BIN ?= ../../bin/orla-test
-CONFIG ?= orla.json
+CONFIG ?= orla.yaml
 PORT ?= 9090
 
 help:

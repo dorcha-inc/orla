@@ -1,7 +1,0 @@
-{
-  "tools_dir": "./tools",
-  "port": 9090,
-  "timeout": 60,
-  "log_format": "pretty",
-  "log_level": "info"
-}

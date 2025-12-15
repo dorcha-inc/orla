@@ -17,7 +17,7 @@ This example demonstrates how to use orla with a simple configuration file.
    
    Or manually:
    ```bash
-   ../../bin/orla --config orla.json
+   ../../bin/orla --config orla.yaml
    ```
 
 3. Test the tools:
@@ -27,16 +27,14 @@ This example demonstrates how to use orla with a simple configuration file.
 
 ## configuration
 
-The `orla.json` file customizes orla's behavior:
+The `orla.yaml` file customizes orla's behavior:
 
-```json
-{
-  "tools_dir": "./tools",
-  "port": 9090,
-  "timeout": 60,
-  "log_format": "pretty",
-  "log_level": "info"
-}
+```yaml
+tools_dir: ./tools
+port: 9090
+timeout: 60
+log_format: pretty
+log_level: info
 ```
 
 ## why use a config file?

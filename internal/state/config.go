@@ -2,24 +2,24 @@
 package state
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 )
 
 // OrlaConfig represents the orla configuration, including
 // the tools directory, the port to listen on, the timeout
 // for tool executions, the log format, and the log level.
 type OrlaConfig struct {
-	ToolsDir      string         `json:"tools_dir,omitempty"`      // the directory containing the tools
-	ToolsRegistry *ToolsRegistry `json:"tools_registry,omitempty"` // the tools registry
-	Port          int            `json:"port,omitempty"`           // the port to listen on
-	Timeout       int            `json:"timeout,omitempty"`        // the timeout for tool executions in seconds
-	LogFormat     string         `json:"log_format,omitempty"`     // the log format, "json" or "pretty"
-	LogLevel      string         `json:"log_level,omitempty"`      // the log level, "debug", "info", "warn", "error", "fatal"
+	ToolsDir      string         `yaml:"tools_dir,omitempty"`      // the directory containing the tools
+	ToolsRegistry *ToolsRegistry `yaml:"tools_registry,omitempty"` // the tools registry
+	Port          int            `yaml:"port,omitempty"`           // the port to listen on
+	Timeout       int            `yaml:"timeout,omitempty"`        // the timeout for tool executions in seconds
+	LogFormat     string         `yaml:"log_format,omitempty"`     // the log format, "json" or "pretty"
+	LogLevel      string         `yaml:"log_level,omitempty"`      // the log level, "debug", "info", "warn", "error", "fatal"
 }
 
 // NewDefaultOrlaConfig returns a configuration with default values
@@ -44,7 +44,7 @@ func NewDefaultOrlaConfig() (*OrlaConfig, error) {
 	return cfg, nil
 }
 
-// NewOrlaConfigFromPath loads configuration from a JSON file, or returns defaults if no file is provided
+// NewOrlaConfigFromPath loads configuration from a YAML file, or returns defaults if no file is provided
 func NewOrlaConfigFromPath(path string) (*OrlaConfig, error) {
 	// #nosec G304 -- path is provided by user configuration, not user input
 	data, err := os.ReadFile(path)
@@ -53,7 +53,7 @@ func NewOrlaConfigFromPath(path string) (*OrlaConfig, error) {
 	}
 
 	var cfg OrlaConfig
-	if err = json.Unmarshal(data, &cfg); err != nil {
+	if err = yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 

@@ -24,15 +24,15 @@ var _ error = &ToolNotFoundError{}
 
 // ToolEntry represents a tool entry in the configuration
 type ToolEntry struct {
-	Name        string `json:"name"`        // the name of the tool
-	Description string `json:"description"` // the description of the tool
-	Path        string `json:"path"`        // the path to the tool
-	Interpreter string `json:"interpreter"` // the interpreter to use for the tool
+	Name        string `yaml:"name"`        // the name of the tool
+	Description string `yaml:"description"` // the description of the tool
+	Path        string `yaml:"path"`        // the path to the tool
+	Interpreter string `yaml:"interpreter"` // the interpreter to use for the tool
 }
 
 // ToolsRegistry maintains a registry of tools and their entries.
 type ToolsRegistry struct {
-	Tools map[string]*ToolEntry `json:"tools"` // the tools in the registry
+	Tools map[string]*ToolEntry `yaml:"tools"` // the tools in the registry
 }
 
 // NewToolsRegistry creates a new tools registry

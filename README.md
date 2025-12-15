@@ -77,10 +77,10 @@ orla --port 3000
 You can also specify a custom configuration file:
 
 ```bash
-orla --config orla.json
+orla --config orla.yaml
 ```
 
-If no configuration file is specified, orla will automatically check for `orla.json` in the current directory. If not found, default configuration is used.
+If no configuration file is specified, orla will automatically check for `orla.yaml` in the current directory. If not found, default configuration is used.
 
 3. You can hot reload orla, i.e., get it to refresh its tools and configuration without restarting.
 
@@ -90,16 +90,14 @@ kill -HUP $(pgrep orla)
 
 ## configuration
 
-orla works out of the box with zero configuration, but you can customize it with a JSON config file:
+orla works out of the box with zero configuration, but you can customize it with a YAML config file:
 
-```json
-{
-  "tools_dir": "./tools",
-  "port": 8080,
-  "timeout": 30,
-  "log_format": "json",
-  "log_level": "info"
-}
+```yaml
+tools_dir: ./tools
+port: 8080
+timeout: 30
+log_format: json
+log_level: info
 ```
 
 The configuration options for orla are as follows
@@ -116,7 +114,7 @@ The configuration options for orla are as follows
 orla [options]
 
 Options:
-  -config string    Path to orla.json config file
+  -config string    Path to orla.yaml config file
   -port int         Port to listen on (ignored if stdio is used, default: 8080)
   -stdio            Use stdio instead of TCP port
   -pretty           Use pretty-printed logs instead of JSON

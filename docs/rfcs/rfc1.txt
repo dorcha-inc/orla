@@ -187,18 +187,18 @@ Table of Contents
 
 6.2. Configuration File Format
 
-   If a user provides a configuration file, it MUST be in JSON
-   format, following the pattern established by Anthropic's desktop
-   extensions.
+   If a user provides a configuration file, it MUST be in YAML
+   format.  YAML was chosen for its readability, support for
+   comments, and better human-editing experience compared to JSON.
 
 6.3. Configuration File Location
 
    The configuration file MAY be specified via command-line argument:
 
-      orla --config orla.json
+      orla --config orla.yaml
 
    If no configuration file is specified, the runtime MUST check for
-   orla.json in the current directory.  If not found, default
+   orla.yaml in the current directory.  If not found, default
    configuration MUST be used.
 
 6.4. Configuration Options

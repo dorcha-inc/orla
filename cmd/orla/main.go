@@ -27,7 +27,7 @@ type Flags struct {
 // parseFlags parses command-line flags and returns their values
 func parseFlags() Flags {
 	flags := Flags{}
-	flag.StringVar(&flags.configPath, "config", "", "Path to orla.json config file")
+	flag.StringVar(&flags.configPath, "config", "", "Path to orla.yaml config file")
 	flag.IntVar(&flags.portFlag, "port", 0, "Port to listen on (ignored if stdio is used)")
 	flag.BoolVar(&flags.useStdio, "stdio", false, "Use stdio instead of TCP port")
 	flag.BoolVar(&flags.prettyLog, "pretty", false, "Use pretty-printed logs instead of JSON")
@@ -37,13 +37,13 @@ func parseFlags() Flags {
 }
 
 // loadConfig loads configuration from a file path, or returns defaults if path is empty
-// Per RFC 1 section 6.3: if no config path is specified, check for orla.json in current directory
+// Per RFC 1 section 6.3: if no config path is specified, check for orla.yaml in current directory
 func loadConfig(configPath string) (*state.OrlaConfig, error) {
 	if configPath == "" {
-		// Check for orla.json in current directory (RFC 1 section 6.3)
-		if _, err := os.Stat("orla.json"); err == nil {
-			zap.L().Info("Found orla.json in current directory, using it")
-			return state.NewOrlaConfigFromPath("orla.json")
+		// Check for orla.yaml in current directory (RFC 1 section 6.3)
+		if _, err := os.Stat("orla.yaml"); err == nil {
+			zap.L().Info("Found orla.yaml in current directory, using it")
+			return state.NewOrlaConfigFromPath("orla.yaml")
 		}
 		// No config file found, use defaults
 		return state.NewDefaultOrlaConfig()

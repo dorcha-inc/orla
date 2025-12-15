@@ -21,10 +21,10 @@ func TestParseFlags(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 
 	// Test config flag
-	os.Args = []string{"orla", "-config", "/path/to/config.json"}
+	os.Args = []string{"orla", "-config", "/path/to/config.yaml"}
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	flags := parseFlags()
-	assert.Equal(t, "/path/to/config.json", flags.configPath)
+	assert.Equal(t, "/path/to/config.yaml", flags.configPath)
 	assert.False(t, flags.useStdio)
 	assert.False(t, flags.prettyLog)
 	assert.Equal(t, 0, flags.portFlag)
@@ -75,14 +75,13 @@ func TestLoadConfig(t *testing.T) {
 	assert.Equal(t, 30, cfg.Timeout)
 
 	// Test with valid config file
-	configPath := filepath.Join(tmpDir, "orla.json")
-	configContent := `{
-		"tools_dir": "tools",
-		"port": 9090,
-		"timeout": 60,
-		"log_format": "json",
-		"log_level": "info"
-	}`
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+	configContent := `tools_dir: tools
+port: 9090
+timeout: 60
+log_format: json
+log_level: info
+`
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	require.NoError(t, err)
@@ -94,7 +93,7 @@ func TestLoadConfig(t *testing.T) {
 	assert.Equal(t, 60, cfg2.Timeout)
 
 	// Test with non-existent config file
-	_, err = loadConfig("/nonexistent/config.json")
+	_, err = loadConfig("/nonexistent/config.yaml")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read config file")
 }
@@ -271,7 +270,7 @@ func TestTestableMain_ConfigError(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 
 	// Set up flags with non-existent config file
-	os.Args = []string{"orla", "-config", "/nonexistent/config.json"}
+	os.Args = []string{"orla", "-config", "/nonexistent/config.yaml"}
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	ctx := context.Background()
@@ -321,20 +320,19 @@ func TestTestableMain_WithConfigFile(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 
 	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "orla.json")
+	configPath := filepath.Join(tmpDir, "orla.yaml")
 	toolsDir := filepath.Join(tmpDir, "tools")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	err := os.MkdirAll(toolsDir, 0755)
 	require.NoError(t, err)
 
 	// Create a valid config file
-	configContent := `{
-		"tools_dir": "tools",
-		"port": 0,
-		"timeout": 60,
-		"log_format": "json",
-		"log_level": "info"
-	}`
+	configContent := `tools_dir: tools
+port: 0
+timeout: 60
+log_format: json
+log_level: info
+`
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	require.NoError(t, err)

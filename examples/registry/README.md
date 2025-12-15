@@ -18,7 +18,7 @@ This example demonstrates how to populate the tool registry directly from the co
    
    Or manually:
    ```bash
-   ../../bin/orla --config orla.json
+   ../../bin/orla --config orla.yaml
    ```
 
 3. Test the tools:
@@ -28,31 +28,25 @@ This example demonstrates how to populate the tool registry directly from the co
 
 ## configuration
 
-The `orla.json` file defines tools directly in the `tools_registry` field:
+The `orla.yaml` file defines tools directly in the `tools_registry` field:
 
-```json
-{
-  "tools_registry": {
-    "tools": {
-      "echo": {
-        "name": "echo",
-        "description": "Echo a message",
-        "path": "./tools/echo.sh",
-        "interpreter": "/bin/bash"
-      },
-      "date": {
-        "name": "date",
-        "description": "Get current date and time",
-        "path": "./tools/date.sh",
-        "interpreter": "/bin/bash"
-      }
-    }
-  },
-  "port": 8080,
-  "timeout": 30,
-  "log_format": "pretty",
-  "log_level": "info"
-}
+```yaml
+tools_registry:
+  tools:
+    echo:
+      name: echo
+      description: Echo a message
+      path: ./tools/echo.sh
+      interpreter: /bin/bash
+    date:
+      name: date
+      description: Get current date and time
+      path: ./tools/date.sh
+      interpreter: /bin/bash
+port: 8080
+timeout: 30
+log_format: pretty
+log_level: info
 ```
 
 Some key points here:
@@ -76,5 +70,5 @@ Use `tools_registry` directly when you want to:
 ## path resolution
 
 Tool paths in the registry are resolved relative to the config file directory:
-- `./tools/echo.sh` -> relative to `orla.json` location
+- `./tools/echo.sh` -> relative to `orla.yaml` location
 - `/absolute/path/to/tool` -> absolute path (used as-is)

@@ -16,34 +16,17 @@
         },
         "editor.defaultFormatter": "golang.go"
     },
-    // Trigger Task on Save extension configuration
-    // Install extension: "Trigger Task on Save" by Gruntfuggly
-    // This will automatically run the golangci-lint task when you save Go files
-    // The task's problemMatcher will show errors in the Problems panel
-    "triggerTaskOnSave.on": true,
-    "triggerTaskOnSave.tasks": {
-        "golangci-lint: Current Package": [
-            "**/*.go"
-        ]
-    },
-    // Allow automatic tasks (for golangci-lint to run on folder open)
-    "task.allowAutomaticTasks": "on",
-    // Run golangci-lint task automatically
-    "task.autoDetect": "on",
-    // Linting configuration
-    "go.vetOnSave": "workspace",
-    "go.diagnostic.vulncheck": "Imports",
-    // Configure Go extension to use golangci-lint
-    // Note: The Go extension's built-in linting may not show all golangci-lint errors
-    // Use the tasks (golangci-lint task) to see all errors in the Problems panel
-    "go.lintTool": "golangci-lint",
-    "go.lintOnSave": "workspace",
-    "go.lintFlags": [
-        "--timeout=5m"
-    ],
+    // Linting configuration - Use Go extension's built-in golangci-lint v2 support
+    // Use "golangci-lint-v2" for v2.7+ compatibility (avoids --fast flag issue)
+    "go.lintTool": "golangci-lint-v2",
+    "go.lintOnSave": "package",
+    "go.lintFlags": [],
     "go.alternateTools": {
-        "golangci-lint": "/opt/homebrew/bin/golangci-lint"
+        "golangci-lint-v2": "/opt/homebrew/bin/golangci-lint"
     },
+    "go.useLanguageServer": true,
+    "go.vetOnSave": "package",
+    "go.diagnostic.vulncheck": "Imports",
     // Testing
     "go.testFlags": [
         "-v",
@@ -75,7 +58,15 @@
     "gopls": {
         "build.directoryFilters": [
             "-**/node_modules",
-            "-**/.git"
+            "-**/.git",
+            "-**/dist",
+            "-**/build",
+            "-**/bin",
+            "-**/.venv",
+            "-**/__pycache__",
+            "-**/saoirse-electron/node_modules",
+            "-**/saoirse-ios/Pods",
+            "-**/vendor"
         ],
         "ui.completion.usePlaceholders": true,
         "ui.completion.completeUnimported": true,
@@ -128,8 +119,5 @@
     // Editor settings for Go
     "editor.suggest.snippetsPreventQuickSuggestions": false,
     "editor.snippetSuggestions": "top",
-    // Terminal settings
-    "terminal.integrated.env.osx": {
-        "PATH": "${env:PATH}:/opt/homebrew/bin"
-    }
+    "mesonbuild.selectRootDir": false
 }
