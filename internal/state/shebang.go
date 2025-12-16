@@ -2,6 +2,7 @@ package state
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -65,18 +66,16 @@ func NewShebangInvalidPrefixError(path string, line string) *ShebangInvalidPrefi
 // This ensures that ShebangInvalidPrefixError implements the error interface.
 var _ error = &ShebangInvalidPrefixError{}
 
-// ParseShebangFromPath parses the shebang line to determine the interpreter
-func ParseShebangFromPath(path string) (string, error) {
-	// Open the file
-	// #nosec G304 -- path is validated and comes from tool discovery, not direct user input
-	file, err := os.Open(path)
+// ParseShebangFromRoot parses the shebang line from a file using os.Root for secure access
+func ParseShebangFromRoot(root *os.Root, path string) (string, error) {
+	// Read the file using os.Root (automatically prevents path traversal)
+	data, err := root.ReadFile(path)
 	if err != nil {
 		return "", NewShebangFileReadError(path)
 	}
-	defer file.Close() //nolint:errcheck // Ignore close errors - file is already read
 
-	// Read the file
-	scanner := bufio.NewScanner(file)
+	// Read first line from the file data
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Scan()
 	line := scanner.Text()
 

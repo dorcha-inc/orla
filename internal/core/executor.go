@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dorcha-inc/orla/internal/state"
 	"github.com/jonboulle/clockwork"
 )
 
@@ -114,7 +113,7 @@ type OrlaToolExecutionResult struct {
 }
 
 // Execute executes a tool with the given arguments and input
-func (e *OrlaToolExecutor) Execute(ctx context.Context, tool *state.ToolEntry, args []string, stdin string) (*OrlaToolExecutionResult, error) {
+func (e *OrlaToolExecutor) Execute(ctx context.Context, tool *ToolEntry, args []string, stdin string) (*OrlaToolExecutionResult, error) {
 	// Create context with timeout using the clock
 	execCtx, cancel := clockwork.WithTimeout(ctx, e.clock, e.timeout)
 	defer cancel()

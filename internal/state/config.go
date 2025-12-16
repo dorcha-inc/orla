@@ -32,8 +32,13 @@ func NewDefaultOrlaConfig() (*OrlaConfig, error) {
 	}
 
 	toolsDir := "./tools"
-	if err := cfg.SetToolsDir(toolsDir); err != nil {
-		return nil, fmt.Errorf("failed to set tools directory: %w", err)
+	absToolsDir, err := filepath.Abs(toolsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve tools directory path: %w", err)
+	}
+	cfg.ToolsDir = absToolsDir
+	if err := cfg.rebuildToolsRegistry(); err != nil {
+		return nil, fmt.Errorf("failed to create tools registry: %w", err)
 	}
 
 	// Validate configuration values
@@ -76,9 +81,14 @@ func NewOrlaConfigFromPath(path string) (*OrlaConfig, error) {
 		toolsDir = filepath.Clean(toolsDir)
 	}
 
-	// Set tools directory (SetToolsDir will resolve to absolute path)
-	if err := cfg.SetToolsDir(toolsDir); err != nil {
-		return nil, fmt.Errorf("failed to set tools directory from config file: %w", err)
+	// Set tools directory (resolve to absolute path)
+	absToolsDir, err := filepath.Abs(toolsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve tools directory path: %w", err)
+	}
+	cfg.ToolsDir = absToolsDir
+	if err := cfg.rebuildToolsRegistry(); err != nil {
+		return nil, fmt.Errorf("failed to create tools registry: %w", err)
 	}
 
 	// Validate configuration values
@@ -105,13 +115,56 @@ func (cfg *OrlaConfig) SetToolsDir(toolsDir string) error {
 	}
 
 	cfg.ToolsDir = absToolsDir
-	// Rebuild tools registry with the new directory
-	toolsRegistry, err := NewToolsRegistryFromDirectory(absToolsDir)
-	if err != nil {
+	// Rebuild tools registry with the new directory and merge with installed tools
+	if err := cfg.rebuildToolsRegistry(); err != nil {
 		return fmt.Errorf("failed to create tools registry: %w", err)
 	}
-	cfg.ToolsRegistry = toolsRegistry
 	return nil
+}
+
+// rebuildToolsRegistry rebuilds the tools registry from both directory scan and installed tools
+func (cfg *OrlaConfig) rebuildToolsRegistry() error {
+	// Start with directory-scanned tools
+	dirTools, err := ScanToolsFromDirectory(cfg.ToolsDir)
+	if err != nil {
+		return err
+	}
+
+	// Get installed tools directory
+	installDir, err := getInstalledToolsDir()
+	if err != nil {
+		zap.L().Debug("Failed to get installed tools directory, skipping installed tools", zap.Error(err))
+	} else {
+		// Scan installed tools
+		installedTools, err := ScanInstalledTools(installDir)
+		if err != nil {
+			zap.L().Warn("Failed to scan installed tools", zap.Error(err))
+		} else {
+			// Merge installed tools with directory tools
+			// Installed tools take precedence if there's a name conflict
+			for name, tool := range installedTools {
+				if _, exists := dirTools[name]; exists {
+					zap.L().Debug("Tool found in both directory and installed tools, using installed version", zap.String("tool", name))
+				}
+				dirTools[name] = tool
+			}
+		}
+	}
+
+	cfg.ToolsRegistry = &ToolsRegistry{Tools: dirTools}
+	return nil
+}
+
+// getInstalledToolsDir returns the installed tools directory path
+func getInstalledToolsDir() (string, error) {
+	// Import registry package to use its helper
+	// We can't import registry here due to circular dependency risk
+	// So we'll duplicate the logic or use a shared constant
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".orla", "tools"), nil
 }
 
 // validateConfig validates configuration values and sets defaults

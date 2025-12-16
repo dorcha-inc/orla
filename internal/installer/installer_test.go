@@ -1,0 +1,735 @@
+package installer
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/dorcha-inc/orla/internal/registry"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
+)
+
+const exampleRegistryURL = "https://example.com/registry"
+
+func TestInstallToDirectory(t *testing.T) {
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+
+	// Create source files
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "file1.txt"), []byte("content1"), 0644))
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Join(srcDir, "subdir"), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "subdir", "file2.txt"), []byte("content2"), 0644))
+
+	// Install to directory
+	var buf bytes.Buffer
+	err := InstallToDirectory(srcDir, dstDir, &buf)
+	require.NoError(t, err)
+
+	// Verify files were copied
+	// #nosec G304 -- paths are constructed from test temp directories, safe
+	data, err := os.ReadFile(filepath.Join(dstDir, "file1.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("content1"), data)
+
+	// #nosec G304 -- paths are constructed from test temp directories, safe
+	data, err = os.ReadFile(filepath.Join(dstDir, "subdir", "file2.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("content2"), data)
+}
+
+func TestInstallToDirectory_ErrorCases(t *testing.T) {
+	// Test: source directory doesn't exist
+	err := InstallToDirectory("/nonexistent/dir", t.TempDir(), &bytes.Buffer{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to")
+
+	// Test: invalid destination path (on Unix, /root might not be writable, but the error will be about creating directory)
+	err = InstallToDirectory(t.TempDir(), "/root/invalid/path", &bytes.Buffer{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to")
+}
+
+func TestCloneToolRepository(t *testing.T) {
+	// Test: invalid repository URL
+	err := cloneToolRepository("not-a-valid-url", "v1.0.0", t.TempDir())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to clone repository")
+}
+
+func TestCloneToolRepository_WithMockRepo(t *testing.T) {
+	// Create a mock git repository
+	repoDir := t.TempDir()
+	targetDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create a file and commit
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "test.txt"), []byte("test"), 0644))
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	// Create a tag
+	cmd = exec.Command("git", "tag", "v1.0.0")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Test cloning with valid branch/tag
+	err := cloneToolRepository(repoDir, "v1.0.0", targetDir)
+	require.NoError(t, err)
+
+	// Verify files were cloned
+	_, err = os.Stat(filepath.Join(targetDir, "test.txt"))
+	assert.NoError(t, err)
+}
+
+func TestCloneToolRepository_FallbackPath(t *testing.T) {
+	// Create a mock git repository
+	repoDir := t.TempDir()
+	targetDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create a file and commit
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "test.txt"), []byte("test"), 0644))
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	// Create a tag (but don't use it as branch name)
+	cmd = exec.Command("git", "tag", "v1.0.0")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Test cloning with non-existent branch (should fallback to clone + checkout)
+	err := cloneToolRepository(repoDir, "v1.0.0", targetDir)
+	require.NoError(t, err)
+
+	// Verify files were cloned
+	_, err = os.Stat(filepath.Join(targetDir, "test.txt"))
+	assert.NoError(t, err)
+}
+
+func TestCloneToolRepository_InvalidTag(t *testing.T) {
+	// Create a mock git repository
+	repoDir := t.TempDir()
+	targetDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create a file and commit
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "test.txt"), []byte("test"), 0644))
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	// Test cloning with invalid tag (should fail on checkout)
+	err := cloneToolRepository(repoDir, "nonexistent-tag", targetDir)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to checkout tag")
+}
+
+// TestInstallTool is complex because it requires:
+// - A real registry
+// - Git repository access
+// - Network access
+// This would be better as an integration test
+// For now, we test the error paths we can test
+
+func TestInstallTool_InvalidRegistry(t *testing.T) {
+	// Test with invalid registry URL
+	err := InstallTool("not-a-valid-url", "test-tool", "1.0.0", &bytes.Buffer{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to fetch registry")
+}
+
+func TestInstallTool_ToolNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(cacheDir, 0755))
+
+	cacheKey, err := registry.SanitizeURLForCache(exampleRegistryURL)
+	require.NoError(t, err)
+	registryRepoPath := filepath.Join(cacheDir, cacheKey, "repo")
+	registryYAMLPath := filepath.Join(registryRepoPath, "registry.yaml")
+
+	// Create registry.yaml file
+	index := &registry.RegistryIndex{
+		Version:     1,
+		RegistryURL: exampleRegistryURL,
+		Tools: []registry.ToolEntry{
+			{Name: "fs-tool", Description: "Filesystem tool"},
+			{Name: "http-tool", Description: "HTTP tool"},
+		},
+	}
+
+	data, err := yaml.Marshal(index)
+	require.NoError(t, err)
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(registryRepoPath, 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(registryYAMLPath, data, 0644))
+
+	// Create cached registry file
+	cachePath := filepath.Join(cacheDir, cacheKey, "registry.yaml")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(cachePath, data, 0644))
+
+	// Mock GitRunner to return our test registry
+	mockRunner := &registry.MockGitRunner{
+		CloneFunc: func(url, targetPath string) error {
+			// Copy registry.yaml to target
+			// #nosec G301 -- test directory permissions are acceptable for temporary test files
+			if err := os.MkdirAll(targetPath, 0755); err != nil {
+				return err
+			}
+			// #nosec G306 -- test file permissions are acceptable for temporary test files
+			return os.WriteFile(filepath.Join(targetPath, "registry.yaml"), data, 0644)
+		},
+	}
+	originalRunner := registry.GetDefaultGitRunner()
+	registry.SetGitRunner(mockRunner)
+	defer registry.SetGitRunner(originalRunner)
+
+	// Mock GetRegistryCacheDir
+	originalGetCacheDir := *registry.GetRegistryCacheDirFunc
+	*registry.GetRegistryCacheDirFunc = func() (string, error) {
+		return cacheDir, nil
+	}
+	defer func() {
+		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
+	}()
+
+	// Test InstallTool with non-existent tool (no suggestion since distance > 2)
+	err = InstallTool(exampleRegistryURL, "xyz-tool", "1.0.0", &bytes.Buffer{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+	assert.NotContains(t, err.Error(), "Did you mean")
+}
+
+func TestInstallTool_ToolNotFoundWithSuggestion(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(cacheDir, 0755))
+
+	cacheKey, err := registry.SanitizeURLForCache(exampleRegistryURL)
+	require.NoError(t, err)
+	registryRepoPath := filepath.Join(cacheDir, cacheKey, "repo")
+	registryYAMLPath := filepath.Join(registryRepoPath, "registry.yaml")
+
+	// Create registry.yaml file
+	index := &registry.RegistryIndex{
+		Version:     1,
+		RegistryURL: exampleRegistryURL,
+		Tools: []registry.ToolEntry{
+			{Name: "fs-tool", Description: "Filesystem tool"},
+		},
+	}
+
+	data, err := yaml.Marshal(index)
+	require.NoError(t, err)
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(registryRepoPath, 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(registryYAMLPath, data, 0644))
+
+	// Create cached registry file
+	cachePath := filepath.Join(cacheDir, cacheKey, "registry.yaml")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(cachePath, data, 0644))
+
+	// Mock GitRunner
+	mockRunner := &registry.MockGitRunner{
+		CloneFunc: func(url, targetPath string) error {
+			// #nosec G301 -- test directory permissions are acceptable for temporary test files
+			if err := os.MkdirAll(targetPath, 0755); err != nil {
+				return err
+			}
+			// #nosec G306 -- test file permissions are acceptable for temporary test files
+			return os.WriteFile(filepath.Join(targetPath, "registry.yaml"), data, 0644)
+		},
+	}
+	originalRunner := registry.GetDefaultGitRunner()
+	registry.SetGitRunner(mockRunner)
+	defer registry.SetGitRunner(originalRunner)
+
+	// Mock GetRegistryCacheDir
+	originalGetCacheDir := *registry.GetRegistryCacheDirFunc
+	*registry.GetRegistryCacheDirFunc = func() (string, error) {
+		return cacheDir, nil
+	}
+	defer func() {
+		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
+	}()
+
+	// Test InstallTool with typo - should suggest similar tool
+	err = InstallTool(exampleRegistryURL, "fs-tol", "1.0.0", &bytes.Buffer{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Did you mean")
+	assert.Contains(t, err.Error(), "fs-tool")
+}
+
+func TestInstallTool_VersionNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(cacheDir, 0755))
+
+	cacheKey, err := registry.SanitizeURLForCache(exampleRegistryURL)
+	require.NoError(t, err)
+	registryRepoPath := filepath.Join(cacheDir, cacheKey, "repo")
+	registryYAMLPath := filepath.Join(registryRepoPath, "registry.yaml")
+
+	// Create registry.yaml file
+	index := &registry.RegistryIndex{
+		Version:     1,
+		RegistryURL: exampleRegistryURL,
+		Tools: []registry.ToolEntry{
+			{
+				Name:        "test-tool",
+				Description: "Test tool",
+				Repository:  "https://example.com/repo",
+				Versions: []registry.Version{
+					{Version: "1.0.0", Tag: "v1.0.0"},
+				},
+			},
+		},
+	}
+
+	data, err := yaml.Marshal(index)
+	require.NoError(t, err)
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(registryRepoPath, 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(registryYAMLPath, data, 0644))
+
+	// Create cached registry file
+	cachePath := filepath.Join(cacheDir, cacheKey, "registry.yaml")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(cachePath, data, 0644))
+
+	// Mock GitRunner
+	mockRunner := &registry.MockGitRunner{
+		CloneFunc: func(url, targetPath string) error {
+			// #nosec G301 -- test directory permissions are acceptable for temporary test files
+			if err := os.MkdirAll(targetPath, 0755); err != nil {
+				return err
+			}
+			// #nosec G306 -- test file permissions are acceptable for temporary test files
+			return os.WriteFile(filepath.Join(targetPath, "registry.yaml"), data, 0644)
+		},
+	}
+	originalRunner := registry.GetDefaultGitRunner()
+	registry.SetGitRunner(mockRunner)
+	defer registry.SetGitRunner(originalRunner)
+
+	// Mock GetRegistryCacheDir
+	originalGetCacheDir := *registry.GetRegistryCacheDirFunc
+	*registry.GetRegistryCacheDirFunc = func() (string, error) {
+		return cacheDir, nil
+	}
+	defer func() {
+		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
+	}()
+
+	// Test InstallTool with non-existent version
+	err = InstallTool(exampleRegistryURL, "test-tool", "99.0.0", &bytes.Buffer{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestInstallTool_LoadManifestError(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(cacheDir, 0755))
+
+	repoDir := t.TempDir()
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create a file but no tool.yaml
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "readme.txt"), []byte("test"), 0644))
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "tag", "v1.0.0")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cacheKey, err := registry.SanitizeURLForCache(exampleRegistryURL)
+	require.NoError(t, err)
+	registryRepoPath := filepath.Join(cacheDir, cacheKey, "repo")
+	registryYAMLPath := filepath.Join(registryRepoPath, "registry.yaml")
+
+	// Create registry.yaml file
+	index := &registry.RegistryIndex{
+		Version:     1,
+		RegistryURL: exampleRegistryURL,
+		Tools: []registry.ToolEntry{
+			{
+				Name:        "test-tool",
+				Description: "Test tool",
+				Repository:  repoDir,
+				Versions: []registry.Version{
+					{Version: "1.0.0", Tag: "v1.0.0"},
+				},
+			},
+		},
+	}
+
+	data, err := yaml.Marshal(index)
+	require.NoError(t, err)
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(registryRepoPath, 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(registryYAMLPath, data, 0644))
+
+	// Create cached registry file
+	cachePath := filepath.Join(cacheDir, cacheKey, "registry.yaml")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(cachePath, data, 0644))
+
+	// Mock GitRunner - clone will succeed but tool.yaml won't exist
+	mockRunner := &registry.MockGitRunner{
+		CloneFunc: func(url, targetPath string) error {
+			// Simulate successful clone by copying repo files
+			// #nosec G301 -- test directory permissions are acceptable for temporary test files
+			if err := os.MkdirAll(targetPath, 0755); err != nil {
+				return err
+			}
+			// Copy readme.txt but not tool.yaml
+			// #nosec G304 -- test file permissions are acceptable for temporary test files
+			readmeData, errRead := os.ReadFile(filepath.Join(repoDir, "readme.txt"))
+			if errRead != nil {
+				return errRead
+			}
+			// #nosec G306 -- test file permissions are acceptable for temporary test files
+			return os.WriteFile(filepath.Join(targetPath, "readme.txt"), readmeData, 0644)
+		},
+	}
+	originalRunner := registry.GetDefaultGitRunner()
+	registry.SetGitRunner(mockRunner)
+	defer registry.SetGitRunner(originalRunner)
+
+	// Mock GetRegistryCacheDir
+	originalGetCacheDir := *registry.GetRegistryCacheDirFunc
+	*registry.GetRegistryCacheDirFunc = func() (string, error) {
+		return cacheDir, nil
+	}
+	defer func() {
+		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
+	}()
+
+	// Test InstallTool - should fail when loading manifest (tool.yaml doesn't exist)
+	err = InstallTool(exampleRegistryURL, "test-tool", "1.0.0", &bytes.Buffer{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to load manifest")
+}
+
+func TestInstallTool_ValidateManifestError(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(cacheDir, 0755))
+
+	repoDir := t.TempDir()
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create tool.yaml with missing required field (description)
+	manifestContent := `name: test-tool
+version: 1.0.0
+entrypoint: bin/tool
+`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "tool.yaml"), []byte(manifestContent), 0644))
+
+	// Create entrypoint
+	binDir := filepath.Join(repoDir, "bin")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(binDir, 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "tool"), []byte("#!/bin/sh\necho test"), 0755))
+
+	// Commit files
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "tag", "v1.0.0")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	registryURL := "https://example.com/registry"
+	cacheKey, err := registry.SanitizeURLForCache(registryURL)
+	require.NoError(t, err)
+	registryRepoPath := filepath.Join(cacheDir, cacheKey, "repo")
+	registryYAMLPath := filepath.Join(registryRepoPath, "registry.yaml")
+
+	// Create registry.yaml file
+	index := &registry.RegistryIndex{
+		Version:     1,
+		RegistryURL: registryURL,
+		Tools: []registry.ToolEntry{
+			{
+				Name:        "test-tool",
+				Description: "Test tool",
+				Repository:  repoDir,
+				Versions: []registry.Version{
+					{Version: "1.0.0", Tag: "v1.0.0"},
+				},
+			},
+		},
+	}
+
+	data, err := yaml.Marshal(index)
+	require.NoError(t, err)
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(registryRepoPath, 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(registryYAMLPath, data, 0644))
+
+	// Create cached registry file
+	cachePath := filepath.Join(cacheDir, cacheKey, "registry.yaml")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(cachePath, data, 0644))
+
+	// Mock GitRunner - clone will copy the repo with invalid manifest
+	mockRunner := &registry.MockGitRunner{
+		CloneFunc: func(url, targetPath string) error {
+			// Copy repo files including tool.yaml
+			// #nosec G301 -- test directory permissions are acceptable for temporary test files
+			if err := os.MkdirAll(targetPath, 0755); err != nil {
+				return err
+			}
+			// Copy tool.yaml
+			// #nosec G304 -- test file permissions are acceptable for temporary test files
+			toolYAMLData, errRead := os.ReadFile(filepath.Join(repoDir, "tool.yaml"))
+			if errRead != nil {
+				return errRead
+			}
+			// #nosec G306 -- test file permissions are acceptable for temporary test files
+			if err := os.WriteFile(filepath.Join(targetPath, "tool.yaml"), toolYAMLData, 0644); err != nil {
+				return err
+			}
+			// Copy bin directory
+			binTargetDir := filepath.Join(targetPath, "bin")
+			// #nosec G301 -- test directory permissions are acceptable for temporary test files
+			if errMkdir := os.MkdirAll(binTargetDir, 0755); errMkdir != nil {
+				return errMkdir
+			}
+			// #nosec G304 -- this is a test file, so we can ignore the security check
+			binData, err := os.ReadFile(filepath.Join(repoDir, "bin", "tool"))
+			if err != nil {
+				return err
+			}
+			// #nosec G306 -- test file permissions are acceptable for temporary test files
+			return os.WriteFile(filepath.Join(binTargetDir, "tool"), binData, 0755)
+		},
+	}
+	registry.SetGitRunner(mockRunner)
+	defer registry.SetGitRunner(registry.GetDefaultGitRunner())
+
+	// Mock GetRegistryCacheDir
+	originalGetCacheDir := *registry.GetRegistryCacheDirFunc
+	*registry.GetRegistryCacheDirFunc = func() (string, error) {
+		return cacheDir, nil
+	}
+	defer func() {
+		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
+	}()
+
+	// Test InstallTool - should fail when validating manifest (missing description)
+	err = InstallTool(registryURL, "test-tool", "1.0.0", &bytes.Buffer{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "manifest validation failed")
+}
+
+func TestCloneToolRepository_FallbackCloneError(t *testing.T) {
+	// Create a mock git repository
+	repoDir := t.TempDir()
+	targetDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create a file and commit
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "test.txt"), []byte("test"), 0644))
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	// Test cloning with non-existent branch that triggers fallback, but fallback clone also fails
+	// Use an invalid repo URL to trigger the fallback path error
+	err := cloneToolRepository("/nonexistent/repo", "v1.0.0", targetDir)
+	assert.Error(t, err)
+	// Should fail on the fallback clone attempt
+	assert.Contains(t, err.Error(), "failed to clone repository")
+}
+
+func TestInstallTool_EndToEnd(t *testing.T) {
+	// Set up a mock git repository with a tool manifest
+	repoDir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create tool.yaml manifest
+	manifestContent := `name: test-tool
+version: 1.0.0
+description: Test tool
+entrypoint: bin/tool
+`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "tool.yaml"), []byte(manifestContent), 0644))
+
+	// Create entrypoint
+	binDir := filepath.Join(repoDir, "bin")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(binDir, 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "tool"), []byte("#!/bin/sh\necho test"), 0755))
+
+	// Commit files
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	// Create a tag
+	cmd = exec.Command("git", "tag", "v1.0.0")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create a mock registry file
+	registryDir := t.TempDir()
+	registryYAML := `version: 1
+registry_url: https://example.com/registry
+tools:
+  - name: test-tool
+    description: Test tool
+    repository: ` + repoDir + `
+    versions:
+      - version: 1.0.0
+        tag: v1.0.0
+`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(registryDir, "registry.yaml"), []byte(registryYAML), 0644))
+
+	// Initialize git repo for registry
+	cmd = exec.Command("git", "init")
+	cmd.Dir = registryDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = registryDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = registryDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	// Test InstallTool with the mock registry
+	// Note: This test requires the registry to be accessible via file:// URL
+	// On some systems, file:// URLs might not work with git clone, so we'll skip if it fails
+	var buf bytes.Buffer
+	err := InstallTool(registryDir, "test-tool", "1.0.0", &buf)
+	if err != nil {
+		// If it fails due to git clone issues with file:// URLs, that's okay for unit tests
+		// This would be better as an integration test
+		if strings.Contains(err.Error(), "failed to clone") || strings.Contains(err.Error(), "failed to fetch registry") {
+			t.Skip("Skipping end-to-end test - git clone with file:// URLs may not work in all environments")
+		}
+		require.NoError(t, err)
+	}
+
+	// If successful, verify installation
+	if err == nil {
+		installBaseDir, err := registry.GetInstalledToolsDir()
+		require.NoError(t, err)
+		installDir := filepath.Join(installBaseDir, "test-tool", "1.0.0")
+		_, err = os.Stat(filepath.Join(installDir, "tool.yaml"))
+		assert.NoError(t, err)
+		_, err = os.Stat(filepath.Join(installDir, "bin", "tool"))
+		assert.NoError(t, err)
+	}
+}

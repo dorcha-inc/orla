@@ -6,13 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestParseShebangFromPath tests the ParseShebangFromPath function's
+// TestParseShebangFromRoot tests the ParseShebangFromRoot function's
 // primary functionality, i.e. parsing the shebang line to determine the interpreter.
-func TestParseShebangFromPath(t *testing.T) {
+func TestParseShebangFromRoot(t *testing.T) {
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
 
@@ -86,8 +87,13 @@ func TestParseShebangFromPath(t *testing.T) {
 			err := os.WriteFile(testFile, []byte(tt.fileContent), 0644)
 			require.NoError(t, err, "Failed to create test file")
 
-			// Parse shebang
-			interpreter, err := ParseShebangFromPath(testFile)
+			// Open directory as root and parse shebang
+			root, err := os.OpenRoot(tmpDir)
+			require.NoError(t, err)
+			defer core.LogDeferredError(root.Close)
+
+			fileName := filepath.Base(testFile)
+			interpreter, err := ParseShebangFromRoot(root, fileName)
 
 			// Check interpreter
 			assert.Equal(t, tt.wantInterpreter, interpreter, "Interpreter should match")
@@ -116,11 +122,15 @@ func TestParseShebangFromPath(t *testing.T) {
 	}
 }
 
-// TestParseShebangFromPath_NonExistentFile tests the ParseShebangFromPath function's
+// TestParseShebangFromRoot_NonExistentFile tests the ParseShebangFromRoot function's
 // error handling for a non-existent file.
-func TestParseShebangFromPath_NonExistentFile(t *testing.T) {
-	nonExistentFile := "/nonexistent/file/path"
-	interpreter, err := ParseShebangFromPath(nonExistentFile)
+func TestParseShebangFromRoot_NonExistentFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	root, err := os.OpenRoot(tmpDir)
+	require.NoError(t, err)
+	defer core.LogDeferredError(root.Close)
+
+	interpreter, err := ParseShebangFromRoot(root, "nonexistent-file")
 
 	assert.Empty(t, interpreter, "Interpreter should be empty for non-existent file")
 	require.Error(t, err, "Should return error for non-existent file")

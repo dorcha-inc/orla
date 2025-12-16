@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +36,7 @@ func TestNewToolsRegistry(t *testing.T) {
 func TestToolsRegistry_AddTool(t *testing.T) {
 	registry := NewToolsRegistry()
 
-	tool := &ToolEntry{
+	tool := &core.ToolEntry{
 		Name:        "test-tool",
 		Description: "A test tool",
 		Path:        "/path/to/tool",
@@ -55,14 +56,14 @@ func TestToolsRegistry_AddTool(t *testing.T) {
 func TestToolsRegistry_AddTool_Duplicate(t *testing.T) {
 	registry := NewToolsRegistry()
 
-	tool1 := &ToolEntry{
+	tool1 := &core.ToolEntry{
 		Name:        "test-tool",
 		Description: "First tool",
 		Path:        "/path/to/tool1",
 		Interpreter: "",
 	}
 
-	tool2 := &ToolEntry{
+	tool2 := &core.ToolEntry{
 		Name:        "test-tool",
 		Description: "Second tool",
 		Path:        "/path/to/tool2",
@@ -90,7 +91,7 @@ func TestToolsRegistry_AddTool_Duplicate(t *testing.T) {
 func TestToolsRegistry_GetTool(t *testing.T) {
 	registry := NewToolsRegistry()
 
-	tool := &ToolEntry{
+	tool := &core.ToolEntry{
 		Name:        "test-tool",
 		Description: "A test tool",
 		Path:        "/path/to/tool",
@@ -122,21 +123,21 @@ func TestToolsRegistry_ListTools(t *testing.T) {
 	assert.Equal(t, 0, len(tools))
 
 	// Add some tools
-	tool1 := &ToolEntry{
+	tool1 := &core.ToolEntry{
 		Name:        "tool1",
 		Description: "First tool",
 		Path:        "/path/to/tool1",
 		Interpreter: "",
 	}
 
-	tool2 := &ToolEntry{
+	tool2 := &core.ToolEntry{
 		Name:        "tool2",
 		Description: "Second tool",
 		Path:        "/path/to/tool2",
 		Interpreter: "/bin/sh",
 	}
 
-	tool3 := &ToolEntry{
+	tool3 := &core.ToolEntry{
 		Name:        "tool3",
 		Description: "Third tool",
 		Path:        "/path/to/tool3",
@@ -155,7 +156,7 @@ func TestToolsRegistry_ListTools(t *testing.T) {
 	assert.Equal(t, 3, len(tools))
 
 	// Verify all tools are present (order may vary)
-	toolMap := make(map[string]*ToolEntry)
+	toolMap := make(map[string]*core.ToolEntry)
 	for _, tool := range tools {
 		toolMap[tool.Name] = tool
 	}
@@ -225,4 +226,12 @@ func TestNewToolsRegistryFromDirectory_NonexistentDirectory(t *testing.T) {
 	require.NoError(t, err, "Should not return error for non-existent directory (graceful degradation)")
 	assert.NotNil(t, registry, "Should return a registry")
 	assert.Empty(t, registry.ListTools(), "Should have no tools when directory doesn't exist")
+}
+
+// TestDuplicateToolNameError_Error tests the error message formatting
+func TestDuplicateToolNameError_Error(t *testing.T) {
+	err := NewDuplicateToolNameError("test-tool")
+	require.NotNil(t, err)
+	assert.Equal(t, "test-tool", err.Name)
+	assert.Equal(t, "tool with name test-tool already exists", err.Error())
 }

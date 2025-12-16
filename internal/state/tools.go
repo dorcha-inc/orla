@@ -1,6 +1,10 @@
 package state
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/dorcha-inc/orla/internal/core"
+)
 
 // ToolNotFoundError is an error that is returned when a tool is not found
 // in the tools registry.
@@ -22,23 +26,15 @@ func NewToolNotFoundError(name string) *ToolNotFoundError {
 // This ensures that ToolNotFoundError implements the error interface.
 var _ error = &ToolNotFoundError{}
 
-// ToolEntry represents a tool entry in the configuration
-type ToolEntry struct {
-	Name        string `yaml:"name"`        // the name of the tool
-	Description string `yaml:"description"` // the description of the tool
-	Path        string `yaml:"path"`        // the path to the tool
-	Interpreter string `yaml:"interpreter"` // the interpreter to use for the tool
-}
-
 // ToolsRegistry maintains a registry of tools and their entries.
 type ToolsRegistry struct {
-	Tools map[string]*ToolEntry `yaml:"tools"` // the tools in the registry
+	Tools map[string]*core.ToolEntry `yaml:"tools"` // the tools in the registry
 }
 
 // NewToolsRegistry creates a new tools registry
 func NewToolsRegistry() *ToolsRegistry {
 	return &ToolsRegistry{
-		Tools: make(map[string]*ToolEntry),
+		Tools: make(map[string]*core.ToolEntry),
 	}
 }
 
@@ -52,7 +48,7 @@ func NewToolsRegistryFromDirectory(dir string) (*ToolsRegistry, error) {
 }
 
 // AddTool adds a tool to the registry
-func (r *ToolsRegistry) AddTool(tool *ToolEntry) error {
+func (r *ToolsRegistry) AddTool(tool *core.ToolEntry) error {
 	if _, ok := r.Tools[tool.Name]; ok {
 		return NewDuplicateToolNameError(tool.Name)
 	}
@@ -61,7 +57,7 @@ func (r *ToolsRegistry) AddTool(tool *ToolEntry) error {
 }
 
 // GetTool returns a tool from the registry
-func (r *ToolsRegistry) GetTool(name string) (*ToolEntry, error) {
+func (r *ToolsRegistry) GetTool(name string) (*core.ToolEntry, error) {
 	tool, ok := r.Tools[name]
 	if !ok {
 		return nil, NewToolNotFoundError(name)
@@ -70,8 +66,8 @@ func (r *ToolsRegistry) GetTool(name string) (*ToolEntry, error) {
 }
 
 // ListTools returns all tools in the registry
-func (r *ToolsRegistry) ListTools() []*ToolEntry {
-	tools := make([]*ToolEntry, 0, len(r.Tools))
+func (r *ToolsRegistry) ListTools() []*core.ToolEntry {
+	tools := make([]*core.ToolEntry, 0, len(r.Tools))
 	for _, tool := range r.Tools {
 		tools = append(tools, tool)
 	}

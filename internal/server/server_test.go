@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/state"
 )
 
@@ -99,7 +101,7 @@ func TestRebuildServer(t *testing.T) {
 	initialServer := srv.orlaMCPserver
 
 	// Add a new tool to the registry
-	newTool := &state.ToolEntry{
+	newTool := &core.ToolEntry{
 		Name:        "new-tool",
 		Description: "A new tool",
 		Path:        "/path/to/new-tool",
@@ -188,7 +190,7 @@ echo "$name: $message"
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
-	tool := &state.ToolEntry{
+	tool := &core.ToolEntry{
 		Name:        "echo-tool",
 		Description: "Echo tool",
 		Path:        toolPath,
@@ -233,7 +235,7 @@ echo "received: $input"
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
-	tool := &state.ToolEntry{
+	tool := &core.ToolEntry{
 		Name:        "stdin-tool",
 		Description: "Stdin tool",
 		Path:        toolPath,
@@ -273,7 +275,7 @@ func TestHandleToolCall_Error(t *testing.T) {
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
-	tool := &state.ToolEntry{
+	tool := &core.ToolEntry{
 		Name:        "error-tool",
 		Description: "Error tool",
 		Path:        toolPath,
@@ -294,7 +296,7 @@ func TestHandleToolCall_CommandNotFound(t *testing.T) {
 	srv := NewOrlaServer(cfg, "")
 	require.NotNil(t, srv)
 
-	tool := &state.ToolEntry{
+	tool := &core.ToolEntry{
 		Name:        "nonexistent",
 		Description: "Nonexistent tool",
 		Path:        "/nonexistent/path/to/tool",
@@ -514,4 +516,141 @@ func TestServeStdio(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Server did not stop within timeout")
 	}
+}
+
+// TestNewOrlaServer_EmptyToolsDirectory tests server creation with empty tools directory
+func TestNewOrlaServer_EmptyToolsDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	err := os.MkdirAll(toolsDir, 0755)
+	require.NoError(t, err)
+
+	// Create empty registry
+	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
+	require.NoError(t, err)
+
+	cfg := &state.OrlaConfig{
+		ToolsDir:      toolsDir,
+		ToolsRegistry: registry,
+		Port:          8080,
+		Timeout:       30,
+	}
+
+	srv := NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+	assert.NotNil(t, srv.orlaMCPserver)
+	assert.NotNil(t, srv.httpHandler)
+	// Verify no tools were registered (empty directory should log warning)
+	tools := cfg.ToolsRegistry.ListTools()
+	assert.Equal(t, 0, len(tools))
+}
+
+// TestHandleToolCall_Timeout tests tool execution with timeout
+func TestHandleToolCall_Timeout(t *testing.T) {
+	if runtime.GOOS == windowsOS {
+		t.Skip("Skipping tool execution test on Windows")
+	}
+
+	cfg := createTestConfig(t)
+	// Set a very short timeout
+	cfg.Timeout = 1
+	srv := NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+
+	// Create a tool that sleeps longer than timeout
+	tmpDir := t.TempDir()
+	toolPath := filepath.Join(tmpDir, "sleep-tool.sh")
+	toolContent := "#!/bin/sh\nsleep 5\necho done\n"
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
+	require.NoError(t, err)
+
+	tool := &core.ToolEntry{
+		Name:        "sleep-tool",
+		Description: "Sleep tool",
+		Path:        toolPath,
+		Interpreter: "/bin/sh",
+	}
+
+	result, output, err := srv.handleToolCall(context.Background(), tool, map[string]any{})
+	require.NoError(t, err) // handleToolCall doesn't return error, sets IsError instead
+	assert.NotNil(t, result)
+	assert.True(t, result.IsError) // Timeout should set IsError
+	// Output may be nil when executor returns an error
+	if output != nil {
+		assert.Contains(t, output, "error")
+	}
+	// Verify timeout message is included
+	require.GreaterOrEqual(t, len(result.Content), 1)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	assert.Contains(t, textContent.Text, "timed out")
+}
+
+// TestHandleToolCall_WithStderrAndExitCode tests tool execution with stderr and non-zero exit code
+func TestHandleToolCall_WithStderrAndExitCode(t *testing.T) {
+	if runtime.GOOS == windowsOS {
+		t.Skip("Skipping tool execution test on Windows")
+	}
+
+	cfg := createTestConfig(t)
+	srv := NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+
+	// Create a tool that writes to stderr and exits with non-zero code
+	tmpDir := t.TempDir()
+	toolPath := filepath.Join(tmpDir, "error-tool.sh")
+	toolContent := "#!/bin/sh\necho 'error message' >&2\necho 'stdout message'\nexit 42\n"
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
+	require.NoError(t, err)
+
+	tool := &core.ToolEntry{
+		Name:        "error-tool",
+		Description: "Error tool",
+		Path:        toolPath,
+		Interpreter: "/bin/sh",
+	}
+
+	result, output, err := srv.handleToolCall(context.Background(), tool, map[string]any{})
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.NotNil(t, output)
+	assert.True(t, result.IsError) // Non-zero exit code should set IsError
+
+	// Verify stderr is included in content
+	assert.GreaterOrEqual(t, len(result.Content), 2)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	assert.Contains(t, textContent.Text, "stdout message")
+
+	// Check for stderr content
+	foundStderr := false
+	for _, content := range result.Content {
+		if textContent, ok := content.(*mcp.TextContent); ok {
+			if strings.Contains(textContent.Text, "stderr:") {
+				foundStderr = true
+				assert.Contains(t, textContent.Text, "error message")
+			}
+		}
+	}
+	assert.True(t, foundStderr, "stderr should be included in content")
+
+	// Verify exit code is included
+	foundExitCode := false
+	for _, content := range result.Content {
+		if textContent, ok := content.(*mcp.TextContent); ok {
+			if strings.Contains(textContent.Text, "exit_code") {
+				foundExitCode = true
+				assert.Contains(t, textContent.Text, "42")
+			}
+		}
+	}
+	assert.True(t, foundExitCode, "exit_code should be included in content")
+
+	// Verify output structure
+	assert.Equal(t, "stdout message\n", output["stdout"])
+	assert.Contains(t, output["stderr"], "error message")
+	assert.Equal(t, 42, output["exit_code"])
 }

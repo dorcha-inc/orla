@@ -15,8 +15,6 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/dorcha-inc/orla/internal/state"
 )
 
 const windowsOS = "windows"
@@ -53,7 +51,7 @@ func TestExecute_BinarySuccess(t *testing.T) {
 		expectedOutput = "hello world"
 	}
 
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "echo",
 		Path:        toolPath,
 		Interpreter: "", // No interpreter - this is a binary
@@ -83,7 +81,7 @@ func TestExecute_PipeErrors(t *testing.T) {
 	// In practice, pipe creation rarely fails, but the error paths are there
 
 	executor := NewOrlaToolExecutor(10)
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "test",
 		Path:        "/bin/echo",
 		Interpreter: "",
@@ -114,7 +112,7 @@ func TestExecute_ScriptWithInterpreter(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -145,7 +143,7 @@ func TestExecute_WithArgs(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -174,7 +172,7 @@ func TestExecute_WithStdin(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -203,7 +201,7 @@ func TestExecute_NonZeroExitCode(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -234,7 +232,7 @@ func TestExecute_StderrCapture(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -364,7 +362,7 @@ func TestExecute_Timeout(t *testing.T) {
 	mockRunner := &timeoutMockCommandRunner{}
 	executor := NewOrlaToolExecutorWithClockAndRunner(1, fakeClock, mockRunner) // 1 second timeout
 
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "test-tool",
 		Path:        "/fake/path",
 		Interpreter: "",
@@ -410,7 +408,7 @@ func TestExecute_Timeout(t *testing.T) {
 func TestExecute_CommandNotFound(t *testing.T) {
 	executor := NewOrlaToolExecutor(10)
 
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "nonexistent",
 		Path:        "/nonexistent/path/to/command",
 		Interpreter: "",
@@ -442,7 +440,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -489,7 +487,7 @@ func TestExecute_EmptyStdin(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &state.ToolEntry{
+	tool := &ToolEntry{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -500,4 +498,24 @@ func TestExecute_EmptyStdin(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, 0, result.ExitCode)
 	assert.Contains(t, result.Stdout, "success")
+}
+
+// TestStdinPipe tests that StdinPipe can be called on execCommand
+func TestStdinPipe(t *testing.T) {
+	if runtime.GOOS == windowsOS {
+		t.Skip("Skipping StdinPipe test on Windows")
+	}
+
+	runner := &execCommandRunner{}
+	cmd := runner.CommandContext(context.Background(), "/bin/cat")
+	execCmd, ok := cmd.(*execCommand)
+	require.True(t, ok, "Command should be *execCommand")
+
+	// StdinPipe should work before Start
+	stdinPipe, err := execCmd.StdinPipe()
+	require.NoError(t, err)
+	assert.NotNil(t, stdinPipe)
+
+	// Close the pipe
+	require.NoError(t, stdinPipe.Close())
 }

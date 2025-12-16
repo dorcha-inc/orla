@@ -5,174 +5,315 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/dorcha-inc/orla/internal/installer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
-// TestScanToolsFromDirectory tests the ScanToolsFromDirectory function's
-// primary functionality, i.e. scanning the tools directory for executable files.
-func TestScanToolsFromDirectory(t *testing.T) {
-	// Create a temporary directory for test files
+func TestScanInstalledTools(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create test files with different shebangs
-	testFiles := map[string]string{
-		"python-tool.py": "#!/usr/bin/python3\nprint('hello')",
-		"bash-tool.sh":   "#!/bin/bash\necho hello",
-		"sh-tool.sh":     "#!/bin/sh\necho test",
-		"binary-tool":    "\x00\x01\x02\x03", // Binary content
-		"no-shebang.txt": "just some text",
-		"empty-file":     "",
-	}
-
-	for filename, content := range testFiles {
-		filePath := filepath.Join(tmpDir, filename)
-		// #nosec G306 -- test file permissions are acceptable for temporary test files
-		err := os.WriteFile(filePath, []byte(content), 0755)
-		require.NoError(t, err, "Failed to create test file %s", filename)
-	}
-
-	// Create a subdirectory (should be ignored)
-	subDir := filepath.Join(tmpDir, "subdir")
+	// Create tool structure: TOOL-NAME/VERSION/tool.yaml
+	toolDir := filepath.Join(tmpDir, "fs", "0.1.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
-	err := os.Mkdir(subDir, 0755)
-	require.NoError(t, err, "Failed to create subdirectory")
+	require.NoError(t, os.MkdirAll(toolDir, 0755))
 
-	// Scan the directory
-	tools, err := ScanToolsFromDirectory(tmpDir)
-	require.NoError(t, err, "Should scan directory without error")
-
-	// Verify expected tools are found
-	expectedTools := []string{"python-tool", "bash-tool", "sh-tool", "binary-tool", "no-shebang", "empty-file"}
-	assert.Len(t, tools, len(expectedTools), "Should find expected number of tools")
-
-	// Check each expected tool
-	for _, toolName := range expectedTools {
-		tool, ok := tools[toolName]
-		require.True(t, ok, "Should find tool: %s", toolName)
-		assert.Equal(t, toolName, tool.Name, "Tool name should match")
-
-		expectedPath := filepath.Join(tmpDir, toolName+filepath.Ext(tool.Path))
-		assert.True(t, tool.Path == expectedPath || tool.Path == filepath.Join(tmpDir, toolName),
-			"Tool path should contain %s", toolName)
+	// Create tool.yaml
+	manifest := &installer.ToolManifest{
+		Name:        "fs",
+		Version:     "0.1.0",
+		Description: "Filesystem tool",
+		Entrypoint:  "bin/fs",
 	}
 
-	// Verify interpreters are parsed correctly
-	assert.Equal(t, "/usr/bin/python3", tools["python-tool"].Interpreter, "Python tool interpreter should match")
-	assert.Equal(t, "/bin/bash", tools["bash-tool"].Interpreter, "Bash tool interpreter should match")
-	assert.Equal(t, "/bin/sh", tools["sh-tool"].Interpreter, "Sh tool interpreter should match")
+	data, err := yaml.Marshal(manifest)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(toolDir, "tool.yaml"), data, 0644))
 
-	// Binary and non-shebang files should have empty interpreter
-	assert.Empty(t, tools["binary-tool"].Interpreter, "Binary tool should have empty interpreter")
-	assert.Empty(t, tools["no-shebang"].Interpreter, "Non-shebang file should have empty interpreter")
+	// Create entrypoint
+	entrypointPath := filepath.Join(toolDir, "bin", "fs")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Dir(entrypointPath), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(entrypointPath, []byte("#!/bin/sh\necho fs"), 0755))
+
+	// Scan installed tools
+	tools, err := ScanInstalledTools(tmpDir)
+	require.NoError(t, err)
+	assert.Len(t, tools, 1)
+	assert.Contains(t, tools, "fs")
+	assert.Equal(t, "Filesystem tool", tools["fs"].Description)
 }
 
-// TestScanToolsFromDirectory_NonExistentDirectory tests the ScanToolsFromDirectory function's
-// handling for a directory that does not exist. It should return an empty map, not an error,
-// to allow the server to start even if the tools directory doesn't exist yet.
-func TestScanToolsFromDirectory_NonExistentDirectory(t *testing.T) {
-	nonExistentDir := "/nonexistent/directory/path"
-	tools, err := ScanToolsFromDirectory(nonExistentDir)
-
-	require.NoError(t, err, "Should not return error for non-existent directory (graceful degradation)")
-	assert.Empty(t, tools, "Should return empty map for non-existent directory")
-}
-
-// TestScanToolsFromDirectory_EmptyDirectory tests the ScanToolsFromDirectory function's
-// functionality for an empty directory.
-func TestScanToolsFromDirectory_EmptyDirectory(t *testing.T) {
+func TestScanInstalledTools_MultipleVersions(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	tools, err := ScanToolsFromDirectory(tmpDir)
-	require.NoError(t, err, "Should scan empty directory without error")
-	assert.Empty(t, tools, "Should find no tools in empty directory")
+	// Create two versions of the same tool
+	v1Dir := filepath.Join(tmpDir, "fs", "0.1.0")
+	v2Dir := filepath.Join(tmpDir, "fs", "0.2.0")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(v1Dir, 0755))
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(v2Dir, 0755))
+
+	// Create manifests
+	manifest1 := &installer.ToolManifest{
+		Name:        "fs",
+		Version:     "0.1.0",
+		Description: "Filesystem tool v1",
+		Entrypoint:  "bin/fs",
+	}
+	manifest2 := &installer.ToolManifest{
+		Name:        "fs",
+		Version:     "0.2.0",
+		Description: "Filesystem tool v2",
+		Entrypoint:  "bin/fs",
+	}
+
+	data1, err := yaml.Marshal(manifest1)
+	require.NoError(t, err)
+	data2, err := yaml.Marshal(manifest2)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(v1Dir, "tool.yaml"), data1, 0644))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(v2Dir, "tool.yaml"), data2, 0644))
+
+	// Create entrypoints
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Join(v1Dir, "bin"), 0755))
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Join(v2Dir, "bin"), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(v1Dir, "bin", "fs"), []byte("#!/bin/sh"), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(v2Dir, "bin", "fs"), []byte("#!/bin/sh"), 0755))
+
+	// Scan installed tools - should prefer latest version
+	tools, err := ScanInstalledTools(tmpDir)
+	require.NoError(t, err)
+	assert.Len(t, tools, 1)
+	// Should use the newer version (0.2.0)
+	assert.Equal(t, "Filesystem tool v2", tools["fs"].Description)
 }
 
-// TestScanToolsFromDirectory_ToolNameExtraction tests the ScanToolsFromDirectory function's
-// functionality for extracting the tool name from the file name. While we also test this
-// for simpler cases in the TestScanToolsFromDirectory function, we want to test this
-// in a more comprehensive way here.
-func TestScanToolsFromDirectory_ToolNameExtraction(t *testing.T) {
+func TestScanInstalledTools_EmptyDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	tools, err := ScanInstalledTools(tmpDir)
+	require.NoError(t, err)
+	assert.Empty(t, tools)
+}
+
+func TestScanInstalledTools_NonexistentDirectory(t *testing.T) {
+	tools, err := ScanInstalledTools("/nonexistent/directory")
+	require.NoError(t, err) // Should return empty map, not error
+	assert.Empty(t, tools)
+}
+
+func TestScanInstalledTools_NotADirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "notadir")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filePath, []byte("not a directory"), 0644))
+
+	tools, err := ScanInstalledTools(filePath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not a directory")
+	assert.Nil(t, tools)
+}
+
+func TestScanInstalledTools_InvalidManifest(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	testCases := []struct {
-		filename string
-		wantName string
-		content  string
+	// Create tool directory with invalid manifest
+	toolDir := filepath.Join(tmpDir, "fs", "0.1.0")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolDir, 0755))
+
+	// Create invalid YAML
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(toolDir, "tool.yaml"), []byte("invalid: yaml: content"), 0644))
+
+	// Scan should skip invalid manifests and return empty map
+	tools, err := ScanInstalledTools(tmpDir)
+	require.NoError(t, err)
+	assert.Empty(t, tools) // Invalid manifest should be skipped
+}
+
+func TestScanInstalledTools_ManifestValidationFailed(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create tool directory with manifest that fails validation
+	toolDir := filepath.Join(tmpDir, "fs", "0.1.0")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolDir, 0755))
+
+	// Create manifest with missing required field (description)
+	manifest := &installer.ToolManifest{
+		Name:       "fs",
+		Version:    "0.1.0",
+		Entrypoint: "bin/fs",
+		// Missing Description - should fail validation
+	}
+
+	data, err := yaml.Marshal(manifest)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(toolDir, "tool.yaml"), data, 0644))
+
+	// Scan should skip invalid manifests and return empty map
+	tools, err := ScanInstalledTools(tmpDir)
+	require.NoError(t, err)
+	assert.Empty(t, tools) // Invalid manifest should be skipped
+}
+
+func TestScanInstalledTools_EntrypointNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create tool directory with manifest but missing entrypoint
+	toolDir := filepath.Join(tmpDir, "fs", "0.1.0")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolDir, 0755))
+
+	// Create valid manifest
+	manifest := &installer.ToolManifest{
+		Name:        "fs",
+		Version:     "0.1.0",
+		Description: "Filesystem tool",
+		Entrypoint:  "bin/fs", // Entrypoint doesn't exist
+	}
+
+	data, err := yaml.Marshal(manifest)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(toolDir, "tool.yaml"), data, 0644))
+
+	// Scan should skip tools with missing entrypoints
+	tools, err := ScanInstalledTools(tmpDir)
+	require.NoError(t, err)
+	assert.Empty(t, tools) // Missing entrypoint should be skipped
+}
+
+func TestGetVersionFromPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		setup       func() (toolPath string, installDirPath string)
+		want        string
+		wantErr     bool
+		errContains string
 	}{
-		{"tool.sh", "tool", "#!/bin/bash"},
-		{"my-tool.py", "my-tool", "#!/usr/bin/python3"},
-		{"complex.tool.name.js", "complex.tool.name", "#!/usr/bin/node"},
-		{"noextension", "noextension", "#!/bin/sh"},
+		{
+			name: "valid path",
+			setup: func() (string, string) {
+				tmpDir := t.TempDir()
+				installDir := filepath.Join(tmpDir, "tools")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(installDir, 0755))
+				toolPath := filepath.Join(installDir, "fs", "0.1.0", "bin", "fs")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(filepath.Dir(toolPath), 0755))
+				// #nosec G306 -- test file permissions are acceptable for temporary test files
+				require.NoError(t, os.WriteFile(toolPath, []byte("test"), 0644))
+				return toolPath, installDir
+			},
+			want:    "0.1.0",
+			wantErr: false,
+		},
+		{
+			name: "path with less than 2 parts",
+			setup: func() (string, string) {
+				tmpDir := t.TempDir()
+				installDir := filepath.Join(tmpDir, "tools")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(installDir, 0755))
+				toolPath := filepath.Join(installDir, "fs")
+				// #nosec G306 -- test file permissions are acceptable for temporary test files
+				require.NoError(t, os.WriteFile(toolPath, []byte("test"), 0644))
+				return toolPath, installDir
+			},
+			want:        "",
+			wantErr:     true,
+			errContains: "not within install directory",
+		},
+		{
+			name: "nested path",
+			setup: func() (string, string) {
+				tmpDir := t.TempDir()
+				installDir := filepath.Join(tmpDir, "tools")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(installDir, 0755))
+				toolPath := filepath.Join(installDir, "fs", "0.2.0", "bin", "subdir", "tool")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(filepath.Dir(toolPath), 0755))
+				// #nosec G306 -- test file permissions are acceptable for temporary test files
+				require.NoError(t, os.WriteFile(toolPath, []byte("test"), 0644))
+				return toolPath, installDir
+			},
+			want:    "0.2.0",
+			wantErr: false,
+		},
+		{
+			name: "path outside install directory",
+			setup: func() (string, string) {
+				tmpDir := t.TempDir()
+				installDir := filepath.Join(tmpDir, "tools")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(installDir, 0755))
+				otherDir := filepath.Join(tmpDir, "other")
+				toolPath := filepath.Join(otherDir, "fs", "0.1.0", "bin", "fs")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(filepath.Dir(toolPath), 0755))
+				// #nosec G306 -- test file permissions are acceptable for temporary test files
+				require.NoError(t, os.WriteFile(toolPath, []byte("test"), 0644))
+				return toolPath, installDir
+			},
+			want:        "",
+			wantErr:     true,
+			errContains: "not within install directory",
+		},
+		{
+			name: "path with parent directory traversal",
+			setup: func() (string, string) {
+				tmpDir := t.TempDir()
+				installDir := filepath.Join(tmpDir, "tools")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(installDir, 0755))
+				// Create a path that would escape via ".."
+				otherDir := filepath.Join(tmpDir, "other")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(otherDir, 0755))
+				// Use a path that resolves outside installDir
+				toolPath := filepath.Join(installDir, "..", "other", "fs", "0.1.0", "bin", "fs")
+				// Resolve to absolute to test the actual resolved path
+				absToolPath, err := filepath.Abs(toolPath)
+				require.NoError(t, err)
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(filepath.Dir(absToolPath), 0755))
+				// #nosec G306 -- test file permissions are acceptable for temporary test files
+				require.NoError(t, os.WriteFile(absToolPath, []byte("test"), 0644))
+				return absToolPath, installDir
+			},
+			want:        "",
+			wantErr:     true,
+			errContains: "not within install directory",
+		},
 	}
 
-	for _, tc := range testCases {
-		filePath := filepath.Join(tmpDir, tc.filename)
-		// #nosec G306 -- test file permissions are acceptable for temporary test files
-		err := os.WriteFile(filePath, []byte(tc.content), 0755)
-		require.NoError(t, err, "Failed to create test file %s", tc.filename)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			toolPath, installDirPath := tt.setup()
+			got, err := getVersionFromPath(toolPath, installDirPath)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
 	}
-
-	tools, err := ScanToolsFromDirectory(tmpDir)
-	require.NoError(t, err, "Should scan directory without error")
-
-	for _, tc := range testCases {
-		tool, ok := tools[tc.wantName]
-		require.True(t, ok, "Should find tool: %s", tc.wantName)
-		assert.Equal(t, tc.wantName, tool.Name, "Tool name should match")
-	}
-}
-
-// TestScanToolsFromDirectory_DuplicateNames tests the ScanToolsFromDirectory function's
-// functionality for handling duplicate tool names.
-func TestScanToolsFromDirectory_DuplicateNames(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create files with same name but different extensions
-	files := map[string]string{
-		"tool.sh": "#!/bin/bash",
-		"tool.py": "#!/usr/bin/python3",
-	}
-
-	for filename, content := range files {
-		filePath := filepath.Join(tmpDir, filename)
-		// #nosec G306 -- test file permissions are acceptable for temporary test files
-		err := os.WriteFile(filePath, []byte(content), 0755)
-		require.NoError(t, err, "Failed to create test file %s", filename)
-	}
-
-	_, err := ScanToolsFromDirectory(tmpDir)
-	// We expect a DuplicateToolNameError error
-	var duplicateToolNameErr *DuplicateToolNameError
-	assert.ErrorAs(t, err, &duplicateToolNameErr, "Should be DuplicateToolNameError")
-	assert.Equal(t, "tool", duplicateToolNameErr.Name, "Duplicate tool name should be 'tool'")
-
-	// Test Error() method to get coverage
-	assert.Contains(t, duplicateToolNameErr.Error(), "tool with name tool already exists")
-}
-
-// TestScanToolsFromDirectory_NonExecutableFiles tests that non-executable files are skipped
-func TestScanToolsFromDirectory_NonExecutableFiles(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create an executable file
-	executablePath := filepath.Join(tmpDir, "executable.sh")
-	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err := os.WriteFile(executablePath, []byte("#!/bin/sh\necho hello"), 0755)
-	require.NoError(t, err, "Failed to create executable file")
-
-	// Create a non-executable file (mode 0644)
-	nonExecutablePath := filepath.Join(tmpDir, "non-executable.sh")
-	// #nosec G306 -- test file permissions are acceptable for temporary test files
-	err = os.WriteFile(nonExecutablePath, []byte("#!/bin/sh\necho hello"), 0644)
-	require.NoError(t, err, "Failed to create non-executable file")
-
-	// Scan the directory
-	tools, err := ScanToolsFromDirectory(tmpDir)
-	require.NoError(t, err, "Should scan directory without error")
-
-	// Should only find the executable file
-	assert.Len(t, tools, 1, "Should find only executable file")
-	assert.Contains(t, tools, "executable", "Should find executable tool")
-	assert.NotContains(t, tools, "non-executable", "Should not find non-executable file")
 }

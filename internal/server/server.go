@@ -97,7 +97,7 @@ func (o *OrlaServer) rebuildServer() {
 }
 
 // registerTool registers a single tool with the MCP server
-func (o *OrlaServer) registerTool(tool *state.ToolEntry) {
+func (o *OrlaServer) registerTool(tool *core.ToolEntry) {
 	// Create a handler function for this tool using map[string]any for input
 	// Wrap with panic recovery at the handler boundary since this is the single point
 	// where we can return proper MCP error responses
@@ -136,7 +136,7 @@ func (o *OrlaServer) registerTool(tool *state.ToolEntry) {
 // handleToolCall handles a tool execution request
 func (o *OrlaServer) handleToolCall(
 	ctx context.Context,
-	tool *state.ToolEntry,
+	tool *core.ToolEntry,
 	input map[string]any,
 ) (*mcp.CallToolResult, map[string]any, error) {
 

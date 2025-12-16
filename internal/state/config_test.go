@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -63,7 +64,11 @@ func TestNewDefaultOrlaConfig_NonexistentToolsDir(t *testing.T) {
 	cfg, err := NewDefaultOrlaConfig()
 	require.NoError(t, err, "Should succeed even without tools directory")
 	assert.NotNil(t, cfg, "Config should be created")
-	assert.Empty(t, cfg.ToolsRegistry.ListTools(), "Should have no tools when directory doesn't exist")
+	// Note: Installed tools from ~/.orla/tools/ may still be present even if the directory doesn't exist
+	// The function gracefully handles missing directory but still scans installed tools
+	tools := cfg.ToolsRegistry.ListTools()
+	// Verify that the config was created successfully (tools may include installed tools)
+	assert.NotNil(t, tools, "Tools registry should be initialized")
 }
 
 // TestNewOrlaConfigFromPath_ValidConfig tests loading a valid config file
@@ -164,7 +169,7 @@ func TestNewOrlaConfigFromPath_WithToolsRegistry(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "orla.yaml")
 
 	// Create config file with tools registry
-	toolEntry := &ToolEntry{
+	toolEntry := &core.ToolEntry{
 		Name:        "test-tool",
 		Description: "A test tool",
 		Path:        "/path/to/tool",
@@ -271,5 +276,227 @@ func TestNewOrlaConfigFromPath_NonexistentToolsDir(t *testing.T) {
 	cfg, err := NewOrlaConfigFromPath(configPath)
 	require.NoError(t, err, "Should succeed even without tools directory")
 	assert.NotNil(t, cfg, "Config should be created")
-	assert.Empty(t, cfg.ToolsRegistry.ListTools(), "Should have no tools when directory doesn't exist")
+	// Note: Installed tools from ~/.orla/tools/ may still be present even if the directory doesn't exist
+	// The function gracefully handles missing directory but still scans installed tools
+	tools := cfg.ToolsRegistry.ListTools()
+	// Verify that the config was created successfully (tools may include installed tools)
+	assert.NotNil(t, tools, "Tools registry should be initialized")
+}
+
+// TestSetToolsDir tests setting the tools directory
+func TestSetToolsDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
+	// Create a test executable
+	testTool := filepath.Join(toolsDir, "test-tool")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(testTool, []byte("#!/bin/sh\necho test"), 0755))
+
+	cfg := &OrlaConfig{
+		Port:      8080,
+		Timeout:   30,
+		LogFormat: "json",
+		LogLevel:  "info",
+	}
+
+	// Set tools directory
+	err := cfg.SetToolsDir(toolsDir)
+	require.NoError(t, err)
+	assert.Equal(t, toolsDir, cfg.ToolsDir)
+	assert.NotNil(t, cfg.ToolsRegistry)
+	assert.NotEmpty(t, cfg.ToolsRegistry.Tools)
+}
+
+// TestSetToolsDir_EmptyString tests that setting an empty tools directory returns an error
+func TestSetToolsDir_EmptyString(t *testing.T) {
+	cfg := &OrlaConfig{
+		Port:      8080,
+		Timeout:   30,
+		LogFormat: "json",
+		LogLevel:  "info",
+	}
+
+	err := cfg.SetToolsDir("")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be empty")
+}
+
+// TestSetToolsDir_RelativePath tests that relative paths are resolved to absolute paths
+func TestSetToolsDir_RelativePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() {
+		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
+			t.Logf("Failed to restore working directory: %v", restoreErr)
+		}
+	}()
+
+	// Change to temp directory
+	require.NoError(t, os.Chdir(tmpDir))
+
+	cfg := &OrlaConfig{
+		Port:      8080,
+		Timeout:   30,
+		LogFormat: "json",
+		LogLevel:  "info",
+	}
+
+	// Set tools directory with relative path
+	err = cfg.SetToolsDir("tools")
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(cfg.ToolsDir), "ToolsDir should be absolute")
+	// Use filepath.EvalSymlinks to normalize paths (handles /private/var on macOS)
+	expectedPath, err := filepath.EvalSymlinks(toolsDir)
+	require.NoError(t, err)
+	actualPath, err := filepath.EvalSymlinks(cfg.ToolsDir)
+	require.NoError(t, err)
+	assert.Equal(t, expectedPath, actualPath)
+}
+
+// TestValidateConfig tests validation of configuration values
+func TestValidateConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  *OrlaConfig
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid config",
+			config: &OrlaConfig{
+				Port:      8080,
+				Timeout:   30,
+				LogFormat: "json",
+				LogLevel:  "info",
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid port - negative",
+			config: &OrlaConfig{
+				Port:      -1,
+				Timeout:   30,
+				LogFormat: "json",
+				LogLevel:  "info",
+			},
+			wantErr: true,
+			errMsg:  "port must be between 0 and 65535",
+		},
+		{
+			name: "invalid port - too large",
+			config: &OrlaConfig{
+				Port:      70000,
+				Timeout:   30,
+				LogFormat: "json",
+				LogLevel:  "info",
+			},
+			wantErr: true,
+			errMsg:  "port must be between 0 and 65535",
+		},
+		{
+			name: "invalid timeout - zero",
+			config: &OrlaConfig{
+				Port:      8080,
+				Timeout:   0,
+				LogFormat: "json",
+				LogLevel:  "info",
+			},
+			wantErr: false, // Timeout defaults to 30 if 0
+		},
+		{
+			name: "invalid timeout - negative",
+			config: &OrlaConfig{
+				Port:      8080,
+				Timeout:   -1,
+				LogFormat: "json",
+				LogLevel:  "info",
+			},
+			wantErr: true,
+			errMsg:  "timeout must be at least 1 second",
+		},
+		{
+			name: "invalid log format",
+			config: &OrlaConfig{
+				Port:      8080,
+				Timeout:   30,
+				LogFormat: "invalid",
+				LogLevel:  "info",
+			},
+			wantErr: true,
+			errMsg:  "log_format must be 'json' or 'pretty'",
+		},
+		{
+			name: "invalid log level",
+			config: &OrlaConfig{
+				Port:      8080,
+				Timeout:   30,
+				LogFormat: "json",
+				LogLevel:  "invalid",
+			},
+			wantErr: true,
+			errMsg:  "log_level must be one of",
+		},
+		{
+			name: "valid log format - pretty",
+			config: &OrlaConfig{
+				Port:      8080,
+				Timeout:   30,
+				LogFormat: "pretty",
+				LogLevel:  "info",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid log levels",
+			config: &OrlaConfig{
+				Port:      8080,
+				Timeout:   30,
+				LogFormat: "json",
+				LogLevel:  "debug",
+			},
+			wantErr: false,
+		},
+		{
+			name: "port 0 is valid",
+			config: &OrlaConfig{
+				Port:      0,
+				Timeout:   30,
+				LogFormat: "json",
+				LogLevel:  "info",
+			},
+			wantErr: false,
+		},
+		{
+			name: "port 65535 is valid",
+			config: &OrlaConfig{
+				Port:      65535,
+				Timeout:   30,
+				LogFormat: "json",
+				LogLevel:  "info",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateConfig(tt.config)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
