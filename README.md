@@ -148,7 +148,7 @@ make test
 
 ## community + contributions
 
-Contributions are very welcome! orla is an open-source project and runs on individual contributions from amazing people around the world. Contributions are welcome! For feature requests, bug reports, or usage problems, please feel free to create an issue. For more extensive contributions, check the [contribution gyude](CONTRIBUTING.md). 
+Contributions are very welcome! orla is an open-source project and runs on individual contributions from amazing people around the world. Contributions are welcome! For feature requests, bug reports, or usage problems, please feel free to create an issue. For more extensive contributions, check the [contribution guide](CONTRIBUTING.md). 
 
 Join other orla users and developers on the following platforms:
 
