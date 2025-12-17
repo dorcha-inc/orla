@@ -37,3 +37,5 @@ bin/
 
 # Git hooks (installed from .githooks/)
 .git/hooks/pre-commit
+
+.DS_Store

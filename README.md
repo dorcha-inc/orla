@@ -1,7 +1,8 @@
-# orla
+<div align="center">
+  <img src="share/orla_canva.png"></img>
+</div>
 
-<img src="share/orla_gemini_upscaled.png" alt="orla logo" width="128">
-
+---
 [![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?style=flat&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/dorcha-inc/orla)](https://goreportcard.com/report/github.com/dorcha-inc/orla)
@@ -9,15 +10,21 @@
 [![Lint](https://github.com/dorcha-inc/orla/actions/workflows/lint.yml/badge.svg)](https://github.com/dorcha-inc/orla/actions/workflows/lint.yml)
 [![Build](https://github.com/dorcha-inc/orla/actions/workflows/build.yml/badge.svg)](https://github.com/dorcha-inc/orla/actions/workflows/build.yml)
 [![Coverage](https://codecov.io/gh/dorcha-inc/orla/branch/main/graph/badge.svg)](https://codecov.io/gh/dorcha-inc/orla)
+---
 
 orla is a runtime for model context protocol ([MCP](https://modelcontextprotocol.io/docs/getting-started/intro)) servers that automatically discovers and executes tools from the filesystem. Just drop executable files in a `tools/` directory and orla makes them available as MCP tools! No configuration required.
 
-> To see all the amazing folks who have taken their time to contribute something cool to orla, please take a look at [CONTRIBUTORS.md](CONTRIBUTORS.md).
+All the amazing folks who have taken their time to contribute something cool to orla are listed in [CONTRIBUTORS.md](CONTRIBUTORS.md). 
 
-Join other orla users and developers on our discord. 
+## quick links
 
-[![Discord](https://img.shields.io/badge/Discord-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/QawsSFnR)
-
+- [Getting Started](#getting-started)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Command Line Options](#command-line-options)
+- [Community + Contributions](#community--contributions)
+- [Roadmap](#roadmap)
+- [Integration Guides](#integration-guides)
 
 ## getting started
 
@@ -108,7 +115,7 @@ The configuration options for orla are as follows
 - `log_format`: `"json"` or `"pretty"` (default: `"json"`)
 - `log_level`: `"debug"`, `"info"`, `"warn"`, `"error"`, or `"fatal"` (default: `"info"`)
 
-## command Line Options
+## command line options
 
 ```bash
 orla [options]
@@ -120,11 +127,7 @@ Options:
   -pretty           Use pretty-printed logs instead of JSON
 ```
 
-## development
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
-
-### git hooks
+## git hooks
 
 orla includes pre-commit hooks for secret detection, linting, and testing. to enable them, run this once:
 
@@ -134,7 +137,7 @@ git config core.hooksPath .githooks
 
 this configures git to automatically use hooks from `.githooks/` - no setup script needed!
 
-### testing
+## testing
 
 orla comes with extensive tests which can be run using
 
@@ -142,14 +145,20 @@ orla comes with extensive tests which can be run using
 make test
 ```
 
-### roadmap
+
+## community + contributions
+
+Contributions are very welcome! orla is an open-source project and runs on individual contributions from amazing people around the world. Contributions are welcome! For feature requests, bug reports, or usage problems, please feel free to create an issue. For more extensive contributions, check the [contribution gyude](CONTRIBUTING.md). 
+
+Join other orla users and developers on the following platforms:
+
+[![Discord](https://img.shields.io/badge/Discord-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/QawsSFnR)
+[![GitHub issues](https://img.shields.io/github/issues/dorcha-inc/orla)](https://github.com/dorcha-inc/orla/issues)
+
+## roadmap
 
 See the RFCs in `docs/rfcs/` for the full vision and roadmap.
 
-### integration guides
+## integration guides
 
 - [Claude Desktop Integration](docs/integrations/claude-desktop.md)
-
-### contributing
-
-Thank you so much for considering contributing to orla! orla is an open-source project and runs on individual contributions from amazing people around the world. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
