@@ -182,6 +182,18 @@ func TestSanitizeURLForCache(t *testing.T) {
 	assert.Contains(t, err.Error(), "missing host")
 }
 
+func TestSanitizeURLForCache_Exported(t *testing.T) {
+	// Test the exported function (wrapper around sanitizeURLForCache)
+	key, err := SanitizeURLForCache("https://github.com/user/repo")
+	require.NoError(t, err)
+	assert.NotEmpty(t, key)
+	assert.Len(t, key, 64)
+
+	// Test error case
+	_, err = SanitizeURLForCache("invalid-url")
+	assert.Error(t, err)
+}
+
 func TestLoadCachedRegistry(t *testing.T) {
 	tmpDir := t.TempDir()
 	cachePath := filepath.Join(tmpDir, "registry.yaml")

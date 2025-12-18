@@ -235,3 +235,16 @@ func TestDuplicateToolNameError_Error(t *testing.T) {
 	assert.Equal(t, "test-tool", err.Name)
 	assert.Equal(t, "tool with name test-tool already exists", err.Error())
 }
+
+// TestNewToolsRegistryFromDirectory_NotADirectory tests error when path is not a directory
+func TestNewToolsRegistryFromDirectory_NotADirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "notadir")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filePath, []byte("not a directory"), 0644))
+
+	registry, err := NewToolsRegistryFromDirectory(filePath)
+	assert.Error(t, err)
+	assert.Nil(t, registry)
+	assert.Contains(t, err.Error(), "not a directory")
+}

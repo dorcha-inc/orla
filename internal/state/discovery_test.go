@@ -299,6 +299,24 @@ func TestGetVersionFromPath(t *testing.T) {
 			wantErr:     true,
 			errContains: "not within install directory",
 		},
+		{
+			name: "invalid semver version",
+			setup: func() (string, string) {
+				tmpDir := t.TempDir()
+				installDir := filepath.Join(tmpDir, "tools")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(installDir, 0755))
+				toolPath := filepath.Join(installDir, "fs", "invalid-version", "bin", "fs")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(filepath.Dir(toolPath), 0755))
+				// #nosec G306 -- test file permissions are acceptable for temporary test files
+				require.NoError(t, os.WriteFile(toolPath, []byte("test"), 0644))
+				return toolPath, installDir
+			},
+			want:        "",
+			wantErr:     true,
+			errContains: "invalid version",
+		},
 	}
 
 	for _, tt := range tests {
@@ -316,4 +334,123 @@ func TestGetVersionFromPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestScanToolsFromDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
+	// Create executable files
+	tool1 := filepath.Join(toolsDir, "tool1.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(tool1, []byte("#!/bin/sh\necho tool1"), 0755))
+
+	tool2 := filepath.Join(toolsDir, "tool2.py")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(tool2, []byte("#!/usr/bin/python3\nprint('tool2')"), 0755))
+
+	// Scan tools
+	tools, err := ScanToolsFromDirectory(toolsDir)
+	require.NoError(t, err)
+	assert.Len(t, tools, 2)
+	assert.Contains(t, tools, "tool1")
+	assert.Contains(t, tools, "tool2")
+}
+
+func TestScanToolsFromDirectory_EmptyDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
+	tools, err := ScanToolsFromDirectory(toolsDir)
+	require.NoError(t, err)
+	assert.Empty(t, tools)
+}
+
+func TestScanToolsFromDirectory_NonexistentDirectory(t *testing.T) {
+	tools, err := ScanToolsFromDirectory("/nonexistent/directory")
+	require.NoError(t, err) // Should return empty map, not error
+	assert.Empty(t, tools)
+}
+
+func TestScanToolsFromDirectory_NotADirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "notadir")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filePath, []byte("not a directory"), 0644))
+
+	tools, err := ScanToolsFromDirectory(filePath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not a directory")
+	assert.Nil(t, tools)
+}
+
+func TestScanToolsFromDirectory_DuplicateToolName(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
+	// Create two files with the same base name (different extensions)
+	tool1 := filepath.Join(toolsDir, "mytool.sh")
+	tool2 := filepath.Join(toolsDir, "mytool.py")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(tool1, []byte("#!/bin/sh"), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(tool2, []byte("#!/usr/bin/python3"), 0755))
+
+	// Should return error for duplicate tool name
+	tools, err := ScanToolsFromDirectory(toolsDir)
+	assert.Error(t, err)
+	assert.Nil(t, tools)
+	var dupErr *DuplicateToolNameError
+	assert.ErrorAs(t, err, &dupErr)
+	assert.Equal(t, "mytool", dupErr.Name)
+}
+
+func TestScanToolsFromDirectory_NonExecutableFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
+	// Create non-executable file
+	nonExec := filepath.Join(toolsDir, "readme.txt")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(nonExec, []byte("readme content"), 0644))
+
+	// Create executable file
+	execTool := filepath.Join(toolsDir, "tool.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(execTool, []byte("#!/bin/sh"), 0755))
+
+	// Should only find executable file
+	tools, err := ScanToolsFromDirectory(toolsDir)
+	require.NoError(t, err)
+	assert.Len(t, tools, 1)
+	assert.Contains(t, tools, "tool")
+}
+
+func TestScanToolsFromDirectory_Subdirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
+	// Create subdirectory with executable
+	subDir := filepath.Join(toolsDir, "subdir")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(subDir, 0755))
+	subTool := filepath.Join(subDir, "subtool.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(subTool, []byte("#!/bin/sh"), 0755))
+
+	// Should find tool in subdirectory
+	tools, err := ScanToolsFromDirectory(toolsDir)
+	require.NoError(t, err)
+	assert.Len(t, tools, 1)
+	assert.Contains(t, tools, "subtool")
 }

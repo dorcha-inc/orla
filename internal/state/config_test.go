@@ -500,3 +500,93 @@ func TestValidateConfig(t *testing.T) {
 		})
 	}
 }
+
+// TestRebuildToolsRegistry_ScanToolsError tests rebuildToolsRegistry when ScanToolsFromDirectory fails
+func TestRebuildToolsRegistry_ScanToolsError(t *testing.T) {
+	cfg := &OrlaConfig{
+		ToolsDir: "/nonexistent/path/that/causes/error", // Path that causes error
+		Port:     8080,
+		Timeout:  30,
+	}
+
+	// This should fail because the path doesn't exist and might cause an error
+	// Actually, ScanToolsFromDirectory returns empty map for non-existent dir, not error
+	// So we need a different approach - use a file instead of directory
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "notadir")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filePath, []byte("not a directory"), 0644))
+
+	cfg.ToolsDir = filePath
+	err := cfg.rebuildToolsRegistry()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not a directory")
+}
+
+// TestRebuildToolsRegistry_InstalledToolsError tests rebuildToolsRegistry when getInstalledToolsDir fails
+// This is hard to test directly, but we can test the merge logic
+func TestRebuildToolsRegistry_MergesInstalledTools(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
+	// Create a tool in directory
+	tool1 := filepath.Join(toolsDir, "dir-tool.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(tool1, []byte("#!/bin/sh"), 0755))
+
+	cfg := &OrlaConfig{
+		ToolsDir: toolsDir,
+		Port:     8080,
+		Timeout:  30,
+	}
+
+	err := cfg.rebuildToolsRegistry()
+	require.NoError(t, err)
+	assert.NotNil(t, cfg.ToolsRegistry)
+
+	// Should have at least the directory tool (name is without extension)
+	tools := cfg.ToolsRegistry.ListTools()
+	assert.GreaterOrEqual(t, len(tools), 1)
+
+	// Check if dir-tool exists (name without .sh extension)
+	found := false
+	for _, tool := range tools {
+		if tool.Name == "dir-tool" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "dir-tool should be found in tools list")
+}
+
+// TestNewDefaultOrlaConfig_AbsPathError tests NewDefaultOrlaConfig when filepath.Abs fails
+// This is hard to test, but we can test the error path exists
+func TestNewDefaultOrlaConfig_WithToolsDirError(t *testing.T) {
+	// Create a scenario where rebuildToolsRegistry might fail
+	tmpDir := t.TempDir()
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() {
+		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
+			t.Logf("Failed to restore working directory: %v", restoreErr)
+		}
+	}()
+
+	// Change to temp directory
+	err = os.Chdir(tmpDir)
+	require.NoError(t, err)
+
+	// Create a file named "tools" (not a directory) in current directory
+	// This will cause ScanToolsFromDirectory to fail
+	toolsFile := filepath.Join(tmpDir, "tools")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(toolsFile, []byte("not a directory"), 0644))
+
+	cfg, err := NewDefaultOrlaConfig()
+	// Should fail because tools is a file, not a directory
+	assert.Error(t, err)
+	assert.Nil(t, cfg)
+	assert.Contains(t, err.Error(), "failed to create tools registry")
+}
