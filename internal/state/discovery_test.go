@@ -454,3 +454,59 @@ func TestScanToolsFromDirectory_Subdirectory(t *testing.T) {
 	assert.Len(t, tools, 1)
 	assert.Contains(t, tools, "subtool")
 }
+
+// TestGetVersionFromPath_RelError tests error path when filepath.Rel fails
+func TestGetVersionFromPath_RelError(t *testing.T) {
+	// filepath.Rel can fail if paths are on different volumes (Windows) or other edge cases
+	// We test with a path outside installDir to trigger the error path
+	tmpDir := t.TempDir()
+	installDir := filepath.Join(tmpDir, "tools")
+	otherDir := filepath.Join(tmpDir, "other")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(installDir, 0755))
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(otherDir, 0755))
+
+	toolPath := filepath.Join(otherDir, "fs", "0.1.0", "bin", "fs")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Dir(toolPath), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(toolPath, []byte("test"), 0644))
+
+	// This should fail because toolPath is outside installDir
+	_, err := getVersionFromPath(toolPath, installDir)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not within install directory")
+}
+
+// TestGetVersionFromPath_StatError tests error path when root.Stat fails
+func TestGetVersionFromPath_StatError(t *testing.T) {
+	tmpDir := t.TempDir()
+	installDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(installDir, 0755))
+
+	// Use a path that doesn't exist - root.Stat will fail
+	nonExistentPath := filepath.Join(installDir, "nonexistent", "0.1.0", "bin", "fs")
+
+	_, err := getVersionFromPath(nonExistentPath, installDir)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not within install directory")
+}
+
+func TestScanInstalledTools_InvalidShebang(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, ".orla", "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
+	// Create a file with an invalid shebang
+	tool := filepath.Join(toolsDir, "mytool.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(tool, []byte("#invalid-shebang"), 0755))
+
+	// Should return empty map for invalid shebang
+	tools, err := ScanInstalledTools(toolsDir)
+	require.NoError(t, err)
+	assert.Empty(t, tools)
+}
