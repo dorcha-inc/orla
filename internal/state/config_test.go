@@ -8,6 +8,8 @@ import (
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"gopkg.in/yaml.v3"
 )
 
@@ -119,6 +121,26 @@ func TestNewOrlaConfigFromPath_ValidConfig(t *testing.T) {
 	// Verify tools were discovered
 	tools := cfg.ToolsRegistry.ListTools()
 	assert.GreaterOrEqual(t, len(tools), 1)
+}
+
+func TestNewOrlaConfigFromPath_InvalidConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+
+	// Create a valid YAML file but with invalid configuration values
+	// This will parse successfully but fail validation (line 95-96)
+	invalidConfig := `port: 99999
+timeout: 30
+tools_dir: ./tools`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err := os.WriteFile(configPath, []byte(invalidConfig), 0644)
+	require.NoError(t, err)
+
+	// Load config should fail with validation error (line 96)
+	cfg, err := NewOrlaConfigFromPath(configPath)
+	require.Error(t, err)
+	require.Nil(t, cfg)
+	assert.Contains(t, err.Error(), "invalid configuration")
 }
 
 // TestNewOrlaConfigFromPath_AbsoluteToolsDir tests loading config with absolute tools directory
@@ -499,6 +521,30 @@ func TestValidateConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateConfig_TimeoutVeryLarge(t *testing.T) {
+	cfg := &OrlaConfig{
+		Port:      8080,
+		Timeout:   3601, // Greater than 3600 to trigger the warning
+		LogFormat: "json",
+		LogLevel:  "info",
+	}
+
+	// Set up observer to capture logs
+	core, logs := observer.New(zap.WarnLevel)
+	logger := zap.New(core)
+	zap.ReplaceGlobals(logger)
+
+	err := validateConfig(cfg)
+	require.NoError(t, err)
+
+	// Verify warning log was written
+	require.Equal(t, 1, logs.Len(), "Should have one warning log")
+	entry := logs.All()[0]
+	assert.Equal(t, zap.WarnLevel, entry.Level)
+	assert.Contains(t, entry.Message, "Timeout is very large, consider using a value less than 3600 seconds")
+	assert.Equal(t, int64(3601), entry.ContextMap()["timeout"])
 }
 
 // TestRebuildToolsRegistry_ScanToolsError tests rebuildToolsRegistry when ScanToolsFromDirectory fails
