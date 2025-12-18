@@ -27,13 +27,33 @@ jobs:
       with:
         go-version: '1.23'
 
+    - name: Get version
+      id: version
+      run: |
+        VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Get build date
+      id: build_date
+      run: |
+        if [ -n "${{ github.event.head_commit.timestamp }}" ]; then
+          BUILD_DATE="${{ github.event.head_commit.timestamp }}"
+        else
+          # Use current UTC time as fallback (ISO 8601 format)
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        fi
+        echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
+
     - name: Build
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
+        VERSION: ${{ steps.version.outputs.version }}
+        BUILD_DATE: ${{ steps.build_date.outputs.build_date }}
       run: |
         mkdir -p bin
-        go build -o bin/orla-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/orla
+        go build -ldflags "-X main.version=${VERSION} -X main.buildDate=${BUILD_DATE}" \
+          -o bin/orla-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/orla
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4

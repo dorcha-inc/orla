@@ -9,10 +9,18 @@ import (
 )
 
 var (
-	version = "1.0.0"
-	// build time date
-	buildDate = "2025-12-12"
+	version   string // Set via -ldflags at build time
+	buildDate string // Set via -ldflags at build time
 )
+
+func init() {
+	if version == "" {
+		version = "dev"
+	}
+	if buildDate == "" {
+		buildDate = "unknown"
+	}
+}
 
 func main() {
 	// set up zap logger

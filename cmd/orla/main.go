@@ -8,10 +8,18 @@ import (
 )
 
 var (
-	version = "dev"
-	// build time date
-	buildDate = "unknown"
+	version   string // Set via -ldflags at build time
+	buildDate string // Set via -ldflags at build time
 )
+
+func init() {
+	if version == "" {
+		version = "dev"
+	}
+	if buildDate == "" {
+		buildDate = "unknown"
+	}
+}
 
 func main() {
 	rootCmd := &cobra.Command{

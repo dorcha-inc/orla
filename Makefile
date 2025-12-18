@@ -35,19 +35,24 @@ format: ## Format code and tidy go.mod
 	go fmt ./...
 	go mod tidy
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
 .PHONY: build
 build: ## Build the orla binaries
 	mkdir -p $(BUILD_DIR)
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/orla
-	go build -o $(BUILD_DIR)/$(BINARY_NAME)-test ./cmd/orla-test
+	go build -ldflags "-X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)" \
+		-o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/orla
+	go build -ldflags "-X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)" \
+		-o $(BUILD_DIR)/$(BINARY_NAME)-test ./cmd/orla-test
 
 .PHONY: install-test
 install-test: ## Install the orla-test binary
-	go install ./cmd/orla-test
+	go install -ldflags "-X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)" ./cmd/orla-test
 
 .PHONY: install
 install: ## Install the orla binary
-	go install ./cmd/$(BINARY_NAME)
+	go install -ldflags "-X main.version=$(VERSION) -X main.buildDate=$(BUILD_DATE)" ./cmd/$(BINARY_NAME)
 
 .PHONY: run
 run: ## Run the orla binary
