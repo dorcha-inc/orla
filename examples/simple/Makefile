@@ -14,7 +14,7 @@ help:
 run:
 	@echo "Starting orla on port $(PORT)..."
 	@echo "Tools directory: $(PWD)/tools"
-	@$(ORLA_BIN) --port $(PORT) --pretty
+	@$(ORLA_BIN) serve --port $(PORT) --pretty
 
 test:
 	@echo "testing HTTP transport"; \

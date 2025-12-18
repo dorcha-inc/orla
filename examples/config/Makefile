@@ -16,7 +16,7 @@ run:
 	@echo "Starting orla with config: $(CONFIG)"
 	@echo "Tools directory: $(PWD)/tools"
 	@echo "Port: $(PORT)"
-	@$(ORLA_BIN) --config $(CONFIG)
+	@$(ORLA_BIN) serve --config $(CONFIG)
 
 test:
 	@echo "testing HTTP transport"; \

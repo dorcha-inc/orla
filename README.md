@@ -64,7 +64,7 @@ chmod +x tools/hello.sh
 2. Start orla: 
 
 ```bash
-orla
+orla serve
 ```
 
 this runs on port `8080` by default.
@@ -72,19 +72,19 @@ this runs on port `8080` by default.
 You can run it using `stdio` as the transport:
 
 ```bash
-orla --stdio
+orla serve --stdio
 ```
 
 You can specify a custom port
 
 ```bash
-orla --port 3000
+orla serve --port 3000
 ```
 
 You can also specify a custom configuration file:
 
 ```bash
-orla --config orla.yaml
+orla serve --config orla.yaml
 ```
 
 If no configuration file is specified, orla will automatically check for `orla.yaml` in the current directory. If not found, default configuration is used.
@@ -118,13 +118,14 @@ The configuration options for orla are as follows
 ## command line options
 
 ```bash
-orla [options]
+orla serve [options]
 
 Options:
   -config string    Path to orla.yaml config file
   -port int         Port to listen on (ignored if stdio is used, default: 8080)
   -stdio            Use stdio instead of TCP port
   -pretty           Use pretty-printed logs instead of JSON
+  -tools-dir string Directory containing tools (overrides config file)
 ```
 
 ## git hooks

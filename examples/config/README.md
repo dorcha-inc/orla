@@ -17,7 +17,7 @@ This example demonstrates how to use orla with a simple configuration file.
    
    Or manually:
    ```bash
-   ../../bin/orla --config orla.yaml
+   ../../bin/orla serve --config orla.yaml
    ```
 
 3. Test the tools:

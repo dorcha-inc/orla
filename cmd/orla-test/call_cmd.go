@@ -152,7 +152,7 @@ func testToolStdio(orlaBin string, toolName string, args map[string]any) (string
 
 	// Create stdio transport (spawns orla process)
 	transport := &mcp.CommandTransport{
-		Command: exec.Command(orlaBin, "--stdio"),
+		Command: exec.Command(orlaBin, "serve", "--stdio"),
 	}
 
 	// Connect to server

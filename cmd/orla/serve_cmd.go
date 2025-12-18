@@ -29,7 +29,7 @@ func newServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the orla MCP server",
-		Long: `Start the orla MCP server. This is the default command when no subcommand is specified.
+		Long: `Start the orla MCP server.
 
 The server can run in HTTP mode (default port 8080) or stdio mode for MCP clients.`,
 		RunE: func(cmd *cobra.Command, args []string) error {

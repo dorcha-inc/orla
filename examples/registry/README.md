@@ -18,7 +18,7 @@ This example demonstrates how to populate the tool registry directly from the co
    
    Or manually:
    ```bash
-   ../../bin/orla --config orla.yaml
+   ../../bin/orla serve --config orla.yaml
    ```
 
 3. Test the tools:

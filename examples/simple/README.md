@@ -17,7 +17,7 @@ This example demonstrates the simplest way to use orla: zero configuration, just
    
    Or manually:
    ```bash
-   ../../bin/orla
+   ../../bin/orla serve
    ```
 
 3. Test the tools:

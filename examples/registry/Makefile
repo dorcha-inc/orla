@@ -15,7 +15,7 @@ help:
 run:
 	@echo "Starting orla with registry config: $(CONFIG)"
 	@echo "Tools are defined directly in the config file"
-	@$(ORLA_BIN) --config $(CONFIG)
+	@$(ORLA_BIN) serve --config $(CONFIG)
 
 test:
 	@echo "testing HTTP transport"; \

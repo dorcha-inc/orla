@@ -51,7 +51,7 @@ install: ## Install the orla binary
 
 .PHONY: run
 run: ## Run the orla binary
-	./$(BUILD_DIR)/$(BINARY_NAME)
+	./$(BUILD_DIR)/$(BINARY_NAME) serve
 
 .PHONY: deps
 deps: ## Download Go dependencies

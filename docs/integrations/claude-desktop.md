@@ -30,40 +30,19 @@ Verify installation:
 orla --version
 ```
 
-## Create Your Tools Directory
+## Install a tool
 
-Create a directory for your tools (we'll use `~/orla-tools`) and add at least one executable:
-
-```bash
-mkdir -p ~/orla-tools/tools
-cd ~/orla-tools
-```
-
-Create a simple example tool - a cryptographically random coin flip
+As an example, you can install a simple coinflip tool orla has in its registry for testing:
 
 ```bash
-cat > tools/coinflip.sh << 'EOF'
-#!/bin/bash
-
-if [ $(od -An -N1 -tu1 /dev/urandom | tr -d ' ') -lt 128 ]; then
-    echo "Heads"
-else
-    echo "Tails"
-fi
-EOF
-```
-
-Make it executable
-
-```bash
-chmod +x tools/coinflip.sh
+orla install coinflip
 ```
 
 ## Configure Claude Desktop
 
 On Claude Desktop, go to `Settings > Developer` and click `Edit Config`.
 
-<img src="https://mintcdn.com/mcp/4ZXF1PrDkEaJvXpn/images/quickstart-developer.png?fit=max&auto=format&n=4ZXF1PrDkEaJvXpn&q=85&s=0fb595490a2f9e15c0301e771a57446c" width="600"></img>
+<img src="share/claude-developer-settings.png" width="600"></img>
 
 This opens the configuration file. Add orla to the `mcpServers` section.
 
@@ -80,13 +59,11 @@ Then use that path (`ORLA_PATH`) to fill out the Claude Desktop config.
   "mcpServers": {
     "orla": {
       "command": "<ORLA_PATH>",
-      "args": ["--stdio", "--tools-dir", "/Users/yourname/orla-tools/tools"]
+      "args": ["serve", "--stdio"]
     }
   }
 }
 ```
-
-Replace `/Users/yourname/orla-tools/tools` with the absolute path to your tools directory. On Windows, use `C:\\Users\\yourname\\orla-tools\\tools`.
 
 ## Restart Claude Desktop
 
@@ -94,13 +71,15 @@ After saving the configuration file, completely quit Claude Desktop and restart 
 
 ## Verifying the Integration
 
-Upon successful restart, click the `Search and tools` button below your conversation in Claude and you should see orla:
+Upon successful restart, click the `+` button below your conversation in Claude and you should see orla in `Connectors`:
 
-<img src="share/orla-on-claude-desktop.png" width="600"></img>
+<img src="share/claude-desktop-orla.png" width="600"></img>
 
 You can also try using the tool directly:
 
-<img src="share/orla-coinflip-claude.png" width="600"></img>
+<img src="share/claude-orla-coinflip.png" width="600"></img>
+
+<img src="share/claude-orla-coinflip-tails.png" width="600"></img>
 
 ## Getting Help
 
@@ -110,7 +89,8 @@ open a [github issue](https://github.com/dorcha-inc/orla/issues).
 
 ## Related Documentation
 
-- Orla's main [README.md](../../README.md)
-- [RFC 1](../rfcs/rfc1.txt) containing details on the Orla Runtime Specification
-- [Examples](../../examples/) of using Orla.
+- [README.md](../../README.md)
+- [Examples](../../examples/)
+- [RFC 1](../rfcs/rfc1.txt)
+- [RFC 3](../rfcs/rfc3.txt)
 
