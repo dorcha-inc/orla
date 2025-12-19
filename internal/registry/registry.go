@@ -268,6 +268,11 @@ func SuggestSimilarToolName(registry *RegistryIndex, name string) string {
 	return bestTool
 }
 
+const (
+	VersionConstraintLatest = "latest"
+	VersionConstraintEmpty  = ""
+)
+
 // ResolveVersion resolves a version constraint to a specific version
 func ResolveVersion(tool *ToolEntry, constraint string) (*Version, error) {
 	if len(tool.Versions) == 0 {
@@ -275,8 +280,8 @@ func ResolveVersion(tool *ToolEntry, constraint string) (*Version, error) {
 	}
 
 	// Handle "latest" constraint
-	if constraint == "latest" || constraint == "" {
-		// Find the latest stable version (not pre-release)
+	if constraint == VersionConstraintLatest || constraint == VersionConstraintEmpty {
+		// Find the latest stable version that is not a pre-release (contains -alpha, -beta, -rc, etc.)
 		var latest *Version
 		for i := range tool.Versions {
 			v := &tool.Versions[i]
@@ -287,6 +292,7 @@ func ResolveVersion(tool *ToolEntry, constraint string) (*Version, error) {
 				}
 			}
 		}
+
 		if latest == nil {
 			// If no stable version, use the latest pre-release
 			latest = &tool.Versions[0]
@@ -296,6 +302,13 @@ func ResolveVersion(tool *ToolEntry, constraint string) (*Version, error) {
 				}
 			}
 		}
+
+		if latest == nil {
+			// this should never happen as we check tha the tool version list is not empty
+			// above, however let's be super defensive and return an error.
+			return nil, fmt.Errorf("no version found for tool '%s' with constraint '%s'.%s", tool.Name, constraint, core.BugReportMessage())
+		}
+
 		return latest, nil
 	}
 
@@ -307,4 +320,41 @@ func ResolveVersion(tool *ToolEntry, constraint string) (*Version, error) {
 	}
 
 	return nil, fmt.Errorf("version '%s' not found for tool '%s'", constraint, tool.Name)
+}
+
+// SearchTools searches the registry for tools matching the query
+// It searches in tool names, descriptions, and keywords (case-insensitive)
+func SearchTools(registry *RegistryIndex, query string) []ToolEntry {
+	// TODO: this is an extremely naive search algorithm. We should use a more sophisticated one
+	// with ranking and fuzzy matching.
+	if query == "" {
+		return registry.Tools
+	}
+
+	queryLower := strings.ToLower(query)
+	var results []ToolEntry
+
+	for _, tool := range registry.Tools {
+		// Check if query matches name
+		if strings.Contains(strings.ToLower(tool.Name), queryLower) {
+			results = append(results, tool)
+			continue
+		}
+
+		// Check if query matches description
+		if strings.Contains(strings.ToLower(tool.Description), queryLower) {
+			results = append(results, tool)
+			continue
+		}
+
+		// Check if query matches any keyword
+		for _, keyword := range tool.Keywords {
+			if strings.Contains(strings.ToLower(keyword), queryLower) {
+				results = append(results, tool)
+				break
+			}
+		}
+	}
+
+	return results
 }

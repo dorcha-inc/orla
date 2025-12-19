@@ -33,6 +33,10 @@ discovers and executes tools from the filesystem.`,
 	// Add subcommands
 	rootCmd.AddCommand(newServeCmd())
 	rootCmd.AddCommand(newInstallCmd())
+	rootCmd.AddCommand(newListCmd())
+	rootCmd.AddCommand(newSearchCmd())
+	rootCmd.AddCommand(newUninstallCmd())
+	rootCmd.AddCommand(newUpdateCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

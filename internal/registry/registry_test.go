@@ -766,3 +766,146 @@ func TestSaveCachedRegistry_MkdirAllError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create cache directory")
 }
+
+func TestSearchTools(t *testing.T) {
+	registry := &RegistryIndex{
+		Version:     1,
+		RegistryURL: exampleRegistryURL,
+		Tools: []ToolEntry{
+			{
+				Name:        "filesystem",
+				Description: "Access local filesystem",
+				Keywords:    []string{"fs", "file", "read"},
+			},
+			{
+				Name:        "http-client",
+				Description: "Make HTTP requests",
+				Keywords:    []string{"http", "network", "request"},
+			},
+			{
+				Name:        "database",
+				Description: "Database operations",
+				Keywords:    []string{"db", "sql"},
+			},
+		},
+	}
+
+	// Test search by name
+	results := SearchTools(registry, "filesystem")
+	assert.Len(t, results, 1)
+	assert.Equal(t, "filesystem", results[0].Name)
+
+	// Test search by description
+	results = SearchTools(registry, "HTTP")
+	assert.Len(t, results, 1)
+	assert.Equal(t, "http-client", results[0].Name)
+
+	// Test search by keyword
+	results = SearchTools(registry, "file")
+	assert.Len(t, results, 1)
+	assert.Equal(t, "filesystem", results[0].Name)
+
+	// Test case-insensitive search
+	results = SearchTools(registry, "DATABASE")
+	assert.Len(t, results, 1)
+	assert.Equal(t, "database", results[0].Name)
+
+	// Test partial match
+	results = SearchTools(registry, "http")
+	assert.Len(t, results, 1)
+	assert.Equal(t, "http-client", results[0].Name)
+
+	// Test no matches
+	results = SearchTools(registry, "nonexistent")
+	assert.Empty(t, results)
+
+	// Test empty query (should return all)
+	results = SearchTools(registry, "")
+	assert.Len(t, results, 3)
+}
+
+func TestExtractVersionFromDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name        string
+		setup       func() (toolDir string, installDir string)
+		want        string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "valid path",
+			setup: func() (string, string) {
+				installDir := filepath.Join(tmpDir, "tools")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(installDir, 0755))
+				toolDir := filepath.Join(installDir, "fs", "0.1.0")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(toolDir, 0755))
+				return toolDir, installDir
+			},
+			want:    "0.1.0",
+			wantErr: false,
+		},
+		{
+			name: "path with less than 2 parts",
+			setup: func() (string, string) {
+				installDir := filepath.Join(tmpDir, "tools")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(installDir, 0755))
+				toolDir := filepath.Join(installDir, "fs")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(toolDir, 0755))
+				return toolDir, installDir
+			},
+			want:        "",
+			wantErr:     true,
+			errContains: "invalid tool directory path structure",
+		},
+		{
+			name: "nested path",
+			setup: func() (string, string) {
+				installDir := filepath.Join(tmpDir, "tools")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(installDir, 0755))
+				toolDir := filepath.Join(installDir, "fs", "0.1.0", "bin")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(toolDir, 0755))
+				return toolDir, installDir
+			},
+			want:    "0.1.0",
+			wantErr: false,
+		},
+		{
+			name: "different version format",
+			setup: func() (string, string) {
+				installDir := filepath.Join(tmpDir, "tools")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(installDir, 0755))
+				toolDir := filepath.Join(installDir, "tool", "1.2.3-beta")
+				// #nosec G301 -- test directory permissions are acceptable for temporary test files
+				require.NoError(t, os.MkdirAll(toolDir, 0755))
+				return toolDir, installDir
+			},
+			want:    "1.2.3-beta",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			toolDir, installDir := tt.setup()
+			got, err := ExtractVersionFromDir(toolDir, installDir)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}

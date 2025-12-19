@@ -11,6 +11,8 @@ import (
 	"github.com/dorcha-inc/orla/internal/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"gopkg.in/yaml.v3"
 )
 
@@ -176,6 +178,148 @@ func TestInstallTool_InvalidRegistry(t *testing.T) {
 	err := InstallTool("not-a-valid-url", "test-tool", "1.0.0", &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to fetch registry")
+}
+
+func TestInstallTool_Success(t *testing.T) {
+	// Set up zap logger with observer
+	core, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(core)
+	zap.ReplaceGlobals(logger)
+
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(cacheDir, 0755))
+
+	// Create a git repository for the tool
+	repoDir := filepath.Join(tmpDir, "repo")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(repoDir, 0755))
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create tool.yaml
+	toolManifest := &ToolManifest{
+		Name:        "test-tool",
+		Version:     "1.0.0",
+		Description: "Test tool",
+		Entrypoint:  "bin/tool",
+	}
+	manifestData, err := yaml.Marshal(toolManifest)
+	require.NoError(t, err)
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, "bin"), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ToolManifestFileName), manifestData, 0644))
+
+	// Create entrypoint
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "bin", "tool"), []byte("#!/bin/sh\necho test"), 0755))
+
+	// Commit files
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	// Create a tag
+	cmd = exec.Command("git", "tag", "v1.0.0")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cacheKey, err := registry.SanitizeURLForCache(exampleRegistryURL)
+	require.NoError(t, err)
+	registryRepoPath := filepath.Join(cacheDir, cacheKey, "repo")
+	registryYAMLPath := filepath.Join(registryRepoPath, "registry.yaml")
+
+	// Create registry.yaml file
+	index := &registry.RegistryIndex{
+		Version:     1,
+		RegistryURL: exampleRegistryURL,
+		Tools: []registry.ToolEntry{
+			{
+				Name:        "test-tool",
+				Description: "Test tool",
+				Repository:  repoDir,
+				Versions: []registry.Version{
+					{Version: "1.0.0", Tag: "v1.0.0"},
+				},
+			},
+		},
+	}
+
+	data, err := yaml.Marshal(index)
+	require.NoError(t, err)
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(registryRepoPath, 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(registryYAMLPath, data, 0644))
+
+	// Create cached registry file
+	cachePath := filepath.Join(cacheDir, cacheKey, "registry.yaml")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(cachePath, data, 0644))
+
+	// Mock GitRunner for registry cloning
+	mockRunner := &registry.MockGitRunner{
+		CloneFunc: func(url, targetPath string) error {
+			// Copy registry.yaml to target
+			// #nosec G301 -- test directory permissions are acceptable for temporary test files
+			if errMkdir := os.MkdirAll(targetPath, 0755); errMkdir != nil {
+				return errMkdir
+			}
+			// #nosec G306 -- test file permissions are acceptable for temporary test files
+			if errWrite := os.WriteFile(filepath.Join(targetPath, "registry.yaml"), data, 0644); errWrite != nil {
+				return errWrite
+			}
+			return nil
+		},
+	}
+	originalRunner := registry.GetDefaultGitRunner()
+	registry.SetGitRunner(mockRunner)
+	defer registry.SetGitRunner(originalRunner)
+
+	// Mock GetRegistryCacheDir
+	originalGetCacheDir := *registry.GetRegistryCacheDirFunc
+	*registry.GetRegistryCacheDirFunc = func() (string, error) {
+		return cacheDir, nil
+	}
+	defer func() {
+		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
+	}()
+
+	// Mock GetInstalledToolsDir
+	installDir := filepath.Join(tmpDir, "tools")
+	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
+	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+		return installDir, nil
+	}
+	defer func() {
+		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+	}()
+
+	// Test InstallTool - should log success
+	errInstallTool := InstallTool(exampleRegistryURL, "test-tool", "1.0.0", &bytes.Buffer{})
+	require.NoError(t, errInstallTool)
+
+	// Verify logging
+	assert.GreaterOrEqual(t, logs.Len(), 1)
+	found := false
+	for _, entry := range logs.All() {
+		if entry.Message == "Tool installed successfully" {
+			assert.Equal(t, zap.InfoLevel, entry.Level)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Expected log entry 'Tool installed successfully' not found")
 }
 
 func TestInstallTool_ToolNotFound(t *testing.T) {
@@ -732,4 +876,317 @@ tools:
 		_, err = os.Stat(filepath.Join(installDir, "bin", "tool"))
 		assert.NoError(t, err)
 	}
+}
+
+func TestListInstalledTools(t *testing.T) {
+	// Create a temporary install directory
+	tmpDir := t.TempDir()
+	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
+	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+		return tmpDir, nil
+	}
+	defer func() {
+		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+	}()
+
+	// Create tool structure: TOOL-NAME/VERSION/tool.yaml
+	tool1Dir := filepath.Join(tmpDir, "tool1", "1.0.0")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(tool1Dir, 0755))
+
+	tool1Manifest := &ToolManifest{
+		Name:        "tool1",
+		Version:     "1.0.0",
+		Description: "First tool",
+		Entrypoint:  "bin/tool1",
+	}
+	manifestData, err := yaml.Marshal(tool1Manifest)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(tool1Dir, ToolManifestFileName), manifestData, 0644))
+
+	// Create second tool with different version
+	tool1v2Dir := filepath.Join(tmpDir, "tool1", "2.0.0")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(tool1v2Dir, 0755))
+
+	tool1v2Manifest := &ToolManifest{
+		Name:        "tool1",
+		Version:     "2.0.0",
+		Description: "First tool v2",
+		Entrypoint:  "bin/tool1",
+	}
+	manifestData2, err := yaml.Marshal(tool1v2Manifest)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(tool1v2Dir, ToolManifestFileName), manifestData2, 0644))
+
+	// Create second tool
+	tool2Dir := filepath.Join(tmpDir, "tool2", "1.5.0")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(tool2Dir, 0755))
+
+	tool2Manifest := &ToolManifest{
+		Name:        "tool2",
+		Version:     "1.5.0",
+		Description: "Second tool",
+		Entrypoint:  "bin/tool2",
+	}
+	manifestData3, err := yaml.Marshal(tool2Manifest)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(tool2Dir, ToolManifestFileName), manifestData3, 0644))
+
+	// List installed tools
+	tools, err := ListInstalledTools()
+	require.NoError(t, err)
+	assert.Len(t, tools, 3)
+
+	// Verify tools are listed
+	toolNames := make(map[string]bool)
+	versions := make(map[string]string)
+	for _, tool := range tools {
+		toolNames[tool.Name] = true
+		if tool.Name == "tool1" {
+			versions[tool.Version] = tool.Description
+		}
+	}
+
+	assert.True(t, toolNames["tool1"])
+	assert.True(t, toolNames["tool2"])
+	assert.Equal(t, "First tool", versions["1.0.0"])
+	assert.Equal(t, "First tool v2", versions["2.0.0"])
+}
+
+func TestListInstalledTools_EmptyDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
+	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+		return tmpDir, nil
+	}
+	defer func() {
+		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+	}()
+
+	tools, err := ListInstalledTools()
+	require.NoError(t, err)
+	assert.Empty(t, tools)
+}
+
+func TestUninstallTool(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
+	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+		return tmpDir, nil
+	}
+	defer func() {
+		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+	}()
+
+	// Create tool directory structure
+	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolDir, 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(toolDir, "tool.yaml"), []byte("test"), 0644))
+
+	// Verify tool exists
+	_, err := os.Stat(filepath.Join(tmpDir, "test-tool"))
+	require.NoError(t, err)
+
+	// Uninstall tool
+	err = UninstallTool("test-tool")
+	require.NoError(t, err)
+
+	// Verify tool directory is removed
+	_, err = os.Stat(filepath.Join(tmpDir, "test-tool"))
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestUninstallTool_NotInstalled(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
+	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+		return tmpDir, nil
+	}
+	defer func() {
+		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+	}()
+
+	err := UninstallTool("nonexistent-tool")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not installed")
+}
+
+func TestUpdateTool(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(cacheDir, 0755))
+
+	// Create a git repository for the tool
+	repoDir := filepath.Join(tmpDir, "repo")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(repoDir, 0755))
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create tool.yaml
+	toolManifest := &ToolManifest{
+		Name:        "test-tool",
+		Version:     "2.0.0",
+		Description: "Test tool updated",
+		Entrypoint:  "bin/tool",
+	}
+	manifestData, err := yaml.Marshal(toolManifest)
+	require.NoError(t, err)
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, "bin"), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ToolManifestFileName), manifestData, 0644))
+
+	// Create entrypoint
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "bin", "tool"), []byte("#!/bin/sh\necho test"), 0755))
+
+	// Commit files
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "update commit")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	// Create a tag for version 2.0.0
+	cmd = exec.Command("git", "tag", "v2.0.0")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cacheKey, err := registry.SanitizeURLForCache(exampleRegistryURL)
+	require.NoError(t, err)
+	registryRepoPath := filepath.Join(cacheDir, cacheKey, "repo")
+	registryYAMLPath := filepath.Join(registryRepoPath, "registry.yaml")
+
+	// Create registry.yaml file with multiple versions
+	index := &registry.RegistryIndex{
+		Version:     1,
+		RegistryURL: exampleRegistryURL,
+		Tools: []registry.ToolEntry{
+			{
+				Name:        "test-tool",
+				Description: "Test tool",
+				Repository:  repoDir,
+				Versions: []registry.Version{
+					{Version: "1.0.0", Tag: "v1.0.0"},
+					{Version: "2.0.0", Tag: "v2.0.0"},
+				},
+			},
+		},
+	}
+
+	data, err := yaml.Marshal(index)
+	require.NoError(t, err)
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(registryRepoPath, 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(registryYAMLPath, data, 0644))
+
+	// Create cached registry file
+	cachePath := filepath.Join(cacheDir, cacheKey, "registry.yaml")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(cachePath, data, 0644))
+
+	// Mock GitRunner for registry cloning
+	mockRunner := &registry.MockGitRunner{
+		CloneFunc: func(url, targetPath string) error {
+			// Copy registry.yaml to target
+			// #nosec G301 -- test directory permissions are acceptable for temporary test files
+			if errMkdir := os.MkdirAll(targetPath, 0755); errMkdir != nil {
+				return errMkdir
+			}
+			// #nosec G306 -- test file permissions are acceptable for temporary test files
+			if errWrite := os.WriteFile(filepath.Join(targetPath, "registry.yaml"), data, 0644); errWrite != nil {
+				return errWrite
+			}
+			return nil
+		},
+	}
+	originalRunner := registry.GetDefaultGitRunner()
+	registry.SetGitRunner(mockRunner)
+	defer registry.SetGitRunner(originalRunner)
+
+	// Mock GetRegistryCacheDir
+	originalGetCacheDir := *registry.GetRegistryCacheDirFunc
+	*registry.GetRegistryCacheDirFunc = func() (string, error) {
+		return cacheDir, nil
+	}
+	defer func() {
+		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
+	}()
+
+	// Mock GetInstalledToolsDir
+	installDir := filepath.Join(tmpDir, "tools")
+	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
+	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+		return installDir, nil
+	}
+	defer func() {
+		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+	}()
+
+	// First, install version 1.0.0
+	// Create initial tool installation
+	tool1Dir := filepath.Join(installDir, "test-tool", "1.0.0")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(tool1Dir, 0755))
+
+	tool1Manifest := &ToolManifest{
+		Name:        "test-tool",
+		Version:     "1.0.0",
+		Description: "Test tool",
+		Entrypoint:  "bin/tool",
+	}
+	manifestData1, err := yaml.Marshal(tool1Manifest)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(tool1Dir, ToolManifestFileName), manifestData1, 0644))
+
+	// Verify tool is installed
+	_, err = os.Stat(tool1Dir)
+	require.NoError(t, err)
+
+	// Update tool to latest version
+	var buf bytes.Buffer
+	err = UpdateTool(exampleRegistryURL, "test-tool", &buf)
+	require.NoError(t, err)
+
+	// Verify new version is installed
+	tool2Dir := filepath.Join(installDir, "test-tool", "2.0.0")
+	_, err = os.Stat(tool2Dir)
+	assert.NoError(t, err)
+
+	// Verify tool.yaml exists in new version
+	_, err = os.Stat(filepath.Join(tool2Dir, ToolManifestFileName))
+	assert.NoError(t, err)
+}
+
+func TestUpdateTool_NotInstalled(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
+	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+		return tmpDir, nil
+	}
+	defer func() {
+		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+	}()
+
+	var buf bytes.Buffer
+	err := UpdateTool(exampleRegistryURL, "nonexistent-tool", &buf)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not installed")
 }
