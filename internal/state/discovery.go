@@ -213,11 +213,18 @@ func ScanInstalledTools(installDir string) (map[string]*core.ToolEntry, error) {
 				}
 			}
 
+			// Extract input schema from manifest if present
+			var inputSchema map[string]any
+			if manifest.MCP != nil && manifest.MCP.InputSchema != nil {
+				inputSchema = manifest.MCP.InputSchema
+			}
+
 			tool := &core.ToolEntry{
 				Name:        manifest.Name,
 				Description: manifest.Description,
 				Path:        absEntrypoint,
 				Interpreter: interpreter,
+				InputSchema: inputSchema,
 			}
 
 			toolMap[manifest.Name] = tool

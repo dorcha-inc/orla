@@ -83,13 +83,14 @@ You can also try using the tool directly:
 
 ## Getting Help
 
-If you encounter issues, please feel free to ask for help in our [discord](https://discord.gg/QawsSFnR) or 
+If you encounter issues, please feel free to ask for help in our [discord](https://discord.gg/bzKYCFewPT) or 
 open a [github issue](https://github.com/dorcha-inc/orla/issues).
 
 
 ## Related Documentation
 
 - [README.md](../../README.md)
+- [MCP Client for Ollama Integration](./mcp-client-ollama.md)
 - [Examples](../../examples/)
 - [RFC 1](../rfcs/rfc1.txt)
 - [RFC 3](../rfcs/rfc3.txt)

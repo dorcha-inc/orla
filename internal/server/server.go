@@ -91,7 +91,12 @@ func (o *OrlaServer) rebuildServer() {
 	}
 
 	// Register each discovered tool
-	for _, tool := range toolList {
+	for i, tool := range toolList {
+		zap.L().Info("Registering tool with MCP server",
+			zap.Int("index", i),
+			zap.String("name", tool.Name),
+			zap.String("path", tool.Path),
+			zap.String("description", tool.Description))
 		o.registerTool(tool)
 	}
 }
@@ -127,10 +132,22 @@ func (o *OrlaServer) registerTool(tool *core.ToolEntry) {
 	}
 
 	// Add tool to MCP server
-	mcp.AddTool(o.orlaMCPserver, &mcp.Tool{
+	zap.L().Debug("Calling mcp.AddTool",
+		zap.String("tool", tool.Name),
+		zap.String("description", tool.Description))
+
+	mcpTool := &mcp.Tool{
 		Name:        tool.Name,
 		Description: tool.Description,
-	}, handler)
+	}
+
+	// Add input schema if available
+	if tool.InputSchema != nil {
+		mcpTool.InputSchema = tool.InputSchema
+	}
+
+	mcp.AddTool(o.orlaMCPserver, mcpTool, handler)
+	zap.L().Debug("mcp.AddTool completed", zap.String("tool", tool.Name))
 }
 
 // handleToolCall handles a tool execution request

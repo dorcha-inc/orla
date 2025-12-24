@@ -153,7 +153,7 @@ Contributions are very welcome! orla is an open-source project and runs on indiv
 
 Join other orla users and developers on the following platforms:
 
-[![Discord](https://img.shields.io/badge/Discord-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/QawsSFnR)
+[![Discord](https://img.shields.io/badge/Discord-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/bzKYCFewPT)
 [![GitHub issues](https://img.shields.io/github/issues/dorcha-inc/orla)](https://github.com/dorcha-inc/orla/issues)
 
 ## roadmap

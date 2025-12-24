@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../orla-tool-coinflip"
+		},
+		{
+			"path": "../orla-tool-file-read"
 		}
 	],
 	"settings": {

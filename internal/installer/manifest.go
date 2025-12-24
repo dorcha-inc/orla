@@ -29,6 +29,7 @@ type ToolManifest struct {
 	Homepage     string         `yaml:"homepage,omitempty"`
 	Keywords     []string       `yaml:"keywords,omitempty"`
 	Dependencies []string       `yaml:"dependencies,omitempty"`
+	MCP          *MCPConfig     `yaml:"mcp,omitempty"`
 	Runtime      *RuntimeConfig `yaml:"runtime,omitempty"`
 }
 
@@ -46,6 +47,12 @@ var validRuntimeModes = []RuntimeMode{RuntimeModeSimple, RuntimeModeCapsule}
 // RuntimeConfig represents RFC 3 compliant runtime configuration
 type RuntimeConfig struct {
 	Mode RuntimeMode `yaml:"mode,omitempty"`
+}
+
+// MCPConfig represents MCP-specific metadata from RFC 3
+type MCPConfig struct {
+	InputSchema  map[string]any `yaml:"input_schema,omitempty"`
+	OutputSchema map[string]any `yaml:"output_schema,omitempty"`
 }
 
 // LoadManifest loads and parses a tool.yaml manifest from the given directory
