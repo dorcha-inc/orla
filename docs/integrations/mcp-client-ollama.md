@@ -49,10 +49,10 @@ As an example, you can install a simple coinflip tool from Orla's registry:
 orla install coinflip
 ```
 
-Or install the file-read tool:
+Or install the readfile tool:
 
 ```bash
-orla install file-read
+orla install readfile
 ```
 
 ## Configure Ollama
