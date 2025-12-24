@@ -89,13 +89,14 @@ Table of Contents
    executable, metadata manifest, and optional dependencies.
 
    Tool Registry: A centralized index of available tools and their
-   versions, locations, and metadata.
+   repository locations.
 
    Tool Manifest: A YAML file (tool.yaml) describing a tool package's
    metadata, entrypoint, and requirements.
 
    Registry Index: A file (registry.yaml) listing all tools available in
-   a registry, their versions, and repository locations.
+   a registry and their repository locations. Tags are queried from git
+   repositories when needed.
 
    Installation: The process of downloading a tool package, validating
    its manifest, placing it in the tools directory, and registering it
@@ -331,10 +332,6 @@ Table of Contents
         - name: fs
           description: Local filesystem access
           repository: https://github.com/dorcha-inc/orla-tool-fs
-          versions:
-            - version: 0.1.0
-              tag: v0.1.0
-              checksum: sha256:abc123...
           maintainer: dorcha-inc
           keywords:
             - filesystem
@@ -342,9 +339,6 @@ Table of Contents
         - name: http
           description: HTTP request tool
           repository: https://github.com/dorcha-inc/orla-tool-http
-          versions:
-            - version: 0.2.0
-              tag: v0.2.0
 
    Note: The registry_url and repository fields accept any Git repository
    URL (GitHub, GitLab, Bitbucket, self-hosted, etc.).  The examples
@@ -356,13 +350,15 @@ Table of Contents
    - description: Brief tool description
    - repository: Git repository URL (any Git hosting platform) or
      download location
-   - versions: List of available versions
 
-   Version entries MAY include:
+   Each tool entry MAY include:
 
-   - version: Semantic version string
-   - tag: Git tag or release identifier
-   - checksum: Optional integrity checksum
+   - maintainer: Tool maintainer name or organization
+   - keywords: List of strings for tool discovery
+
+   Note: The registry does not store version or tag information. Tags are
+   queried directly from the git repository when needed. The semantic version
+   is read from tool.yaml after cloning.
 
 6.4. Tool Repository Structure
 
@@ -393,12 +389,14 @@ Table of Contents
    Orla MUST:
 
    1. Fetch the registry index
-   2. Resolve tool name to repository and version
-   3. Download the tool package
-   4. Validate the manifest
-   5. Install to ~/.orla/tools/TOOL-NAME/VERSION/
-   6. Register with Orla runtime
-   7. Optionally run post-install hooks
+   2. Resolve tool name to repository URL
+   3. Resolve version constraint to a git tag (query git tags if "latest")
+   4. Clone the tool repository at the specified tag
+   5. Read version from tool.yaml manifest
+   6. Validate that git tag matches tool.yaml version
+   7. Install to ~/.orla/tools/TOOL-NAME/VERSION/ (using version from tool.yaml)
+   8. Register with Orla runtime
+   9. Optionally run post-install hooks
 
 7.2. Installation Directory
 
@@ -414,12 +412,18 @@ Table of Contents
 
 7.3. Version Resolution
 
-   When a version is not specified, Orla MUST install the latest stable
-   version from the registry.  Version resolution rules:
+   When a version is not specified, Orla MUST query git tags from the
+   repository and select the latest stable version.  Version resolution rules:
 
-   1. Prefer latest stable version (not pre-release)
-   2. Respect version constraints if specified
-   3. Cache registry index for offline use
+   1. Query git tags from the repository using `git ls-remote --tags`
+   2. Parse semantic versions from tags (tags must start with 'v' and follow
+      semver format, e.g., v0.1.0)
+   3. Prefer latest stable version (not pre-release)
+   4. If no stable version exists, use latest pre-release
+   5. For explicit tag constraints, use the tag as-is (must start with 'v')
+
+   The semantic version is read from tool.yaml after cloning, not from the
+   registry.  The registry only stores the repository URL.
 
 7.4. Registration
 
@@ -435,17 +439,18 @@ Table of Contents
 
 8.1. Version Selection
 
-   Users MAY specify versions:
+   Users MAY specify git tags:
 
-      orla install fs@0.1.0
+      orla install fs@v0.1.0
       orla install fs@latest
-      orla install fs@^0.1.0
 
-   Version constraints follow SemVer rules:
+   Tag constraints:
 
-   - Exact: 0.1.0
-   - Latest: latest
-   - Range: ^0.1.0, ~0.1.0, >=0.1.0
+   - Exact tag: v0.1.0 (must start with 'v')
+   - Latest: latest (queries git tags and selects latest stable)
+
+   Note: Version ranges (^0.1.0, ~0.1.0, etc.) are not currently supported.
+   Users must specify exact tags or use "latest".
 
 8.2. Version Conflicts
 

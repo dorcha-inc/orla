@@ -34,19 +34,11 @@ func InstallTool(registryURL, toolName, versionConstraint string, progressWriter
 		return fmt.Errorf("tool '%s' not found in registry: %w", toolName, errFindTool)
 	}
 
-	// Resolve version
-	version, errResolveVersion := registry.ResolveVersion(tool, versionConstraint)
+	// Resolve version constraint to a git tag
+	tag, errResolveVersion := registry.ResolveVersion(tool, versionConstraint)
 	if errResolveVersion != nil {
 		return fmt.Errorf("failed to resolve version: %w", errResolveVersion)
 	}
-
-	// Get install directory
-	installBaseDir, errGetInstallBaseDir := (*registry.GetInstalledToolsDirFunc)()
-	if errGetInstallBaseDir != nil {
-		return fmt.Errorf("failed to get install base directory: %w", errGetInstallBaseDir)
-	}
-
-	installDir := filepath.Join(installBaseDir, toolName, version.Version)
 
 	// Clone tool repository
 	tempDir, errCreateTempDir := os.MkdirTemp("", "orla-install-*")
@@ -56,7 +48,7 @@ func InstallTool(registryURL, toolName, versionConstraint string, progressWriter
 	defer core.LogDeferredError(func() error { return os.RemoveAll(tempDir) })
 
 	cloneDir := filepath.Join(tempDir, "tool")
-	if errClone := cloneToolRepository(tool.Repository, version.Tag, cloneDir); errClone != nil {
+	if errClone := cloneToolRepository(tool.Repository, tag, cloneDir); errClone != nil {
 		return fmt.Errorf("failed to clone tool repository: %w", errClone)
 	}
 
@@ -70,6 +62,21 @@ func InstallTool(registryURL, toolName, versionConstraint string, progressWriter
 		return fmt.Errorf("failed to validate manifest: %w", errValidateManifest)
 	}
 
+	// Validate that git tag matches tool.yaml version
+	// Tags must start with 'v' and match the version exactly
+	expectedTag := "v" + manifest.Version
+	if tag != expectedTag {
+		return fmt.Errorf("git tag '%s' does not match tool.yaml version '%s'. Tag must be 'v%s'", tag, manifest.Version, manifest.Version)
+	}
+
+	// Get install directory using version from tool.yaml (source of truth)
+	installBaseDir, errGetInstallBaseDir := (*registry.GetInstalledToolsDirFunc)()
+	if errGetInstallBaseDir != nil {
+		return fmt.Errorf("failed to get install base directory: %w", errGetInstallBaseDir)
+	}
+
+	installDir := filepath.Join(installBaseDir, toolName, manifest.Version)
+
 	// Install to target directory
 	if errInstallToDirectory := InstallToDirectory(cloneDir, installDir, progressWriter); errInstallToDirectory != nil {
 		return fmt.Errorf("failed to install tool to directory: %w", errInstallToDirectory)
@@ -77,7 +84,8 @@ func InstallTool(registryURL, toolName, versionConstraint string, progressWriter
 
 	zap.L().Info("Tool installed successfully",
 		zap.String("tool", toolName),
-		zap.String("version", version.Version),
+		zap.String("version", manifest.Version),
+		zap.String("tag", tag),
 		zap.String("path", installDir))
 
 	return nil

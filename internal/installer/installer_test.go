@@ -175,7 +175,7 @@ func TestCloneToolRepository_InvalidTag(t *testing.T) {
 
 func TestInstallTool_InvalidRegistry(t *testing.T) {
 	// Test with invalid registry URL
-	err := InstallTool("not-a-valid-url", "test-tool", "1.0.0", &bytes.Buffer{})
+	err := InstallTool("not-a-valid-url", "test-tool", "v1.0.0", &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to fetch registry")
 }
@@ -246,9 +246,6 @@ func TestInstallTool_Success(t *testing.T) {
 				Name:        "test-tool",
 				Description: "Test tool",
 				Repository:  repoDir,
-				Versions: []registry.Version{
-					{Version: "1.0.0", Tag: "v1.0.0"},
-				},
 			},
 		},
 	}
@@ -306,7 +303,7 @@ func TestInstallTool_Success(t *testing.T) {
 	}()
 
 	// Test InstallTool - should log success
-	errInstallTool := InstallTool(exampleRegistryURL, "test-tool", "1.0.0", &bytes.Buffer{})
+	errInstallTool := InstallTool(exampleRegistryURL, "test-tool", "v1.0.0", &bytes.Buffer{})
 	require.NoError(t, errInstallTool)
 
 	// Verify logging
@@ -383,7 +380,7 @@ func TestInstallTool_ToolNotFound(t *testing.T) {
 	}()
 
 	// Test InstallTool with non-existent tool (no suggestion since distance > 2)
-	err = InstallTool(exampleRegistryURL, "xyz-tool", "1.0.0", &bytes.Buffer{})
+	err = InstallTool(exampleRegistryURL, "xyz-tool", "v1.0.0", &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 	assert.NotContains(t, err.Error(), "Did you mean")
@@ -448,7 +445,7 @@ func TestInstallTool_ToolNotFoundWithSuggestion(t *testing.T) {
 	}()
 
 	// Test InstallTool with typo - should suggest similar tool
-	err = InstallTool(exampleRegistryURL, "fs-tol", "1.0.0", &bytes.Buffer{})
+	err = InstallTool(exampleRegistryURL, "fs-tol", "v1.0.0", &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Did you mean")
 	assert.Contains(t, err.Error(), "fs-tool")
@@ -474,9 +471,6 @@ func TestInstallTool_VersionNotFound(t *testing.T) {
 				Name:        "test-tool",
 				Description: "Test tool",
 				Repository:  "https://example.com/repo",
-				Versions: []registry.Version{
-					{Version: "1.0.0", Tag: "v1.0.0"},
-				},
 			},
 		},
 	}
@@ -519,10 +513,11 @@ func TestInstallTool_VersionNotFound(t *testing.T) {
 		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
 	}()
 
-	// Test InstallTool with non-existent version
-	err = InstallTool(exampleRegistryURL, "test-tool", "99.0.0", &bytes.Buffer{})
+	// Test InstallTool with non-existent tag
+	err = InstallTool(exampleRegistryURL, "test-tool", "v99.0.0", &bytes.Buffer{})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	// Tag validation passes, but clone will fail since tag doesn't exist
+	assert.True(t, strings.Contains(err.Error(), "failed to clone") || strings.Contains(err.Error(), "not found"))
 }
 
 func TestInstallTool_LoadManifestError(t *testing.T) {
@@ -567,9 +562,6 @@ func TestInstallTool_LoadManifestError(t *testing.T) {
 				Name:        "test-tool",
 				Description: "Test tool",
 				Repository:  repoDir,
-				Versions: []registry.Version{
-					{Version: "1.0.0", Tag: "v1.0.0"},
-				},
 			},
 		},
 	}
@@ -620,7 +612,7 @@ func TestInstallTool_LoadManifestError(t *testing.T) {
 	}()
 
 	// Test InstallTool - should fail when loading manifest (tool.yaml doesn't exist)
-	err = InstallTool(exampleRegistryURL, "test-tool", "1.0.0", &bytes.Buffer{})
+	err = InstallTool(exampleRegistryURL, "test-tool", "v1.0.0", &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load manifest")
 }
@@ -681,9 +673,6 @@ entrypoint: bin/tool
 				Name:        "test-tool",
 				Description: "Test tool",
 				Repository:  repoDir,
-				Versions: []registry.Version{
-					{Version: "1.0.0", Tag: "v1.0.0"},
-				},
 			},
 		},
 	}
@@ -748,7 +737,7 @@ entrypoint: bin/tool
 	}()
 
 	// Test InstallTool - should fail when validating manifest (missing description)
-	err = InstallTool(registryURL, "test-tool", "1.0.0", &bytes.Buffer{})
+	err = InstallTool(registryURL, "test-tool", "v1.0.0", &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "manifest validation failed")
 }
@@ -1079,10 +1068,6 @@ func TestUpdateTool(t *testing.T) {
 				Name:        "test-tool",
 				Description: "Test tool",
 				Repository:  repoDir,
-				Versions: []registry.Version{
-					{Version: "1.0.0", Tag: "v1.0.0"},
-					{Version: "2.0.0", Tag: "v2.0.0"},
-				},
 			},
 		},
 	}
@@ -1101,7 +1086,7 @@ func TestUpdateTool(t *testing.T) {
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	require.NoError(t, os.WriteFile(cachePath, data, 0644))
 
-	// Mock GitRunner for registry cloning
+	// Mock GitRunner for registry cloning and tool tag listing
 	mockRunner := &registry.MockGitRunner{
 		CloneFunc: func(url, targetPath string) error {
 			// Copy registry.yaml to target
@@ -1114,6 +1099,13 @@ func TestUpdateTool(t *testing.T) {
 				return errWrite
 			}
 			return nil
+		},
+		ListTagsFunc: func(repoURL string) ([]string, error) {
+			// Return tags for the tool repository
+			if repoURL == repoDir {
+				return []string{"v1.0.0", "v2.0.0"}, nil
+			}
+			return []string{}, nil
 		},
 	}
 	originalRunner := registry.GetDefaultGitRunner()

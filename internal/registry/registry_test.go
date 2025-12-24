@@ -23,17 +23,11 @@ func TestFindTool(t *testing.T) {
 				Name:        "fs",
 				Description: "Filesystem tool",
 				Repository:  "https://example.com/orla-tool-fs",
-				Versions: []Version{
-					{Version: "0.1.0", Tag: "v0.1.0"},
-				},
 			},
 			{
 				Name:        "http",
 				Description: "HTTP tool",
 				Repository:  "https://example.com/orla-tool-http",
-				Versions: []Version{
-					{Version: "0.2.0", Tag: "v0.2.0"},
-				},
 			},
 		},
 	}
@@ -70,79 +64,103 @@ func TestSuggestSimilarToolName(t *testing.T) {
 
 func TestResolveVersion(t *testing.T) {
 	tool := &ToolEntry{
-		Name: "fs",
-		Versions: []Version{
-			{Version: "0.1.0", Tag: "v0.1.0"},
-			{Version: "0.2.0", Tag: "v0.2.0"},
-			{Version: "0.3.0-beta", Tag: "v0.3.0-beta"},
-		},
+		Name:       "fs",
+		Repository: "https://example.com/orla-tool-fs",
 	}
 
+	// Mock git runner to return tags
+	mockRunner := &MockGitRunner{
+		ListTagsFunc: func(repoURL string) ([]string, error) {
+			return []string{"v0.1.0", "v0.2.0", "v0.3.0-beta"}, nil
+		},
+	}
+	originalRunner := defaultGitRunner
+	defaultGitRunner = mockRunner
+	defer func() { defaultGitRunner = originalRunner }()
+
 	// Test latest (should return latest stable)
-	version, err := ResolveVersion(tool, "latest")
+	tag, err := ResolveVersion(tool, "latest")
 	require.NoError(t, err)
-	assert.Equal(t, "0.2.0", version.Version)
+	assert.Equal(t, "v0.2.0", tag)
 
 	// Test empty constraint (should return latest stable)
-	version, err = ResolveVersion(tool, "")
+	tag, err = ResolveVersion(tool, "")
 	require.NoError(t, err)
-	assert.Equal(t, "0.2.0", version.Version)
+	assert.Equal(t, "v0.2.0", tag)
 
-	// Test exact version
-	version, err = ResolveVersion(tool, "0.1.0")
+	// Test exact tag
+	tag, err = ResolveVersion(tool, "v0.1.0")
 	require.NoError(t, err)
-	assert.Equal(t, "0.1.0", version.Version)
+	assert.Equal(t, "v0.1.0", tag)
 
-	// Test non-existent version
-	_, err = ResolveVersion(tool, "99.0.0")
+	// Test tag without 'v' prefix (should fail)
+	_, err = ResolveVersion(tool, "0.1.0")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	assert.Contains(t, err.Error(), "must start with 'v'")
 }
 
 func TestResolveVersion_OnlyPreRelease(t *testing.T) {
 	// Test tool with only pre-release versions
 	tool := &ToolEntry{
-		Name: "fs",
-		Versions: []Version{
-			{Version: "0.1.0-alpha", Tag: "v0.1.0-alpha"},
-			{Version: "0.2.0-beta", Tag: "v0.2.0-beta"},
-			{Version: "0.3.0-rc", Tag: "v0.3.0-rc"},
-		},
+		Name:       "fs",
+		Repository: "https://example.com/orla-tool-fs",
 	}
 
+	mockRunner := &MockGitRunner{
+		ListTagsFunc: func(repoURL string) ([]string, error) {
+			return []string{"v0.1.0-alpha", "v0.2.0-beta", "v0.3.0-rc"}, nil
+		},
+	}
+	originalRunner := defaultGitRunner
+	defaultGitRunner = mockRunner
+	defer func() { defaultGitRunner = originalRunner }()
+
 	// Should return the latest pre-release when no stable versions exist
-	version, err := ResolveVersion(tool, "latest")
+	tag, err := ResolveVersion(tool, "latest")
 	require.NoError(t, err)
-	assert.Equal(t, "0.3.0-rc", version.Version)
+	assert.Equal(t, "v0.3.0-rc", tag)
 }
 
 func TestResolveVersion_NoVersions(t *testing.T) {
 	tool := &ToolEntry{
-		Name:     "fs",
-		Versions: []Version{},
+		Name:       "fs",
+		Repository: "https://example.com/orla-tool-fs",
 	}
+
+	mockRunner := &MockGitRunner{
+		ListTagsFunc: func(repoURL string) ([]string, error) {
+			return []string{}, nil
+		},
+	}
+	originalRunner := defaultGitRunner
+	defaultGitRunner = mockRunner
+	defer func() { defaultGitRunner = originalRunner }()
 
 	_, err := ResolveVersion(tool, "latest")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no versions available")
+	assert.Contains(t, err.Error(), "no tags found")
 }
 
 func TestResolveVersion_MixedVersions(t *testing.T) {
 	// Test with mixed stable and pre-release versions
 	tool := &ToolEntry{
-		Name: "fs",
-		Versions: []Version{
-			{Version: "0.1.0", Tag: "v0.1.0"},
-			{Version: "0.2.0-alpha", Tag: "v0.2.0-alpha"},
-			{Version: "0.3.0", Tag: "v0.3.0"},
-			{Version: "0.4.0-beta", Tag: "v0.4.0-beta"},
-		},
+		Name:       "fs",
+		Repository: "https://example.com/orla-tool-fs",
 	}
 
-	// Should return latest stable version (0.3.0), not pre-release
-	version, err := ResolveVersion(tool, "latest")
+	mockRunner := &MockGitRunner{
+		ListTagsFunc: func(repoURL string) ([]string, error) {
+			return []string{"v0.1.0", "v0.2.0-alpha", "v0.3.0", "v0.4.0-beta"}, nil
+		},
+	}
+	originalRunner := defaultGitRunner
+	defaultGitRunner = mockRunner
+	defer func() { defaultGitRunner = originalRunner }()
+
+	// Should return latest stable version (v0.3.0), not pre-release
+	tag, err := ResolveVersion(tool, "latest")
 	require.NoError(t, err)
-	assert.Equal(t, "0.3.0", version.Version)
+	assert.Equal(t, "v0.3.0", tag)
 }
 
 func TestSanitizeURLForCache(t *testing.T) {

@@ -1,0 +1,29 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../orla-registry"
+		},
+		{
+			"path": "../orla-tool-coinflip"
+		}
+	],
+	"settings": {
+		"go.languageServerFlags": [
+			"-rpc.trace",
+			"serve",
+			"--debug=localhost:6060"
+		],
+		"go.useLanguageServer": true,
+		"go.coverOnSingleTest": true,
+		"go.coverOnTestPackage": true,
+		"go.toolsManagement.checkForUpdates": "local",
+		"files.associations": {
+			"*.mod": "go.mod",
+			"*.sum": "go.sum"
+		},
+		"mesonbuild.selectRootDir": false
+	}
+}

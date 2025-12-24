@@ -25,21 +25,13 @@ type RegistryIndex struct {
 	Tools       []ToolEntry `yaml:"tools"`
 }
 
-// ToolEntry maintains tool information including name, description, repository, versions, maintainer, and keywords.
+// ToolEntry maintains tool information including name, description, repository, maintainer, and keywords.
 type ToolEntry struct {
-	Name        string    `yaml:"name"`
-	Description string    `yaml:"description"`
-	Repository  string    `yaml:"repository"`
-	Versions    []Version `yaml:"versions"`
-	Maintainer  string    `yaml:"maintainer,omitempty"`
-	Keywords    []string  `yaml:"keywords,omitempty"`
-}
-
-// Version maintains version information including version, tag, and checksum.
-type Version struct {
-	Version  string `yaml:"version"`
-	Tag      string `yaml:"tag"`
-	Checksum string `yaml:"checksum,omitempty"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	Repository  string   `yaml:"repository"`
+	Maintainer  string   `yaml:"maintainer,omitempty"`
+	Keywords    []string `yaml:"keywords,omitempty"`
 }
 
 // getRegistryCacheDirFunc is a function variable for getting cache directory (can be swapped for testing)
@@ -273,53 +265,84 @@ const (
 	VersionConstraintEmpty  = ""
 )
 
-// ResolveVersion resolves a version constraint to a specific version
-func ResolveVersion(tool *ToolEntry, constraint string) (*Version, error) {
-	if len(tool.Versions) == 0 {
-		return nil, fmt.Errorf("no versions available for tool '%s'", tool.Name)
+// extractSemverFromTag extracts a semantic version from a git tag.
+// Tags must start with 'v' and follow semver format (e.g., "v0.1.0").
+// Returns the semantic version string without the 'v' prefix, or empty string if tag doesn't match.
+func extractSemverFromTag(tag string) string {
+	// Tags must start with 'v'
+	if !strings.HasPrefix(tag, "v") {
+		return ""
+	}
+	// Remove 'v' prefix
+	version := strings.TrimPrefix(tag, "v")
+	// Validate it's a valid semver
+	if !semver.IsValid("v" + version) {
+		return ""
+	}
+	return version
+}
+
+// ResolveVersion resolves a version constraint to a specific git tag.
+// For "latest", it queries git tags from the repository and selects the latest stable version.
+// For explicit tags, it returns the tag as-is (validation happens during clone).
+func ResolveVersion(tool *ToolEntry, constraint string) (string, error) {
+	// Handle explicit tag - user provided it, just return it
+	if constraint != VersionConstraintLatest && constraint != VersionConstraintEmpty {
+		// Tags must start with 'v'
+		if !strings.HasPrefix(constraint, "v") {
+			return "", fmt.Errorf("tag '%s' must start with 'v' (e.g., v0.1.0)", constraint)
+		}
+		return constraint, nil
 	}
 
-	// Handle "latest" constraint
-	if constraint == VersionConstraintLatest || constraint == VersionConstraintEmpty {
-		// Find the latest stable version that is not a pre-release (contains -alpha, -beta, -rc, etc.)
-		var latest *Version
-		for i := range tool.Versions {
-			v := &tool.Versions[i]
-			// Skip pre-release versions (contain -alpha, -beta, -rc, etc.)
-			if !strings.Contains(v.Version, "-") {
-				if latest == nil || semver.Compare("v"+v.Version, "v"+latest.Version) > 0 {
-					latest = v
+	// Handle "latest" by querying git tags and finding the latest stable version
+	tags, err := defaultGitRunner.ListTags(tool.Repository)
+	if err != nil {
+		return "", fmt.Errorf("failed to list tags from repository: %w", err)
+	}
+
+	if len(tags) == 0 {
+		return "", fmt.Errorf("no tags found in repository for tool '%s'", tool.Name)
+	}
+
+	// Find the latest stable version by parsing semantic versions from tags
+	var latestTag string
+	var latestVersion string
+
+	for _, tag := range tags {
+		semverStr := extractSemverFromTag(tag)
+		if semverStr == "" {
+			// Skip tags that don't follow semver format
+			continue
+		}
+
+		// Skip pre-release versions (contain -alpha, -beta, -rc, etc.)
+		if !strings.Contains(semverStr, "-") {
+			if latestTag == "" || semver.Compare("v"+semverStr, "v"+latestVersion) > 0 {
+				latestTag = tag
+				latestVersion = semverStr
+			}
+		}
+	}
+
+	if latestTag == "" {
+		// If no stable version, use the latest pre-release
+		for _, tag := range tags {
+			semverStr := extractSemverFromTag(tag)
+			if semverStr != "" {
+				if latestTag == "" || semver.Compare("v"+semverStr, "v"+latestVersion) > 0 {
+					latestTag = tag
+					latestVersion = semverStr
 				}
 			}
 		}
-
-		if latest == nil {
-			// If no stable version, use the latest pre-release
-			latest = &tool.Versions[0]
-			for i := 1; i < len(tool.Versions); i++ {
-				if semver.Compare("v"+tool.Versions[i].Version, "v"+latest.Version) > 0 {
-					latest = &tool.Versions[i]
-				}
-			}
-		}
-
-		if latest == nil {
-			// this should never happen as we check tha the tool version list is not empty
-			// above, however let's be super defensive and return an error.
-			return nil, fmt.Errorf("no version found for tool '%s' with constraint '%s'.%s", tool.Name, constraint, core.BugReportMessage())
-		}
-
-		return latest, nil
 	}
 
-	// Handle exact version
-	for i := range tool.Versions {
-		if tool.Versions[i].Version == constraint {
-			return &tool.Versions[i], nil
-		}
+	if latestTag == "" {
+		return "", fmt.Errorf("no valid semver tags found for tool '%s'. Tags must start with 'v' and follow semver format (e.g., v0.1.0)", tool.Name)
 	}
 
-	return nil, fmt.Errorf("version '%s' not found for tool '%s'", constraint, tool.Name)
+	return latestTag, nil
 }
 
 // SearchTools searches the registry for tools matching the query
