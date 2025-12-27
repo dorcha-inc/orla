@@ -12,11 +12,11 @@
 [![Coverage](https://codecov.io/gh/dorcha-inc/orla/branch/main/graph/badge.svg)](https://codecov.io/gh/dorcha-inc/orla)
 ---
 
-orla is a runtime for model context protocol ([MCP](https://modelcontextprotocol.io/docs/getting-started/intro)) servers that automatically discovers and executes tools from the filesystem. Just drop executable files in a `tools/` directory and orla makes them available as MCP tools! No configuration required.
+Orla is a runtime for model context protocol ([MCP](https://modelcontextprotocol.io/docs/getting-started/intro)) servers that automatically discovers and executes tools from the filesystem. Just drop executable files in a `tools/` directory and orla makes them available as MCP tools! No configuration required.
 
 All the amazing folks who have taken their time to contribute something cool to orla are listed in [CONTRIBUTORS.md](CONTRIBUTORS.md). If you find orla useful, please consider [sponsoring](https://github.com/sponsors/jadidbourbaki) the orla project. Your support helps maintain and improve orla for everyone. Thank you!
 
-## quick links
+## Quick links
 
 - [Getting Started](#getting-started)
 - [Usage](#usage)
@@ -26,7 +26,7 @@ All the amazing folks who have taken their time to contribute something cool to 
 - [Roadmap](#roadmap)
 - [Integration Guides](#integration-guides)
 
-## getting started
+## Getting started
 
 to install orla, you can either just run
 
@@ -46,9 +46,35 @@ or installing locally by running
 make install
 ```
 
-## usage
+## Usage
 
-The following is a simple example of using orla to create a set of MCP tools.
+### Installing Tools from the Registry
+
+The easiest way to get started is to install tools from the [Orla Tool Registry](https://github.com/dorcha-inc/orla-registry):
+
+For example, to install the latest version of a tool (e.g the filesystem tool):
+
+```bash
+orla install fs
+```
+
+To install a specific version of a tool, e.g the coinflip tool:
+
+```bash
+orla install coinflip --version v0.1.0
+```
+
+To search for available tools:
+
+```bash
+orla search $search_term
+```
+
+Installed tools are automatically placed in the default tools directory and will be discovered by orla when you start the server.
+
+### Creating Custom Tools
+
+You can also create your own tools. The following is a simple example of using orla to create a set of MCP tools.
 
 1. Create a tools directory with some tools. The tools can be any kind of executable.
 
@@ -95,9 +121,9 @@ If no configuration file is specified, orla will automatically check for `orla.y
 kill -HUP $(pgrep orla)
 ```
 
-## configuration
+## Configuration
 
-orla works out of the box with zero configuration, but you can customize it with a YAML config file:
+Orla works out of the box with zero configuration, but you can customize it with a YAML config file:
 
 ```yaml
 tools_dir: ./tools
@@ -115,7 +141,7 @@ The configuration options for orla are as follows
 - `log_format`: `"json"` or `"pretty"` (default: `"json"`)
 - `log_level`: `"debug"`, `"info"`, `"warn"`, `"error"`, or `"fatal"` (default: `"info"`)
 
-## command line options
+## Command line options
 
 ```bash
 orla serve [options]
@@ -128,7 +154,7 @@ Options:
   -tools-dir string Directory containing tools (overrides config file)
 ```
 
-## git hooks
+## Git hooks
 
 orla includes pre-commit hooks for secret detection, linting, and testing. to enable them, run this once:
 
@@ -138,7 +164,7 @@ git config core.hooksPath .githooks
 
 this configures git to automatically use hooks from `.githooks/` - no setup script needed!
 
-## testing
+## Testing
 
 orla comes with extensive tests which can be run using
 
@@ -147,7 +173,7 @@ make test
 ```
 
 
-## community + contributions
+## Community + contributions
 
 Contributions are very welcome! orla is an open-source project and runs on individual contributions from amazing people around the world. Contributions are welcome! For feature requests, bug reports, or usage problems, please feel free to create an issue. For more extensive contributions, check the [contribution guide](CONTRIBUTING.md). 
 
@@ -156,11 +182,11 @@ Join other orla users and developers on the following platforms:
 [![Discord](https://img.shields.io/badge/Discord-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/bzKYCFewPT)
 [![GitHub issues](https://img.shields.io/github/issues/dorcha-inc/orla)](https://github.com/dorcha-inc/orla/issues)
 
-## roadmap
+## Roadmap
 
 See the RFCs in `docs/rfcs/` for the full vision and roadmap.
 
-## integration guides
+## Integration guides
 
 - [Claude Desktop Integration](docs/integrations/claude-desktop.md)
 - [MCP Client for Ollama Integration](docs/integrations/mcp-client-ollama.md)
