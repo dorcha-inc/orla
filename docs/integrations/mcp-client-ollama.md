@@ -83,8 +83,16 @@ Keep this running in a terminal, or run it as a background service.
 
 3. Pull a model that supports tool calling:
 
+for very lightweight laptops, this works:
+
 ```bash
 ollama pull qwen2.5:3b-instruct
+```
+
+for slightly more provisioned laptops (16 GB ram and above), this works better:
+
+```bash
+ollama pull ministral-3:8b
 ```
 
 ## Configure MCP Client for Ollama
@@ -112,6 +120,12 @@ Next, you can run MCP Client for Ollama:
 
 ```bash
 uvx ollmcp --model qwen2.5:3b-instruct
+```
+
+(or using the mistral model)
+
+```bash
+uvx ollmcp --model ministral-3:8b
 ```
 
 it should look like this:
