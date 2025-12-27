@@ -32,10 +32,6 @@ jobs:
     timeout-minutes: 20
     # Only run on non-draft PRs
     if: github.event.pull_request.draft == false || github.event_name == 'push'
-    strategy:
-      # Test only latest Go version on PRs, all versions on main
-      matrix:
-        go-version: ${{ github.event_name == 'pull_request' && fromJSON('["1.24"]') || fromJSON('["1.23", "1.24"]') }}
     
     steps:
     - name: Checkout code
@@ -43,8 +39,6 @@ jobs:
 
     - name: Set up Go
       uses: actions/setup-go@v5
-      with:
-        go-version: ${{ matrix.go-version }}
 
     - name: Cache Go modules
       uses: actions/cache@v4
