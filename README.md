@@ -163,3 +163,5 @@ See the RFCs in `docs/rfcs/` for the full vision and roadmap.
 ## integration guides
 
 - [Claude Desktop Integration](docs/integrations/claude-desktop.md)
+- [MCP Client for Ollama Integration](docs/integrations/mcp-client-ollama.md)
+- [Goose AI Agent Integration](docs/integrations/goose.md)
