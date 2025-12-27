@@ -146,6 +146,11 @@ func (o *OrlaServer) registerTool(tool *core.ToolEntry) {
 		mcpTool.InputSchema = tool.InputSchema
 	}
 
+	// Add output schema if available
+	if tool.OutputSchema != nil {
+		mcpTool.OutputSchema = tool.OutputSchema
+	}
+
 	mcp.AddTool(o.orlaMCPserver, mcpTool, handler)
 	zap.L().Debug("mcp.AddTool completed", zap.String("tool", tool.Name))
 }

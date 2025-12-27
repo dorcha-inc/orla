@@ -213,18 +213,25 @@ func ScanInstalledTools(installDir string) (map[string]*core.ToolEntry, error) {
 				}
 			}
 
-			// Extract input schema from manifest if present
+			// Extract input and output schemas from manifest if present
 			var inputSchema map[string]any
-			if manifest.MCP != nil && manifest.MCP.InputSchema != nil {
-				inputSchema = manifest.MCP.InputSchema
+			var outputSchema map[string]any
+			if manifest.MCP != nil {
+				if manifest.MCP.InputSchema != nil {
+					inputSchema = manifest.MCP.InputSchema
+				}
+				if manifest.MCP.OutputSchema != nil {
+					outputSchema = manifest.MCP.OutputSchema
+				}
 			}
 
 			tool := &core.ToolEntry{
-				Name:        manifest.Name,
-				Description: manifest.Description,
-				Path:        absEntrypoint,
-				Interpreter: interpreter,
-				InputSchema: inputSchema,
+				Name:         manifest.Name,
+				Description:  manifest.Description,
+				Path:         absEntrypoint,
+				Interpreter:  interpreter,
+				InputSchema:  inputSchema,
+				OutputSchema: outputSchema,
 			}
 
 			toolMap[manifest.Name] = tool
