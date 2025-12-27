@@ -53,7 +53,7 @@ Examples:
 				return fmt.Errorf("failed to install tool: %w", err)
 			}
 
-			fmt.Printf("✓ Successfully installed %s\n", toolName)
+			fmt.Printf("Successfully installed %s\n", toolName)
 			fmt.Println("Tool is now available. Restart orla server to use it.")
 
 			return nil
