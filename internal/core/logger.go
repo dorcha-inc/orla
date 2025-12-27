@@ -9,6 +9,8 @@ import (
 
 // Init initializes zap's global logger
 // After calling this, we use zap.L() directly.
+// The logger is explicitly configured to write to stderr to avoid interfering
+// with tool stdout (especially important in stdio mode where stdout is used for MCP protocol).
 func Init(pretty bool) error {
 	var config zap.Config
 
@@ -19,6 +21,11 @@ func Init(pretty bool) error {
 		config = zap.NewProductionConfig()
 		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	}
+
+	// Explicitly set output to stderr to avoid interfering with tool stdout
+	// This is critical in stdio mode where stdout is used for MCP protocol
+	config.OutputPaths = []string{"stderr"}
+	config.ErrorOutputPaths = []string{"stderr"}
 
 	logger, err := config.Build()
 	if err != nil {

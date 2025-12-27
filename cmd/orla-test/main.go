@@ -23,8 +23,12 @@ func init() {
 }
 
 func main() {
-	// set up zap logger
-	logger, err := zap.NewProduction()
+	// set up zap logger - explicitly write to stderr to avoid interfering with tool stdout
+	config := zap.NewProductionConfig()
+	config.OutputPaths = []string{"stderr"}
+	config.ErrorOutputPaths = []string{"stderr"}
+
+	logger, err := config.Build()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

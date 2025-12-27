@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -155,6 +156,13 @@ func (o *OrlaServer) registerTool(tool *core.ToolEntry) {
 	zap.L().Debug("mcp.AddTool completed", zap.String("tool", tool.Name))
 }
 
+func wrapOutputDefault(output map[string]any, result *core.OrlaToolExecutionResult) map[string]any {
+	output["stdout"] = result.Stdout
+	output["stderr"] = result.Stderr
+	output["exit_code"] = result.ExitCode
+	return output
+}
+
 // handleToolCall handles a tool execution request
 func (o *OrlaServer) handleToolCall(
 	ctx context.Context,
@@ -175,7 +183,9 @@ func (o *OrlaServer) handleToolCall(
 			}
 			continue
 		}
-		args = append(args, fmt.Sprintf("--%s", k))
+		// Convert underscores to hyphens for command-line arguments (standard convention)
+		argName := strings.ReplaceAll(k, "_", "-")
+		args = append(args, fmt.Sprintf("--%s", argName))
 		args = append(args, fmt.Sprintf("%v", v))
 	}
 
@@ -225,24 +235,76 @@ func (o *OrlaServer) handleToolCall(
 		})
 	}
 
-	// Build structured output
-	output := map[string]any{
-		"stdout":    result.Stdout,
-		"stderr":    result.Stderr,
-		"exit_code": result.ExitCode,
-	}
-
-	if result.Error != nil {
-		output["error"] = result.Error.Error()
-	}
-
 	// this includes deadline exceeded errors
 	isError := result.Error != nil || result.ExitCode != 0
 
-	return &mcp.CallToolResult{
+	callToolResult := &mcp.CallToolResult{
 		IsError: isError,
 		Content: content,
-	}, output, nil
+	}
+
+	outputMap := make(map[string]any)
+
+	if result.Error != nil {
+		outputMap["error"] = result.Error.Error()
+	}
+
+	if tool.OutputSchema == nil {
+		outputMap = wrapOutputDefault(outputMap, result)
+		return callToolResult, outputMap, nil
+	}
+
+	// If tool has an output schema, try to parse stdout as JSON and use it as structured output
+	// Note(jadidbourbaki): if we reach here, we have a valid output schema and a non-empty stdout
+
+	var parsedOutput any
+	err = json.Unmarshal([]byte(result.Stdout), &parsedOutput)
+
+	if err != nil {
+		zap.L().Error("Failed to parse tool stdout as JSON",
+			zap.String("tool", tool.Name),
+			zap.String("stdout", result.Stdout),
+			zap.Error(err))
+		// If we have an OutputSchema, we can't fall back to wrapper format
+		// because it won't match the schema. Return an error instead.
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: fmt.Sprintf("Tool output is not valid JSON: %v", err),
+				},
+			},
+		}, nil, nil
+	}
+
+	// Successfully parsed JSON. If it's a map, use it directly
+	// Otherwise wrap it. Output schemas typically define objects.
+	parsedMap, ok := parsedOutput.(map[string]any)
+
+	// Note(jadidbourbaki): this is unlikely to happen, but we handle it gracefully
+	if !ok {
+		zap.L().Error("Tool output is not a map",
+			zap.String("tool", tool.Name),
+			zap.String("stdout", result.Stdout))
+		// If we have an OutputSchema, we can't fall back to wrapper format
+		// because it won't match the schema. Return an error instead.
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: "Tool output is not a JSON object",
+				},
+			},
+		}, nil, nil
+	}
+
+	outputMap = parsedMap
+
+	// Note(jadidbourbaki): After some experimentation, it seems like we
+	// should not set StructuredContent manually, the MCP SDK will set it after validating outputMap.
+	// Also, we shouldn't set Content to raw stdout when we have structured content.
+	callToolResult.Content = nil
+	return callToolResult, outputMap, nil
 }
 
 // Reload reloads configuration and rescans tools directory
