@@ -7,7 +7,6 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/dorcha-inc/orla)](https://goreportcard.com/report/github.com/dorcha-inc/orla)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/6573/badge)](https://www.bestpractices.dev/projects/6573)
-[![Test](https://github.com/dorcha-inc/orla/actions/workflows/test.yml/badge.svg)](https://github.com/dorcha-inc/orla/actions/workflows/test.yml)
 [![Build](https://github.com/dorcha-inc/orla/actions/workflows/build.yml/badge.svg)](https://github.com/dorcha-inc/orla/actions/workflows/build.yml)
 [![Coverage](https://codecov.io/gh/dorcha-inc/orla/branch/main/graph/badge.svg)](https://codecov.io/gh/dorcha-inc/orla)
 ---

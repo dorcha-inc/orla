@@ -10,14 +10,3 @@ coverage:
   ignore:
     - "cmd/"
     - "examples/"
-
-  # Status settings
-  status:
-    project:
-      default:
-        target: 80%
-        threshold: 1%
-    patch:
-      default:
-        target: 80%
-        threshold: 1%

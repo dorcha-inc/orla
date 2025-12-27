@@ -3,13 +3,27 @@ name: coverage
 on:
   push:
     branches: [ main ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/coverage.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/coverage.yml'
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only run on non-draft PRs
+    if: github.event.pull_request.draft == false || github.event_name == 'push'
     
     steps:
     - name: Checkout code
