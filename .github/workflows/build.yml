@@ -100,11 +100,3 @@ jobs:
         mkdir -p bin
         go build -ldflags "-X main.version=${VERSION} -X main.buildDate=${BUILD_DATE}" \
           -o bin/orla-linux-amd64 ./cmd/orla
-
-    - name: Upload artifacts
-      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-      uses: actions/upload-artifact@v4
-      with:
-        name: orla-linux-amd64
-        path: bin/orla-linux-amd64
-        retention-days: 7
