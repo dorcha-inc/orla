@@ -3,6 +3,7 @@ package registry
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -839,7 +840,261 @@ func TestSearchTools(t *testing.T) {
 
 	// Test empty query (should return all)
 	results = SearchTools(registry, "")
-	assert.Len(t, results, 3)
+	assert.Len(t, results, 3, "Empty query should return all tools")
+}
+
+func TestExtractSemverFromTag(t *testing.T) {
+	// Test valid semver tag
+	version := extractSemverFromTag("v1.2.3")
+	assert.Equal(t, "1.2.3", version)
+
+	// Test valid semver with prerelease
+	version = extractSemverFromTag("v1.2.3-alpha")
+	assert.Equal(t, "1.2.3-alpha", version)
+
+	// Test valid semver with build metadata
+	version = extractSemverFromTag("v1.2.3+build")
+	assert.Equal(t, "1.2.3+build", version)
+
+	// Test tag without 'v' prefix
+	version = extractSemverFromTag("1.2.3")
+	assert.Empty(t, version, "Tag without 'v' prefix should return empty")
+
+	// Test invalid semver
+	version = extractSemverFromTag("vinvalid")
+	assert.Empty(t, version, "Invalid semver should return empty")
+
+	// Test empty tag
+	version = extractSemverFromTag("")
+	assert.Empty(t, version, "Empty tag should return empty")
+
+	// Test tag with just 'v'
+	version = extractSemverFromTag("v")
+	assert.Empty(t, version, "Tag with just 'v' should return empty")
+}
+
+func TestClearRegistryCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache", "registry")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(cacheDir, 0755))
+
+	// Create some cache files
+	cacheFile := filepath.Join(cacheDir, "test.yaml")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(cacheFile, []byte("test"), 0644))
+
+	// Mock GetRegistryCacheDir
+	originalGetCacheDir := getRegistryCacheDirFunc
+	getRegistryCacheDirFunc = func() (string, error) {
+		return cacheDir, nil
+	}
+	defer func() {
+		getRegistryCacheDirFunc = originalGetCacheDir
+	}()
+
+	// Clear cache
+	err := ClearRegistryCache()
+	require.NoError(t, err)
+
+	// Verify cache directory was removed
+	_, err = os.Stat(cacheDir)
+	assert.True(t, os.IsNotExist(err), "Cache directory should be removed")
+}
+
+func TestClearRegistryCache_Nonexistent(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache", "registry")
+
+	// Mock GetRegistryCacheDir
+	originalGetCacheDir := getRegistryCacheDirFunc
+	getRegistryCacheDirFunc = func() (string, error) {
+		return cacheDir, nil
+	}
+	defer func() {
+		getRegistryCacheDirFunc = originalGetCacheDir
+	}()
+
+	// Clear cache when directory doesn't exist - should return error
+	err := ClearRegistryCache()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cache directory not found")
+}
+
+func TestSearchTools_Keywords(t *testing.T) {
+	registry := &RegistryIndex{
+		Tools: []ToolEntry{
+			{
+				Name:        "tool1",
+				Description: "Tool 1",
+				Keywords:    []string{"filesystem", "fs"},
+			},
+			{
+				Name:        "tool2",
+				Description: "Tool 2",
+				Keywords:    []string{"http", "web"},
+			},
+			{
+				Name:        "tool3",
+				Description: "Tool 3",
+				Keywords:    []string{"database", "db"},
+			},
+		},
+	}
+
+	// Test keyword matching
+	results := SearchTools(registry, "filesystem")
+	assert.Len(t, results, 1)
+	assert.Equal(t, "tool1", results[0].Name)
+
+	results = SearchTools(registry, "web")
+	assert.Len(t, results, 1)
+	assert.Equal(t, "tool2", results[0].Name)
+
+	results = SearchTools(registry, "db")
+	assert.Len(t, results, 1)
+	assert.Equal(t, "tool3", results[0].Name)
+
+	// Test keyword matching is case-insensitive
+	results = SearchTools(registry, "FILESYSTEM")
+	assert.Len(t, results, 1)
+	assert.Equal(t, "tool1", results[0].Name)
+}
+
+func TestLoadCachedRegistry_ErrorCases(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(cacheDir, 0755))
+
+	// Test with invalid YAML
+	cachePath := filepath.Join(cacheDir, "registry.yaml")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(cachePath, []byte("invalid: yaml: [unclosed"), 0644))
+
+	_, err := loadCachedRegistry(cachePath)
+	assert.Error(t, err)
+}
+
+func TestSaveCachedRegistry_ErrorCases(t *testing.T) {
+	tmpDir := t.TempDir()
+	cacheDir := filepath.Join(tmpDir, "cache")
+	cachePath := filepath.Join(cacheDir, "registry.yaml")
+
+	index := &RegistryIndex{
+		Version:     1,
+		RegistryURL: exampleRegistryURL,
+		Tools:       []ToolEntry{{Name: "test"}},
+	}
+
+	// Test with invalid directory path (should create it)
+	err := saveCachedRegistry(cachePath, index)
+	require.NoError(t, err)
+
+	// Verify file was created
+	assert.FileExists(t, cachePath)
+}
+
+func TestExecGitRunner_ListTags(t *testing.T) {
+	runner := &execGitRunner{}
+
+	// Test with a real git repository
+	tmpDir := t.TempDir()
+	repoDir := filepath.Join(tmpDir, "repo")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(repoDir, 0755))
+
+	// Initialize git repository
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create initial commit
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, "test.txt"), []byte("test"), 0644))
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "commit", "-m", "initial commit")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
+	require.NoError(t, cmd.Run())
+
+	// Create tags
+	cmd = exec.Command("git", "tag", "v1.0.0")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "tag", "v1.1.0")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	cmd = exec.Command("git", "tag", "v2.0.0")
+	cmd.Dir = repoDir
+	require.NoError(t, cmd.Run())
+
+	// Create a bare repository to use as remote
+	remoteRepo := filepath.Join(tmpDir, "remote.git")
+	cmd = exec.Command("git", "clone", "--bare", repoDir, remoteRepo)
+	require.NoError(t, cmd.Run())
+
+	// Test ListTags with file:// URL
+	repoURL := "file://" + remoteRepo
+	tags, err := runner.ListTags(repoURL)
+	require.NoError(t, err)
+	assert.Contains(t, tags, "v1.0.0")
+	assert.Contains(t, tags, "v1.1.0")
+	assert.Contains(t, tags, "v2.0.0")
+}
+
+func TestExecGitRunner_ListTags_Error(t *testing.T) {
+	runner := &execGitRunner{}
+
+	// Test with invalid URL
+	_, err := runner.ListTags("https://invalid-url-that-does-not-exist.example.com/repo")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to list tags")
+}
+
+func TestMockGitRunner_ListTags(t *testing.T) {
+	t.Run("uses ListTagsFunc when provided", func(t *testing.T) {
+		expectedTags := []string{"v1.0.0", "v1.1.0"}
+		mock := &MockGitRunner{
+			ListTagsFunc: func(repoURL string) ([]string, error) {
+				assert.Equal(t, "https://example.com/repo", repoURL)
+				return expectedTags, nil
+			},
+		}
+
+		tags, err := mock.ListTags("https://example.com/repo")
+		assert.NoError(t, err)
+		assert.Equal(t, expectedTags, tags)
+		assert.Len(t, mock.ListTagsCalls, 1)
+		assert.Equal(t, "https://example.com/repo", mock.ListTagsCalls[0])
+	})
+
+	t.Run("uses ListTagsErr when ListTagsFunc is nil", func(t *testing.T) {
+		expectedErr := fmt.Errorf("list tags failed")
+		mock := &MockGitRunner{
+			ListTagsErr: expectedErr,
+		}
+
+		tags, err := mock.ListTags("https://example.com/repo")
+		assert.Error(t, err)
+		assert.Equal(t, expectedErr, err)
+		assert.Nil(t, tags)
+		assert.Len(t, mock.ListTagsCalls, 1)
+	})
+
+	t.Run("returns empty when both ListTagsFunc and ListTagsErr are nil", func(t *testing.T) {
+		mock := &MockGitRunner{}
+
+		tags, err := mock.ListTags("https://example.com/repo")
+		assert.NoError(t, err)
+		assert.Empty(t, tags)
+		assert.Len(t, mock.ListTagsCalls, 1)
+	})
 }
 
 func TestExtractVersionFromDir(t *testing.T) {

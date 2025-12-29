@@ -227,6 +227,238 @@ func TestNewOrlaConfigFromPath_WithToolsRegistry(t *testing.T) {
 	assert.Equal(t, toolEntry, tool)
 }
 
+// TestNewOrlaConfigFromPath_WithToolsRegistry_RelativePath tests path resolution for relative paths in tools_registry
+func TestNewOrlaConfigFromPath_WithToolsRegistry_RelativePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+
+	// Create a tool file
+	toolDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	err := os.MkdirAll(toolDir, 0755)
+	require.NoError(t, err)
+
+	toolPath := filepath.Join(toolDir, "test-tool.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(toolPath, []byte("#!/bin/sh\necho test\n"), 0755)
+	require.NoError(t, err)
+
+	// Create config file with tools registry using relative path
+	toolEntry := &core.ToolManifest{
+		Name:        "test-tool",
+		Description: "A test tool",
+		Path:        "tools/test-tool.sh", // Relative path
+		Interpreter: "/bin/sh",
+	}
+
+	registry := NewToolsRegistry()
+	err = registry.AddTool(toolEntry)
+	require.NoError(t, err)
+
+	config := OrlaConfig{
+		ToolsDir:      "", // Empty - should use registry
+		ToolsRegistry: registry,
+		Port:          9000,
+		Timeout:       60,
+	}
+
+	configYAML, err := yaml.Marshal(config)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(configPath, configYAML, 0644)
+	require.NoError(t, err)
+
+	// Load config
+	cfg, err := NewOrlaConfigFromPath(configPath)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	// Verify path was resolved to absolute
+	assert.NotNil(t, cfg.ToolsRegistry)
+	tool, err := cfg.ToolsRegistry.GetTool("test-tool")
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(tool.Path), "Path should be resolved to absolute")
+	assert.Equal(t, toolPath, tool.Path, "Path should match expected absolute path")
+}
+
+// TestNewOrlaConfigFromPath_WithToolsRegistry_EntrypointToPath tests entrypoint to Path resolution
+func TestNewOrlaConfigFromPath_WithToolsRegistry_EntrypointToPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+
+	// Create a tool file
+	toolDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	err := os.MkdirAll(toolDir, 0755)
+	require.NoError(t, err)
+
+	toolPath := filepath.Join(toolDir, "test-tool.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(toolPath, []byte("#!/bin/sh\necho test\n"), 0755)
+	require.NoError(t, err)
+
+	// Create config file with tools registry using entrypoint (no Path set)
+	toolEntry := &core.ToolManifest{
+		Name:        "test-tool",
+		Description: "A test tool",
+		Entrypoint:  "tools/test-tool.sh", // Entrypoint without Path
+		Interpreter: "/bin/sh",
+	}
+
+	registry := NewToolsRegistry()
+	err = registry.AddTool(toolEntry)
+	require.NoError(t, err)
+
+	config := OrlaConfig{
+		ToolsDir:      "", // Empty - should use registry
+		ToolsRegistry: registry,
+		Port:          9000,
+		Timeout:       60,
+	}
+
+	configYAML, err := yaml.Marshal(config)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(configPath, configYAML, 0644)
+	require.NoError(t, err)
+
+	// Load config
+	cfg, err := NewOrlaConfigFromPath(configPath)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	// Verify entrypoint was resolved to Path
+	assert.NotNil(t, cfg.ToolsRegistry)
+	tool, err := cfg.ToolsRegistry.GetTool("test-tool")
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(tool.Path), "Path should be resolved to absolute from entrypoint")
+	assert.Equal(t, toolPath, tool.Path, "Path should match expected absolute path")
+}
+
+// TestNewOrlaConfigFromPath_WithToolsRegistry_AbsolutePathPreserved tests that absolute paths are not modified
+func TestNewOrlaConfigFromPath_WithToolsRegistry_AbsolutePathPreserved(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+
+	// Create a tool file
+	toolDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	err := os.MkdirAll(toolDir, 0755)
+	require.NoError(t, err)
+
+	toolPath := filepath.Join(toolDir, "test-tool.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(toolPath, []byte("#!/bin/sh\necho test\n"), 0755)
+	require.NoError(t, err)
+
+	// Create config file with tools registry using absolute path
+	toolEntry := &core.ToolManifest{
+		Name:        "test-tool",
+		Description: "A test tool",
+		Path:        toolPath, // Absolute path
+		Interpreter: "/bin/sh",
+	}
+
+	registry := NewToolsRegistry()
+	err = registry.AddTool(toolEntry)
+	require.NoError(t, err)
+
+	config := OrlaConfig{
+		ToolsDir:      "", // Empty - should use registry
+		ToolsRegistry: registry,
+		Port:          9000,
+		Timeout:       60,
+	}
+
+	configYAML, err := yaml.Marshal(config)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(configPath, configYAML, 0644)
+	require.NoError(t, err)
+
+	// Load config
+	cfg, err := NewOrlaConfigFromPath(configPath)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	// Verify absolute path was preserved
+	assert.NotNil(t, cfg.ToolsRegistry)
+	tool, err := cfg.ToolsRegistry.GetTool("test-tool")
+	require.NoError(t, err)
+	assert.Equal(t, toolPath, tool.Path, "Absolute path should be preserved")
+}
+
+// TestNewOrlaConfigFromPath_WithToolsRegistry_MultipleTools tests path resolution with multiple tools
+func TestNewOrlaConfigFromPath_WithToolsRegistry_MultipleTools(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+
+	// Create tool files
+	toolDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	err := os.MkdirAll(toolDir, 0755)
+	require.NoError(t, err)
+
+	tool1Path := filepath.Join(toolDir, "tool1.sh")
+	tool2Path := filepath.Join(toolDir, "tool2.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(tool1Path, []byte("#!/bin/sh\necho tool1\n"), 0755)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(tool2Path, []byte("#!/bin/sh\necho tool2\n"), 0755)
+	require.NoError(t, err)
+
+	// Create config file with tools registry using both relative paths and entrypoints
+	tool1 := &core.ToolManifest{
+		Name:        "tool1",
+		Description: "Tool 1",
+		Path:        "tools/tool1.sh", // Relative path
+		Interpreter: "/bin/sh",
+	}
+	tool2 := &core.ToolManifest{
+		Name:        "tool2",
+		Description: "Tool 2",
+		Entrypoint:  "tools/tool2.sh", // Entrypoint without Path
+		Interpreter: "/bin/sh",
+	}
+
+	registry := NewToolsRegistry()
+	err = registry.AddTool(tool1)
+	require.NoError(t, err)
+	err = registry.AddTool(tool2)
+	require.NoError(t, err)
+
+	config := OrlaConfig{
+		ToolsDir:      "", // Empty - should use registry
+		ToolsRegistry: registry,
+		Port:          9000,
+		Timeout:       60,
+	}
+
+	configYAML, err := yaml.Marshal(config)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(configPath, configYAML, 0644)
+	require.NoError(t, err)
+
+	// Load config
+	cfg, err := NewOrlaConfigFromPath(configPath)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	// Verify both tools have resolved paths
+	assert.NotNil(t, cfg.ToolsRegistry)
+	tool1Result, err := cfg.ToolsRegistry.GetTool("tool1")
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(tool1Result.Path))
+	assert.Equal(t, tool1Path, tool1Result.Path)
+
+	tool2Result, err := cfg.ToolsRegistry.GetTool("tool2")
+	require.NoError(t, err)
+	assert.True(t, filepath.IsAbs(tool2Result.Path))
+	assert.Equal(t, tool2Path, tool2Result.Path)
+}
+
 // TestNewOrlaConfigFromPath_NoToolsDirNoRegistry tests error when neither tools dir nor registry is provided
 func TestNewOrlaConfigFromPath_NoToolsDirNoRegistry(t *testing.T) {
 	tmpDir := t.TempDir()
