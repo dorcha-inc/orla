@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/puzpuzpuz/xsync/v3"
 	"go.uber.org/zap"
 )
 
@@ -50,9 +51,8 @@ type CapsuleManager struct {
 	stdout         io.ReadCloser  // Stdout pipe for reading responses
 	requestID      int64          // Counter for JSON-RPC request IDs
 	requestIDMu    sync.Mutex
-	responses      map[int64]chan *JSONRPCResponse // Map of request ID to response channel
-	responsesMu    sync.RWMutex
-	responseReader *json.Decoder // JSON decoder for reading responses
+	responses      *xsync.MapOf[int64, chan *JSONRPCResponse] // Map of request ID to response channel
+	responseReader *json.Decoder                              // JSON decoder for reading responses
 }
 
 // OrlaHelloNotification represents the orla.hello handshake notification
@@ -93,7 +93,7 @@ func NewCapsuleManagerWithClock(tool *ToolManifest, clock clockwork.Clock) *Caps
 		handshakeCh:    make(chan *OrlaHelloNotification, 1),
 		ctx:            ctx,
 		cancel:         cancel,
-		responses:      make(map[int64]chan *JSONRPCResponse),
+		responses:      xsync.NewMapOf[int64, chan *JSONRPCResponse](),
 	}
 }
 
@@ -271,9 +271,7 @@ func (cm *CapsuleManager) readResponses() {
 		var response JSONRPCResponse
 		if err := json.Unmarshal(rawMessage, &response); err == nil {
 			if response.ID != 0 {
-				cm.responsesMu.RLock()
-				responseCh, ok := cm.responses[response.ID]
-				cm.responsesMu.RUnlock()
+				responseCh, ok := cm.responses.Load(response.ID)
 
 				if ok {
 					select {
@@ -282,9 +280,7 @@ func (cm *CapsuleManager) readResponses() {
 						return
 					}
 					// Clean up response channel
-					cm.responsesMu.Lock()
-					delete(cm.responses, response.ID)
-					cm.responsesMu.Unlock()
+					cm.responses.Delete(response.ID)
 				}
 			}
 		}
@@ -335,12 +331,11 @@ func (cm *CapsuleManager) Stop() error {
 	}
 
 	// Clean up response channels
-	cm.responsesMu.Lock()
-	for id, ch := range cm.responses {
+	cm.responses.Range(func(id int64, ch chan *JSONRPCResponse) bool {
 		close(ch)
-		delete(cm.responses, id)
-	}
-	cm.responsesMu.Unlock()
+		cm.responses.Delete(id)
+		return true
+	})
 
 	cm.setStateLocked(CapsuleStateStopped)
 	return nil
@@ -391,9 +386,7 @@ func (cm *CapsuleManager) CallTool(ctx context.Context, input map[string]any) (*
 
 	// Create response channel
 	responseCh := make(chan *JSONRPCResponse, 1)
-	cm.responsesMu.Lock()
-	cm.responses[requestID] = responseCh
-	cm.responsesMu.Unlock()
+	cm.responses.Store(requestID, responseCh)
 
 	// Build JSON-RPC request
 	request := JSONRPCRequest{
@@ -413,18 +406,14 @@ func (cm *CapsuleManager) CallTool(ctx context.Context, input map[string]any) (*
 
 	if stdin == nil {
 		// Clean up response channel
-		cm.responsesMu.Lock()
-		delete(cm.responses, requestID)
-		cm.responsesMu.Unlock()
+		cm.responses.Delete(requestID)
 		return nil, fmt.Errorf("stdin pipe is not available")
 	}
 
 	encoder := json.NewEncoder(stdin)
 	if err := encoder.Encode(request); err != nil {
 		// Clean up response channel
-		cm.responsesMu.Lock()
-		delete(cm.responses, requestID)
-		cm.responsesMu.Unlock()
+		cm.responses.Delete(requestID)
 		return nil, fmt.Errorf("failed to send JSON-RPC request: %w", err)
 	}
 
@@ -434,15 +423,11 @@ func (cm *CapsuleManager) CallTool(ctx context.Context, input map[string]any) (*
 		return response, nil
 	case <-ctx.Done():
 		// Clean up response channel
-		cm.responsesMu.Lock()
-		delete(cm.responses, requestID)
-		cm.responsesMu.Unlock()
+		cm.responses.Delete(requestID)
 		return nil, fmt.Errorf("request timeout: %w", ctx.Err())
 	case <-cm.ctx.Done():
 		// Clean up response channel
-		cm.responsesMu.Lock()
-		delete(cm.responses, requestID)
-		cm.responsesMu.Unlock()
+		cm.responses.Delete(requestID)
 		return nil, fmt.Errorf("capsule context cancelled")
 	}
 }

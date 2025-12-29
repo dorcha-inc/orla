@@ -1497,3 +1497,248 @@ func TestNewOrlaServer_WithSpecialCharactersInPath(t *testing.T) {
 	require.NotNil(t, srv)
 	assert.Equal(t, specialPath, srv.configPath)
 }
+
+// createRespondingCapsuleScript creates a test capsule script that sends handshake and responds to JSON-RPC calls
+func createRespondingCapsuleScript(t *testing.T) string {
+	t.Helper()
+
+	if runtime.GOOS == windowsOS {
+		t.Skip("Windows capsule script tests not implemented")
+		return ""
+	}
+
+	scriptContent := `#!/bin/sh
+# Send handshake
+echo '{"jsonrpc":"2.0","method":"orla.hello","params":{"name":"test-tool","version":"1.0.0","capabilities":["tools"]}}'
+
+# Read and respond to JSON-RPC requests
+while IFS= read -r line; do
+  # Extract request ID using sed
+  REQ_ID=$(echo "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  if [ -n "$REQ_ID" ]; then
+    # Send response
+    echo "{\"jsonrpc\":\"2.0\",\"id\":$REQ_ID,\"result\":{\"output\":\"test result\"}}"
+  fi
+done
+`
+
+	scriptFile := filepath.Join(t.TempDir(), "responding-capsule.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err := os.WriteFile(scriptFile, []byte(scriptContent), 0755)
+	require.NoError(t, err)
+
+	return scriptFile
+}
+
+// TestRebuildServer_WithCapsuleMode tests rebuilding server with capsule mode tools
+func TestRebuildServer_WithCapsuleMode(t *testing.T) {
+	if runtime.GOOS == windowsOS {
+		t.Skip("Windows capsule script tests not implemented")
+	}
+
+	cfg := createTestConfig(t)
+	srv := NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+
+	// Create a capsule mode tool
+	scriptPath := createRespondingCapsuleScript(t)
+	capsuleTool := &core.ToolManifest{
+		Name:        "capsule-tool",
+		Version:     "1.0.0",
+		Description: "A capsule mode tool",
+		Path:        scriptPath,
+		Runtime: &core.RuntimeConfig{
+			Mode:             core.RuntimeModeCapsule,
+			StartupTimeoutMs: 5000,
+		},
+	}
+
+	err := cfg.ToolsRegistry.AddTool(capsuleTool)
+	require.NoError(t, err)
+
+	// Rebuild server - should start the capsule
+	srv.rebuildServer()
+
+	// Verify capsule was started
+	capsule, ok := srv.capsules.Load("capsule-tool")
+	require.True(t, ok, "Capsule should be started")
+	require.NotNil(t, capsule)
+	assert.True(t, capsule.IsReady(), "Capsule should be ready")
+
+	// Cleanup
+	srv.capsules.Range(func(_ string, cap *core.CapsuleManager) bool {
+		_ = cap.Stop() //nolint:errcheck // cleanup in test
+		return true
+	})
+}
+
+// TestRebuildServer_StopsExistingCapsules tests that rebuilding stops existing capsules
+func TestRebuildServer_StopsExistingCapsules(t *testing.T) {
+	if runtime.GOOS == windowsOS {
+		t.Skip("Windows capsule script tests not implemented")
+	}
+
+	cfg := createTestConfig(t)
+	srv := NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+
+	// Create and add a capsule mode tool
+	scriptPath := createRespondingCapsuleScript(t)
+	capsuleTool := &core.ToolManifest{
+		Name:        "capsule-tool",
+		Version:     "1.0.0",
+		Description: "A capsule mode tool",
+		Path:        scriptPath,
+		Runtime: &core.RuntimeConfig{
+			Mode:             core.RuntimeModeCapsule,
+			StartupTimeoutMs: 5000,
+		},
+	}
+
+	err := cfg.ToolsRegistry.AddTool(capsuleTool)
+	require.NoError(t, err)
+
+	// First rebuild - should start capsule
+	srv.rebuildServer()
+
+	capsule1, ok1 := srv.capsules.Load("capsule-tool")
+	require.True(t, ok1)
+	require.NotNil(t, capsule1)
+
+	// Second rebuild - should stop old capsule and start new one
+	srv.rebuildServer()
+
+	capsule2, ok2 := srv.capsules.Load("capsule-tool")
+	require.True(t, ok2)
+	require.NotNil(t, capsule2)
+
+	// Verify capsules are different instances (old one was stopped)
+	assert.NotEqual(t, capsule1, capsule2)
+
+	// Cleanup
+	srv.capsules.Range(func(_ string, cap *core.CapsuleManager) bool {
+		_ = cap.Stop() //nolint:errcheck // cleanup in test
+		return true
+	})
+}
+
+// TestHandleToolCall_CapsuleMode tests tool execution for capsule mode tools
+func TestHandleToolCall_CapsuleMode(t *testing.T) {
+	if runtime.GOOS == windowsOS {
+		t.Skip("Windows capsule script tests not implemented")
+	}
+
+	cfg := createTestConfig(t)
+	srv := NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+
+	// Create a capsule mode tool
+	scriptPath := createRespondingCapsuleScript(t)
+	capsuleTool := &core.ToolManifest{
+		Name:        "capsule-tool",
+		Version:     "1.0.0",
+		Description: "A capsule mode tool",
+		Path:        scriptPath,
+		Runtime: &core.RuntimeConfig{
+			Mode:             core.RuntimeModeCapsule,
+			StartupTimeoutMs: 5000,
+		},
+	}
+
+	err := cfg.ToolsRegistry.AddTool(capsuleTool)
+	require.NoError(t, err)
+
+	// Rebuild to start the capsule
+	srv.rebuildServer()
+
+	// Wait a bit for capsule to be ready
+	time.Sleep(100 * time.Millisecond)
+
+	// Call the tool
+	result, output, err := srv.handleToolCall(context.Background(), capsuleTool, map[string]any{"arg1": "value1"})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.IsError, "Capsule tool call should succeed")
+
+	// Verify output structure (buildToolResponse parses JSON from stdout)
+	require.NotNil(t, output)
+	assert.Contains(t, output, "stdout")
+	// The stdout should contain the JSON result
+	stdout, ok := output["stdout"].(string)
+	require.True(t, ok)
+	assert.Contains(t, stdout, "test result")
+
+	// Cleanup
+	srv.capsules.Range(func(_ string, cap *core.CapsuleManager) bool {
+		_ = cap.Stop() //nolint:errcheck // cleanup in test
+		return true
+	})
+}
+
+// TestHandleToolCall_CapsuleMode_NotRunning tests handling when capsule is not running
+func TestHandleToolCall_CapsuleMode_NotRunning(t *testing.T) {
+	cfg := createTestConfig(t)
+	srv := NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+
+	// Create a capsule mode tool but don't start it
+	capsuleTool := &core.ToolManifest{
+		Name:        "capsule-tool",
+		Version:     "1.0.0",
+		Description: "A capsule mode tool",
+		Path:        "/path/to/tool",
+		Runtime: &core.RuntimeConfig{
+			Mode: core.RuntimeModeCapsule,
+		},
+	}
+
+	// Call the tool without starting the capsule
+	result, output, err := srv.handleToolCall(context.Background(), capsuleTool, map[string]any{})
+	// handleCapsuleToolCall returns an error when capsule is not found
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "capsule not found")
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "Should return error when capsule is not running")
+	assert.Nil(t, output)
+
+	// Verify error message
+	require.GreaterOrEqual(t, len(result.Content), 1)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	assert.Contains(t, textContent.Text, "Capsule")
+}
+
+// TestRebuildServer_CapsuleFailsToStart tests that tools with failing capsules are not registered
+func TestRebuildServer_CapsuleFailsToStart(t *testing.T) {
+	if runtime.GOOS == windowsOS {
+		t.Skip("Windows capsule script tests not implemented")
+	}
+
+	cfg := createTestConfig(t)
+	srv := NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+
+	// Create a capsule mode tool with an invalid path (will fail to start)
+	capsuleTool := &core.ToolManifest{
+		Name:        "failing-capsule-tool",
+		Version:     "1.0.0",
+		Description: "A capsule mode tool that will fail to start",
+		Path:        "/nonexistent/path/to/tool",
+		Runtime: &core.RuntimeConfig{
+			Mode:             core.RuntimeModeCapsule,
+			StartupTimeoutMs: 5000,
+		},
+	}
+
+	err := cfg.ToolsRegistry.AddTool(capsuleTool)
+	require.NoError(t, err)
+
+	// Rebuild server - capsule should fail to start and tool should not be registered
+	srv.rebuildServer()
+
+	// Verify capsule was not started
+	_, ok := srv.capsules.Load("failing-capsule-tool")
+	assert.False(t, ok, "Capsule should not be started")
+
+	assert.False(t, srv.registeredTools.Contains("failing-capsule-tool"), "Tool should not be registered")
+}

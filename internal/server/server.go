@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	mapset "github.com/deckarep/golang-set/v2"
+	"github.com/puzpuzpuz/xsync/v3"
 	"go.uber.org/zap"
 
 	"github.com/dorcha-inc/orla/internal/core"
@@ -19,14 +21,14 @@ import (
 
 // OrlaServer stores the state and dependencies for the Orla MCP server.
 type OrlaServer struct {
-	config        *state.OrlaConfig
-	configPath    string
-	executor      *core.OrlaToolExecutor
-	orlaMCPserver *mcp.Server
-	mu            sync.RWMutex
-	httpHandler   *mcp.StreamableHTTPHandler
-	capsules      map[string]*core.CapsuleManager // Map of tool name to capsule manager
-	capsulesMu    sync.RWMutex
+	config          *state.OrlaConfig
+	configPath      string
+	executor        *core.OrlaToolExecutor
+	orlaMCPserver   *mcp.Server
+	mu              sync.RWMutex
+	httpHandler     *mcp.StreamableHTTPHandler
+	capsules        *xsync.MapOf[string, *core.CapsuleManager] // the key here is the tool name
+	registeredTools mapset.Set[string]                         // the key here is the tool name
 }
 
 // NewOrlaServer creates a new OrlaServer instance
@@ -34,10 +36,11 @@ func NewOrlaServer(cfg *state.OrlaConfig, configPath string) *OrlaServer {
 	executor := core.NewOrlaToolExecutor(cfg.Timeout)
 
 	orlaServer := &OrlaServer{
-		config:     cfg,
-		configPath: configPath,
-		executor:   executor,
-		capsules:   make(map[string]*core.CapsuleManager),
+		config:          cfg,
+		configPath:      configPath,
+		executor:        executor,
+		capsules:        xsync.NewMapOf[string, *core.CapsuleManager](),
+		registeredTools: mapset.NewSet[string](),
 	}
 
 	orlaServer.rebuildServer()
@@ -113,18 +116,19 @@ func (o *OrlaServer) rebuildServer() {
 		// Start capsule if tool is in capsule mode
 		if runtimeMode == core.RuntimeModeCapsule {
 			capsule := core.NewCapsuleManager(tool)
-			if err := capsule.Start(); err != nil {
-				zap.L().Error("Failed to start capsule",
+
+			startErr := capsule.Start()
+			if startErr != nil {
+				zap.L().Error("Failed to start capsule, skipping tool registration",
 					zap.String("tool", tool.Name),
-					zap.Error(err))
-				// Continue registration even if capsule fails to start
-			} else {
-				o.capsulesMu.Lock()
-				o.capsules[tool.Name] = capsule
-				o.capsulesMu.Unlock()
-				zap.L().Info("Capsule started",
-					zap.String("tool", tool.Name))
+					zap.Error(startErr))
+				// Skip registration if capsule fails to start
+				continue
 			}
+
+			o.capsules.Store(tool.Name, capsule)
+			zap.L().Info("Capsule started",
+				zap.String("tool", tool.Name))
 		}
 
 		o.registerTool(tool)
@@ -183,6 +187,8 @@ func (o *OrlaServer) registerTool(tool *core.ToolManifest) {
 
 	mcp.AddTool(o.orlaMCPserver, mcpTool, handler)
 	zap.L().Debug("mcp.AddTool completed", zap.String("tool", tool.Name))
+
+	o.registeredTools.Add(tool.Name)
 }
 
 // buildToolResponse builds an MCP CallToolResult and outputMap from tool execution output.
@@ -398,10 +404,7 @@ func (o *OrlaServer) Reload() error {
 
 // stopAllCapsules stops all running capsules
 func (o *OrlaServer) stopAllCapsules() {
-	o.capsulesMu.Lock()
-	defer o.capsulesMu.Unlock()
-
-	for name, capsule := range o.capsules {
+	o.capsules.Range(func(name string, capsule *core.CapsuleManager) bool {
 		if err := capsule.Stop(); err != nil {
 			zap.L().Error("Failed to stop capsule",
 				zap.String("tool", name),
@@ -409,9 +412,10 @@ func (o *OrlaServer) stopAllCapsules() {
 		} else {
 			zap.L().Debug("Stopped capsule", zap.String("tool", name))
 		}
-	}
+		return true
+	})
 
-	o.capsules = make(map[string]*core.CapsuleManager)
+	o.capsules.Clear()
 }
 
 // handleCapsuleToolCall handles tool calls for capsule mode tools by sending JSON-RPC requests to the running process
@@ -423,9 +427,7 @@ func (o *OrlaServer) handleCapsuleToolCall(
 	callStartTime := time.Now()
 
 	// Get the capsule manager for this tool
-	o.capsulesMu.RLock()
-	capsule, capsuleOk := o.capsules[tool.Name]
-	o.capsulesMu.RUnlock()
+	capsule, capsuleOk := o.capsules.Load(tool.Name)
 
 	if !capsuleOk {
 		duration := time.Since(callStartTime).Seconds()
