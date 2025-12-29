@@ -1,0 +1,18 @@
+port: 8080
+timeout: 30
+log_format: pretty
+log_level: info
+
+tools_registry:
+  tools:
+    echo-capsule:
+      name: echo-capsule
+      version: 1.0.0
+      description: A capsule mode tool that demonstrates long-running tool capabilities
+      entrypoint: tools/echo-capsule.sh
+      path: tools/echo-capsule.sh
+      interpreter: /bin/sh
+      runtime:
+        mode: capsule
+        startup_timeout_ms: 5000
+

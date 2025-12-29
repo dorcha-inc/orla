@@ -68,6 +68,32 @@ func NewOrlaConfigFromPath(path string) (*OrlaConfig, error) {
 			return nil, fmt.Errorf("tools dir is unset and tools registry is not defined in the config file: %s", path)
 		}
 
+		// Resolve tool paths relative to the config file directory
+		configDir := filepath.Dir(path)
+		for _, tool := range cfg.ToolsRegistry.Tools {
+			// Resolve Path if it's relative
+			if tool.Path != "" && !filepath.IsAbs(tool.Path) {
+				tool.Path = filepath.Join(configDir, tool.Path)
+				tool.Path = filepath.Clean(tool.Path)
+				absPath, absErr := filepath.Abs(tool.Path)
+				if absErr != nil {
+					return nil, fmt.Errorf("failed to resolve tool path: %w", absErr)
+				}
+				tool.Path = absPath
+			}
+
+			// Resolve entrypoint to Path if Path is not set
+			if tool.Path == "" && tool.Entrypoint != "" {
+				entrypointPath := filepath.Join(configDir, tool.Entrypoint)
+				entrypointPath = filepath.Clean(entrypointPath)
+				absPath, absErr := filepath.Abs(entrypointPath)
+				if absErr != nil {
+					return nil, fmt.Errorf("failed to resolve entrypoint path: %w", absErr)
+				}
+				tool.Path = absPath
+			}
+		}
+
 		// If the tools registry is defined, we can use it to scan the tools directory.
 		zap.L().Debug("Using tools registry entry in config file directly", zap.String("path", path))
 		return &cfg, nil
