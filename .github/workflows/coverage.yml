@@ -43,7 +43,7 @@ jobs:
           ${{ runner.os }}-go-
 
     - name: Download dependencies
-      run: go mod download
+      run: go mod download 2>&1 | grep -v "tar:" || true
 
     - name: Run tests with coverage
       run: |
