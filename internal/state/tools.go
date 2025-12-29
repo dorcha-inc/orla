@@ -28,13 +28,13 @@ var _ error = &ToolNotFoundError{}
 
 // ToolsRegistry maintains a registry of tools and their entries.
 type ToolsRegistry struct {
-	Tools map[string]*core.ToolEntry `yaml:"tools"` // the tools in the registry
+	Tools map[string]*core.ToolManifest `yaml:"tools"` // the tools in the registry
 }
 
 // NewToolsRegistry creates a new tools registry
 func NewToolsRegistry() *ToolsRegistry {
 	return &ToolsRegistry{
-		Tools: make(map[string]*core.ToolEntry),
+		Tools: make(map[string]*core.ToolManifest),
 	}
 }
 
@@ -48,7 +48,7 @@ func NewToolsRegistryFromDirectory(dir string) (*ToolsRegistry, error) {
 }
 
 // AddTool adds a tool to the registry
-func (r *ToolsRegistry) AddTool(tool *core.ToolEntry) error {
+func (r *ToolsRegistry) AddTool(tool *core.ToolManifest) error {
 	if _, ok := r.Tools[tool.Name]; ok {
 		return NewDuplicateToolNameError(tool.Name)
 	}
@@ -57,7 +57,7 @@ func (r *ToolsRegistry) AddTool(tool *core.ToolEntry) error {
 }
 
 // GetTool returns a tool from the registry
-func (r *ToolsRegistry) GetTool(name string) (*core.ToolEntry, error) {
+func (r *ToolsRegistry) GetTool(name string) (*core.ToolManifest, error) {
 	tool, ok := r.Tools[name]
 	if !ok {
 		return nil, NewToolNotFoundError(name)
@@ -66,8 +66,8 @@ func (r *ToolsRegistry) GetTool(name string) (*core.ToolEntry, error) {
 }
 
 // ListTools returns all tools in the registry
-func (r *ToolsRegistry) ListTools() []*core.ToolEntry {
-	tools := make([]*core.ToolEntry, 0, len(r.Tools))
+func (r *ToolsRegistry) ListTools() []*core.ToolManifest {
+	tools := make([]*core.ToolManifest, 0, len(r.Tools))
 	for _, tool := range r.Tools {
 		tools = append(tools, tool)
 	}

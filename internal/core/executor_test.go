@@ -51,7 +51,7 @@ func TestExecute_BinarySuccess(t *testing.T) {
 		expectedOutput = "hello world"
 	}
 
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "echo",
 		Path:        toolPath,
 		Interpreter: "", // No interpreter - this is a binary
@@ -81,7 +81,7 @@ func TestExecute_PipeErrors(t *testing.T) {
 	// In practice, pipe creation rarely fails, but the error paths are there
 
 	executor := NewOrlaToolExecutor(10)
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "test",
 		Path:        "/bin/echo",
 		Interpreter: "",
@@ -112,7 +112,7 @@ func TestExecute_ScriptWithInterpreter(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -143,7 +143,7 @@ func TestExecute_WithArgs(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -172,7 +172,7 @@ func TestExecute_WithStdin(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -201,7 +201,7 @@ func TestExecute_NonZeroExitCode(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -232,7 +232,7 @@ func TestExecute_StderrCapture(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -268,6 +268,11 @@ type execCommandWrapper struct {
 //nolint:unused // Reserved for future test scenarios
 func (e *execCommandWrapper) SetStdin(r io.Reader) {
 	e.Stdin = r
+}
+
+//nolint:unused // Reserved for future test scenarios
+func (e *execCommandWrapper) SetEnv(env []string) {
+	e.Env = env
 }
 
 // Explicitly forward methods from *exec.Cmd to satisfy the Command interface
@@ -340,6 +345,10 @@ func (m *timeoutMockCommand) SetStdin(r io.Reader) {
 	m.stdinSet = true
 }
 
+func (m *timeoutMockCommand) SetEnv(env []string) {
+	// No-op for mock
+}
+
 func (m *timeoutMockCommand) Start() error {
 	m.started = true
 	return nil
@@ -362,7 +371,7 @@ func TestExecute_Timeout(t *testing.T) {
 	mockRunner := &timeoutMockCommandRunner{}
 	executor := NewOrlaToolExecutorWithClockAndRunner(1, fakeClock, mockRunner) // 1 second timeout
 
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "test-tool",
 		Path:        "/fake/path",
 		Interpreter: "",
@@ -408,7 +417,7 @@ func TestExecute_Timeout(t *testing.T) {
 func TestExecute_CommandNotFound(t *testing.T) {
 	executor := NewOrlaToolExecutor(10)
 
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "nonexistent",
 		Path:        "/nonexistent/path/to/command",
 		Interpreter: "",
@@ -440,7 +449,7 @@ func TestExecute_ContextCancellation(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",
@@ -487,7 +496,7 @@ func TestExecute_EmptyStdin(t *testing.T) {
 	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 	require.NoError(t, err)
 
-	tool := &ToolEntry{
+	tool := &ToolManifest{
 		Name:        "test-script",
 		Path:        scriptPath,
 		Interpreter: "/bin/sh",

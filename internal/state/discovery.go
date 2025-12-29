@@ -35,8 +35,8 @@ func NewDuplicateToolNameError(name string) *DuplicateToolNameError {
 var _ error = &DuplicateToolNameError{}
 
 // ScanToolsFromDirectory scans the tools directory for executable files using os.Root for secure access
-func ScanToolsFromDirectory(dir string) (map[string]*core.ToolEntry, error) {
-	toolMap := make(map[string]*core.ToolEntry)
+func ScanToolsFromDirectory(dir string) (map[string]*core.ToolManifest, error) {
+	toolMap := make(map[string]*core.ToolManifest)
 
 	// Check if directory exists
 	info, err := os.Stat(dir)
@@ -112,10 +112,11 @@ func ScanToolsFromDirectory(dir string) (map[string]*core.ToolEntry, error) {
 		// Resolve absolute path for tool entry
 		absPath := filepath.Join(dir, path)
 
-		tool := &core.ToolEntry{
+		tool := &core.ToolManifest{
 			Name:        name,
 			Path:        absPath,
 			Interpreter: interpreter,
+			Runtime:     &core.RuntimeConfig{Mode: core.RuntimeModeSimple},
 		}
 
 		toolMap[name] = tool
@@ -130,8 +131,8 @@ func ScanToolsFromDirectory(dir string) (map[string]*core.ToolEntry, error) {
 }
 
 // ScanInstalledTools scans ~/.orla/tools/ for installed tools with tool.yaml manifests
-func ScanInstalledTools(installDir string) (map[string]*core.ToolEntry, error) {
-	toolMap := make(map[string]*core.ToolEntry)
+func ScanInstalledTools(installDir string) (map[string]*core.ToolManifest, error) {
+	toolMap := make(map[string]*core.ToolManifest)
 
 	// Check if directory exists
 	info, err := os.Stat(installDir)
@@ -213,28 +214,16 @@ func ScanInstalledTools(installDir string) (map[string]*core.ToolEntry, error) {
 				}
 			}
 
-			// Extract input and output schemas from manifest if present
-			var inputSchema map[string]any
-			var outputSchema map[string]any
-			if manifest.MCP != nil {
-				if manifest.MCP.InputSchema != nil {
-					inputSchema = manifest.MCP.InputSchema
-				}
-				if manifest.MCP.OutputSchema != nil {
-					outputSchema = manifest.MCP.OutputSchema
-				}
+			// Populate resolved fields
+			manifest.Path = absEntrypoint
+			manifest.Interpreter = interpreter
+
+			// Ensure Runtime is initialized
+			if manifest.Runtime == nil {
+				manifest.Runtime = &core.RuntimeConfig{Mode: core.RuntimeModeSimple}
 			}
 
-			tool := &core.ToolEntry{
-				Name:         manifest.Name,
-				Description:  manifest.Description,
-				Path:         absEntrypoint,
-				Interpreter:  interpreter,
-				InputSchema:  inputSchema,
-				OutputSchema: outputSchema,
-			}
-
-			toolMap[manifest.Name] = tool
+			toolMap[manifest.Name] = manifest
 			zap.L().Debug("Loaded installed tool", zap.String("tool", manifest.Name), zap.String("version", manifest.Version), zap.String("path", toolDir))
 		}
 

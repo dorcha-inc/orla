@@ -191,7 +191,7 @@ func TestNewOrlaConfigFromPath_WithToolsRegistry(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "orla.yaml")
 
 	// Create config file with tools registry
-	toolEntry := &core.ToolEntry{
+	toolEntry := &core.ToolManifest{
 		Name:        "test-tool",
 		Description: "A test tool",
 		Path:        "/path/to/tool",

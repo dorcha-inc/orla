@@ -14,49 +14,21 @@ import (
 	"github.com/dorcha-inc/orla/internal/core"
 )
 
+const (
+	// DefaultStartupTimeoutMs is the default maximum time Orla will wait for the startup handshake in milliseconds
+	DefaultStartupTimeoutMs = 5000
+	// DefaultHotLoadDebounceMs is the default minimum debounce interval for file change events in milliseconds
+	DefaultHotLoadDebounceMs = 100
+)
+
 // ToolManifestFileName is the name of the tool.yaml manifest file as defined in RFC 3
 const ToolManifestFileName = "tool.yaml"
 
-// ToolManifest represents an RFC 3 compliant tool.yaml manifest
-type ToolManifest struct {
-	Name         string         `yaml:"name" validate:"required"`
-	Version      string         `yaml:"version" validate:"required"`
-	Description  string         `yaml:"description" validate:"required"`
-	Entrypoint   string         `yaml:"entrypoint" validate:"required"`
-	Author       string         `yaml:"author,omitempty"`
-	License      string         `yaml:"license,omitempty"`
-	Repository   string         `yaml:"repository,omitempty"`
-	Homepage     string         `yaml:"homepage,omitempty"`
-	Keywords     []string       `yaml:"keywords,omitempty"`
-	Dependencies []string       `yaml:"dependencies,omitempty"`
-	MCP          *MCPConfig     `yaml:"mcp,omitempty"`
-	Runtime      *RuntimeConfig `yaml:"runtime,omitempty"`
-}
-
-// RuntimeMode represents the runtime mode of a tool
-type RuntimeMode string
-
-// RuntimeMode constants
-const (
-	RuntimeModeSimple  RuntimeMode = "simple"
-	RuntimeModeCapsule RuntimeMode = "capsule"
-)
-
-var validRuntimeModes = []RuntimeMode{RuntimeModeSimple, RuntimeModeCapsule}
-
-// RuntimeConfig represents RFC 3 compliant runtime configuration
-type RuntimeConfig struct {
-	Mode RuntimeMode `yaml:"mode,omitempty"`
-}
-
-// MCPConfig represents MCP-specific metadata from RFC 3
-type MCPConfig struct {
-	InputSchema  map[string]any `yaml:"input_schema,omitempty"`
-	OutputSchema map[string]any `yaml:"output_schema,omitempty"`
-}
+var validRuntimeModes = []core.RuntimeMode{core.RuntimeModeSimple, core.RuntimeModeCapsule}
+var validHotLoadModes = []core.HotLoadMode{core.HotLoadModeRestart}
 
 // LoadManifest loads and parses a tool.yaml manifest from the given directory
-func LoadManifest(toolDir string) (*ToolManifest, error) {
+func LoadManifest(toolDir string) (*core.ToolManifest, error) {
 	// Open root directory for secure file access
 	root, err := os.OpenRoot(toolDir)
 	if err != nil {
@@ -70,7 +42,7 @@ func LoadManifest(toolDir string) (*ToolManifest, error) {
 		return nil, fmt.Errorf("failed to read tool.yaml: %w", err)
 	}
 
-	var manifest ToolManifest
+	var manifest core.ToolManifest
 	if err := yaml.Unmarshal(data, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to parse tool.yaml: %w", err)
 	}
@@ -81,7 +53,7 @@ func LoadManifest(toolDir string) (*ToolManifest, error) {
 var validate = validator.New()
 
 // ValidateManifest validates a tool manifest
-func ValidateManifest(manifest *ToolManifest, toolDir string) error {
+func ValidateManifest(manifest *core.ToolManifest, toolDir string) error {
 	// Validate required fields using struct tags
 	if err := validate.Struct(manifest); err != nil {
 		return fmt.Errorf("manifest validation failed: %w", err)
@@ -110,8 +82,8 @@ func ValidateManifest(manifest *ToolManifest, toolDir string) error {
 	}
 
 	if manifest.Runtime == nil || manifest.Runtime.Mode == "" {
-		manifest.Runtime = &RuntimeConfig{
-			Mode: RuntimeModeSimple,
+		manifest.Runtime = &core.RuntimeConfig{
+			Mode: core.RuntimeModeSimple,
 		}
 	}
 
@@ -119,9 +91,25 @@ func ValidateManifest(manifest *ToolManifest, toolDir string) error {
 		return fmt.Errorf("invalid runtime.mode: %s", manifest.Runtime.Mode)
 	}
 
-	// TODO: implement capsule mode
-	if manifest.Runtime.Mode == RuntimeModeCapsule {
-		zap.L().Warn("runtime.mode: 'capsule' is not yet implemented, using simple mode", zap.String("tool", manifest.Name))
+	// Set default startup timeout for capsule mode
+	if manifest.Runtime.Mode == core.RuntimeModeCapsule && manifest.Runtime.StartupTimeoutMs == 0 {
+		manifest.Runtime.StartupTimeoutMs = DefaultStartupTimeoutMs
+	}
+
+	// Validate hot_load configuration
+	if manifest.Runtime.HotLoad != nil {
+		if manifest.Runtime.HotLoad.Mode == "" {
+			manifest.Runtime.HotLoad.Mode = core.HotLoadModeRestart
+		}
+
+		if !slices.Contains(validHotLoadModes, manifest.Runtime.HotLoad.Mode) {
+			return fmt.Errorf("invalid runtime.hot_load.mode: %s. ", manifest.Runtime.HotLoad.Mode)
+		}
+
+		// Set default debounce if not specified
+		if manifest.Runtime.HotLoad.DebounceMs == 0 {
+			manifest.Runtime.HotLoad.DebounceMs = DefaultHotLoadDebounceMs
+		}
 	}
 
 	return nil

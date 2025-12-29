@@ -103,11 +103,14 @@ func TestRebuildServer(t *testing.T) {
 	initialServer := srv.orlaMCPserver
 
 	// Add a new tool to the registry
-	newTool := &core.ToolEntry{
+	newTool := &core.ToolManifest{
 		Name:        "new-tool",
+		Version:     "1.0.0",
 		Description: "A new tool",
+		Entrypoint:  "tool",
 		Path:        "/path/to/new-tool",
 		Interpreter: "/bin/sh",
+		Runtime:     &core.RuntimeConfig{Mode: core.RuntimeModeSimple},
 	}
 	err := cfg.ToolsRegistry.AddTool(newTool)
 	require.NoError(t, err)
@@ -128,7 +131,7 @@ func TestRegisterTool_PanicRecovery(t *testing.T) {
 
 	// Create a tool that will cause a panic when executed
 	// We'll use a tool with nil path to trigger panic in handleToolCall
-	panicTool := &core.ToolEntry{
+	panicTool := &core.ToolManifest{
 		Name:        "panic-tool",
 		Description: "Tool that causes panic",
 		Path:        "", // Empty path might cause issues
@@ -157,7 +160,7 @@ func TestRegisterTool_WithNilExecutor(t *testing.T) {
 	require.NotNil(t, srv)
 
 	// Create a tool entry
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "test-tool",
 		Description: "Test tool",
 		Path:        "/path/to/tool",
@@ -355,7 +358,7 @@ echo "$name: $message"
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "echo-tool",
 		Description: "Echo tool",
 		Path:        toolPath,
@@ -400,7 +403,7 @@ echo "received: $input"
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "stdin-tool",
 		Description: "Stdin tool",
 		Path:        toolPath,
@@ -440,7 +443,7 @@ func TestHandleToolCall_Error(t *testing.T) {
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "error-tool",
 		Description: "Error tool",
 		Path:        toolPath,
@@ -461,7 +464,7 @@ func TestHandleToolCall_CommandNotFound(t *testing.T) {
 	srv := NewOrlaServer(cfg, "")
 	require.NotNil(t, srv)
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "nonexistent",
 		Description: "Nonexistent tool",
 		Path:        "/nonexistent/path/to/tool",
@@ -731,7 +734,7 @@ func TestHandleToolCall_Timeout(t *testing.T) {
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "sleep-tool",
 		Description: "Sleep tool",
 		Path:        toolPath,
@@ -771,7 +774,7 @@ func TestHandleToolCall_WithStderrAndExitCode(t *testing.T) {
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "error-tool",
 		Description: "Error tool",
 		Path:        toolPath,
@@ -850,12 +853,14 @@ echo '{"success":true,"count":5,"items":["a","b","c"]}'
 		"required": []string{"success"},
 	}
 
-	tool := &core.ToolEntry{
-		Name:         "json-tool",
-		Description:  "JSON tool",
-		Path:         toolPath,
-		Interpreter:  "/bin/sh",
-		OutputSchema: outputSchema,
+	tool := &core.ToolManifest{
+		Name:        "json-tool",
+		Description: "JSON tool",
+		Path:        toolPath,
+		Interpreter: "/bin/sh",
+		MCP: &core.MCPConfig{
+			OutputSchema: outputSchema,
+		},
 	}
 
 	result, output, err := srv.handleToolCall(context.Background(), tool, map[string]any{})
@@ -902,12 +907,14 @@ echo 'not valid json'
 		"required": []string{"success"},
 	}
 
-	tool := &core.ToolEntry{
-		Name:         "invalid-json-tool",
-		Description:  "Invalid JSON tool",
-		Path:         toolPath,
-		Interpreter:  "/bin/sh",
-		OutputSchema: outputSchema,
+	tool := &core.ToolManifest{
+		Name:        "invalid-json-tool",
+		Description: "Invalid JSON tool",
+		Path:        toolPath,
+		Interpreter: "/bin/sh",
+		MCP: &core.MCPConfig{
+			OutputSchema: outputSchema,
+		},
 	}
 
 	result, output, err := srv.handleToolCall(context.Background(), tool, map[string]any{})
@@ -950,12 +957,14 @@ echo '["a","b","c"]'
 		"required": []string{"success"},
 	}
 
-	tool := &core.ToolEntry{
-		Name:         "array-tool",
-		Description:  "Array tool",
-		Path:         toolPath,
-		Interpreter:  "/bin/sh",
-		OutputSchema: outputSchema,
+	tool := &core.ToolManifest{
+		Name:        "array-tool",
+		Description: "Array tool",
+		Path:        toolPath,
+		Interpreter: "/bin/sh",
+		MCP: &core.MCPConfig{
+			OutputSchema: outputSchema,
+		},
 	}
 
 	result, output, err := srv.handleToolCall(context.Background(), tool, map[string]any{})
@@ -998,12 +1007,14 @@ func TestHandleToolCall_WithOutputSchema_EmptyStdout(t *testing.T) {
 		"required": []string{"success"},
 	}
 
-	tool := &core.ToolEntry{
-		Name:         "empty-tool",
-		Description:  "Empty tool",
-		Path:         toolPath,
-		Interpreter:  "/bin/sh",
-		OutputSchema: outputSchema,
+	tool := &core.ToolManifest{
+		Name:        "empty-tool",
+		Description: "Empty tool",
+		Path:        toolPath,
+		Interpreter: "/bin/sh",
+		MCP: &core.MCPConfig{
+			OutputSchema: outputSchema,
+		},
 	}
 
 	result, output, err := srv.handleToolCall(context.Background(), tool, map[string]any{})
@@ -1049,7 +1060,7 @@ done
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "hyphen-tool",
 		Description: "Hyphen tool",
 		Path:        toolPath,
@@ -1091,12 +1102,14 @@ func TestRegisterTool_WithInputSchema(t *testing.T) {
 		"required": []string{"path"},
 	}
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "schema-tool",
 		Description: "Tool with schema",
 		Path:        "/path/to/tool",
 		Interpreter: "/bin/sh",
-		InputSchema: inputSchema,
+		MCP: &core.MCPConfig{
+			InputSchema: inputSchema,
+		},
 	}
 
 	// Register the tool - should not panic
@@ -1118,12 +1131,14 @@ func TestRegisterTool_WithOutputSchema(t *testing.T) {
 		"required": []string{"success"},
 	}
 
-	tool := &core.ToolEntry{
-		Name:         "output-schema-tool",
-		Description:  "Tool with output schema",
-		Path:         "/path/to/tool",
-		Interpreter:  "/bin/sh",
-		OutputSchema: outputSchema,
+	tool := &core.ToolManifest{
+		Name:        "output-schema-tool",
+		Description: "Tool with output schema",
+		Path:        "/path/to/tool",
+		Interpreter: "/bin/sh",
+		MCP: &core.MCPConfig{
+			OutputSchema: outputSchema,
+		},
 	}
 
 	// Register the tool - should not panic
@@ -1152,13 +1167,15 @@ func TestRegisterTool_WithBothSchemas(t *testing.T) {
 		"required": []string{"success"},
 	}
 
-	tool := &core.ToolEntry{
-		Name:         "both-schemas-tool",
-		Description:  "Tool with both schemas",
-		Path:         "/path/to/tool",
-		Interpreter:  "/bin/sh",
-		InputSchema:  inputSchema,
-		OutputSchema: outputSchema,
+	tool := &core.ToolManifest{
+		Name:        "both-schemas-tool",
+		Description: "Tool with both schemas",
+		Path:        "/path/to/tool",
+		Interpreter: "/bin/sh",
+		MCP: &core.MCPConfig{
+			InputSchema:  inputSchema,
+			OutputSchema: outputSchema,
+		},
 	}
 
 	// Register the tool - should not panic
@@ -1196,7 +1213,7 @@ done
 	err := os.WriteFile(toolPath, []byte(toolContent), 0755)
 	require.NoError(t, err)
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "bool-tool",
 		Description: "Boolean tool",
 		Path:        toolPath,
@@ -1227,13 +1244,11 @@ func TestRegisterTool_WithEmptyName(t *testing.T) {
 	srv := NewOrlaServer(cfg, "")
 	require.NotNil(t, srv)
 
-	tool := &core.ToolEntry{
-		Name:         "", // Empty name
-		Description:  "Tool with empty name",
-		Path:         "/path/to/tool",
-		Interpreter:  "/bin/sh",
-		InputSchema:  nil,
-		OutputSchema: nil,
+	tool := &core.ToolManifest{
+		Name:        "", // Empty name
+		Description: "Tool with empty name",
+		Path:        "/path/to/tool",
+		Interpreter: "/bin/sh",
 	}
 
 	// Should not panic, but tool registration might fail or succeed depending on MCP SDK
@@ -1247,13 +1262,11 @@ func TestRegisterTool_WithEmptyDescription(t *testing.T) {
 	srv := NewOrlaServer(cfg, "")
 	require.NotNil(t, srv)
 
-	tool := &core.ToolEntry{
-		Name:         "empty-desc-tool",
-		Description:  "", // Empty description
-		Path:         "/path/to/tool",
-		Interpreter:  "/bin/sh",
-		InputSchema:  nil,
-		OutputSchema: nil,
+	tool := &core.ToolManifest{
+		Name:        "empty-desc-tool",
+		Description: "", // Empty description
+		Path:        "/path/to/tool",
+		Interpreter: "/bin/sh",
 	}
 
 	// Should not panic
@@ -1267,13 +1280,11 @@ func TestRegisterTool_WithNilSchemas(t *testing.T) {
 	srv := NewOrlaServer(cfg, "")
 	require.NotNil(t, srv)
 
-	tool := &core.ToolEntry{
-		Name:         "nil-schemas-tool",
-		Description:  "Tool with nil schemas",
-		Path:         "/path/to/tool",
-		Interpreter:  "/bin/sh",
-		InputSchema:  nil, // Explicitly nil
-		OutputSchema: nil, // Explicitly nil
+	tool := &core.ToolManifest{
+		Name:        "nil-schemas-tool",
+		Description: "Tool with nil schemas",
+		Path:        "/path/to/tool",
+		Interpreter: "/bin/sh",
 	}
 
 	// Should not panic
@@ -1292,13 +1303,14 @@ func TestRegisterTool_WithMinimalInputSchema(t *testing.T) {
 		"type": "object",
 	}
 
-	tool := &core.ToolEntry{
-		Name:         "minimal-input-schema-tool",
-		Description:  "Tool with minimal input schema",
-		Path:         "/path/to/tool",
-		Interpreter:  "/bin/sh",
-		InputSchema:  minimalSchema,
-		OutputSchema: nil,
+	tool := &core.ToolManifest{
+		Name:        "minimal-input-schema-tool",
+		Description: "Tool with minimal input schema",
+		Path:        "/path/to/tool",
+		Interpreter: "/bin/sh",
+		MCP: &core.MCPConfig{
+			InputSchema: minimalSchema,
+		},
 	}
 
 	// Should not panic
@@ -1317,13 +1329,14 @@ func TestRegisterTool_WithMinimalOutputSchema(t *testing.T) {
 		"type": "object",
 	}
 
-	tool := &core.ToolEntry{
-		Name:         "minimal-output-schema-tool",
-		Description:  "Tool with minimal output schema",
-		Path:         "/path/to/tool",
-		Interpreter:  "/bin/sh",
-		InputSchema:  nil,
-		OutputSchema: minimalSchema,
+	tool := &core.ToolManifest{
+		Name:        "minimal-output-schema-tool",
+		Description: "Tool with minimal output schema",
+		Path:        "/path/to/tool",
+		Interpreter: "/bin/sh",
+		MCP: &core.MCPConfig{
+			OutputSchema: minimalSchema,
+		},
 	}
 
 	// Should not panic
@@ -1399,7 +1412,7 @@ func TestRebuildServer_Concurrent(t *testing.T) {
 
 	// Add multiple tools
 	for i := 1; i <= 5; i++ {
-		tool := &core.ToolEntry{
+		tool := &core.ToolManifest{
 			Name:        fmt.Sprintf("tool%d", i),
 			Description: fmt.Sprintf("Tool %d", i),
 			Path:        fmt.Sprintf("/path/to/tool%d", i),
@@ -1459,7 +1472,7 @@ func TestRegisterTool_MultipleRegistrations(t *testing.T) {
 	srv := NewOrlaServer(cfg, "")
 	require.NotNil(t, srv)
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "duplicate-tool",
 		Description: "Duplicate tool",
 		Path:        "/path/to/tool",

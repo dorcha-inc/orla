@@ -25,6 +25,8 @@ type OrlaServer struct {
 	orlaMCPserver *mcp.Server
 	mu            sync.RWMutex
 	httpHandler   *mcp.StreamableHTTPHandler
+	capsules      map[string]*core.CapsuleManager // Map of tool name to capsule manager
+	capsulesMu    sync.RWMutex
 }
 
 // NewOrlaServer creates a new OrlaServer instance
@@ -35,6 +37,7 @@ func NewOrlaServer(cfg *state.OrlaConfig, configPath string) *OrlaServer {
 		config:     cfg,
 		configPath: configPath,
 		executor:   executor,
+		capsules:   make(map[string]*core.CapsuleManager),
 	}
 
 	orlaServer.rebuildServer()
@@ -91,19 +94,45 @@ func (o *OrlaServer) rebuildServer() {
 			zap.String("directory", o.config.ToolsDir))
 	}
 
+	// Stop existing capsules before rebuilding
+	o.stopAllCapsules()
+
 	// Register each discovered tool
 	for i, tool := range toolList {
+		runtimeMode := core.RuntimeModeSimple
+		if tool.Runtime != nil {
+			runtimeMode = tool.Runtime.Mode
+		}
 		zap.L().Info("Registering tool with MCP server",
 			zap.Int("index", i),
 			zap.String("name", tool.Name),
 			zap.String("path", tool.Path),
-			zap.String("description", tool.Description))
+			zap.String("description", tool.Description),
+			zap.String("runtime_mode", string(runtimeMode)))
+
+		// Start capsule if tool is in capsule mode
+		if runtimeMode == core.RuntimeModeCapsule {
+			capsule := core.NewCapsuleManager(tool)
+			if err := capsule.Start(); err != nil {
+				zap.L().Error("Failed to start capsule",
+					zap.String("tool", tool.Name),
+					zap.Error(err))
+				// Continue registration even if capsule fails to start
+			} else {
+				o.capsulesMu.Lock()
+				o.capsules[tool.Name] = capsule
+				o.capsulesMu.Unlock()
+				zap.L().Info("Capsule started",
+					zap.String("tool", tool.Name))
+			}
+		}
+
 		o.registerTool(tool)
 	}
 }
 
 // registerTool registers a single tool with the MCP server
-func (o *OrlaServer) registerTool(tool *core.ToolEntry) {
+func (o *OrlaServer) registerTool(tool *core.ToolManifest) {
 	// Create a handler function for this tool using map[string]any for input
 	// Wrap with panic recovery at the handler boundary since this is the single point
 	// where we can return proper MCP error responses
@@ -143,35 +172,138 @@ func (o *OrlaServer) registerTool(tool *core.ToolEntry) {
 	}
 
 	// Add input schema if available
-	if tool.InputSchema != nil {
-		mcpTool.InputSchema = tool.InputSchema
+	if tool.MCP != nil && tool.MCP.InputSchema != nil {
+		mcpTool.InputSchema = tool.MCP.InputSchema
 	}
 
 	// Add output schema if available
-	if tool.OutputSchema != nil {
-		mcpTool.OutputSchema = tool.OutputSchema
+	if tool.MCP != nil && tool.MCP.OutputSchema != nil {
+		mcpTool.OutputSchema = tool.MCP.OutputSchema
 	}
 
 	mcp.AddTool(o.orlaMCPserver, mcpTool, handler)
 	zap.L().Debug("mcp.AddTool completed", zap.String("tool", tool.Name))
 }
 
-func wrapOutputDefault(output map[string]any, result *core.OrlaToolExecutionResult) map[string]any {
-	output["stdout"] = result.Stdout
-	output["stderr"] = result.Stderr
-	output["exit_code"] = result.ExitCode
-	return output
+// buildToolResponse builds an MCP CallToolResult and outputMap from tool execution output.
+// It handles both structured (with output schema) and unstructured output.
+func buildToolResponse(
+	toolName string,
+	stdout string,
+	stderr string,
+	exitCode int,
+	execErr error,
+	outputSchema map[string]any,
+) (*mcp.CallToolResult, map[string]any) {
+	// Build content from stdout
+	content := []mcp.Content{
+		&mcp.TextContent{
+			Text: stdout,
+		},
+	}
+
+	if stderr != "" {
+		content = append(content, &mcp.TextContent{
+			Text: fmt.Sprintf("stderr: %s", stderr),
+		})
+	}
+
+	if exitCode != 0 {
+		content = append(content, &mcp.TextContent{
+			Text: fmt.Sprintf("exit_code: %d", exitCode),
+		})
+	}
+
+	isError := execErr != nil || exitCode != 0
+
+	callToolResult := &mcp.CallToolResult{
+		IsError: isError,
+		Content: content,
+	}
+
+	outputMap := make(map[string]any)
+
+	if execErr != nil {
+		outputMap["error"] = execErr.Error()
+	}
+
+	// If no output schema, wrap with default format
+	if outputSchema == nil {
+		outputMap["stdout"] = stdout
+		outputMap["stderr"] = stderr
+		outputMap["exit_code"] = exitCode
+		return callToolResult, outputMap
+	}
+
+	// If tool has an output schema, try to parse stdout as JSON and use it as structured output
+	var parsedOutput any
+	if err := json.Unmarshal([]byte(stdout), &parsedOutput); err != nil {
+		zap.L().Error("Failed to parse tool output as JSON",
+			zap.String("tool", toolName),
+			zap.String("stdout", stdout),
+			zap.Error(err))
+		// If we have an OutputSchema, we can't fall back to wrapper format
+		// because it won't match the schema. Return an error instead.
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: fmt.Sprintf("Tool output is not valid JSON: %v", err),
+				},
+			},
+		}, nil
+	}
+
+	// Successfully parsed JSON. If it's a map, use it directly
+	// Otherwise wrap it. Output schemas typically define objects.
+	parsedMap, ok := parsedOutput.(map[string]any)
+
+	// Note(jadidbourbaki): this is unlikely to happen, but we handle it gracefully
+	if !ok {
+		zap.L().Error("Tool output is not a map",
+			zap.String("tool", toolName),
+			zap.String("stdout", stdout))
+		// If we have an OutputSchema, we can't fall back to wrapper format
+		// because it won't match the schema. Return an error instead.
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: "Tool output is not a JSON object",
+				},
+			},
+		}, nil
+	}
+
+	outputMap = parsedMap
+
+	// Note(jadidbourbaki): After some experimentation, it seems like we
+	// should not set StructuredContent manually, the MCP SDK will set it after validating outputMap.
+	// Also, we shouldn't set Content to raw stdout when we have structured content.
+	callToolResult.Content = nil
+	return callToolResult, outputMap
 }
 
 // handleToolCall handles a tool execution request
 func (o *OrlaServer) handleToolCall(
 	ctx context.Context,
-	tool *core.ToolEntry,
+	tool *core.ToolManifest,
 	input map[string]any,
 ) (*mcp.CallToolResult, map[string]any, error) {
+	// Check if tool is in capsule mode
+	runtimeMode := core.RuntimeModeSimple
+	if tool.Runtime != nil {
+		runtimeMode = tool.Runtime.Mode
+	}
+
+	// For capsule mode, communicate with the running process via JSON-RPC
+	if runtimeMode == core.RuntimeModeCapsule {
+		return o.handleCapsuleToolCall(ctx, tool, input)
+	}
 
 	startTime := time.Now()
 
+	// For simple mode, execute on-demand
 	// Convert input map to arguments
 	var args []string
 	stdin := ""
@@ -191,9 +323,9 @@ func (o *OrlaServer) handleToolCall(
 
 	// Execute tool
 	result, err := o.executor.Execute(ctx, tool, args, stdin)
-	duration := time.Since(startTime).Seconds()
 
 	if err != nil {
+		duration := time.Since(startTime).Seconds()
 		core.LogToolExecution(tool.Name, duration, err)
 		// Provide more helpful error messages
 		errorMsg := fmt.Sprintf("Tool execution failed: %v", err)
@@ -214,96 +346,23 @@ func (o *OrlaServer) handleToolCall(
 		}, nil, nil
 	}
 
-	core.LogToolExecution(tool.Name, duration, result.Error)
-
-	// Build response content
-	content := []mcp.Content{
-		&mcp.TextContent{
-			Text: result.Stdout,
-		},
+	var outputSchema map[string]any
+	if tool.MCP != nil && tool.MCP.OutputSchema != nil {
+		outputSchema = tool.MCP.OutputSchema
 	}
 
-	if result.Stderr != "" {
-		content = append(content, &mcp.TextContent{
-			Text: fmt.Sprintf("stderr: %s", result.Stderr),
-		})
-	}
+	callToolResult, outputMap := buildToolResponse(
+		tool.Name,
+		result.Stdout,
+		result.Stderr,
+		result.ExitCode,
+		result.Error,
+		outputSchema,
+	)
 
-	if result.ExitCode != 0 {
-		content = append(content, &mcp.TextContent{
-			Text: fmt.Sprintf("exit_code: %d", result.ExitCode),
-		})
-	}
+	duration := time.Since(startTime).Seconds()
+	core.LogToolExecution(tool.Name, duration, nil)
 
-	// this includes deadline exceeded errors
-	isError := result.Error != nil || result.ExitCode != 0
-
-	callToolResult := &mcp.CallToolResult{
-		IsError: isError,
-		Content: content,
-	}
-
-	outputMap := make(map[string]any)
-
-	if result.Error != nil {
-		outputMap["error"] = result.Error.Error()
-	}
-
-	if tool.OutputSchema == nil {
-		outputMap = wrapOutputDefault(outputMap, result)
-		return callToolResult, outputMap, nil
-	}
-
-	// If tool has an output schema, try to parse stdout as JSON and use it as structured output
-	// Note(jadidbourbaki): if we reach here, we have a valid output schema and a non-empty stdout
-
-	var parsedOutput any
-	err = json.Unmarshal([]byte(result.Stdout), &parsedOutput)
-
-	if err != nil {
-		zap.L().Error("Failed to parse tool stdout as JSON",
-			zap.String("tool", tool.Name),
-			zap.String("stdout", result.Stdout),
-			zap.Error(err))
-		// If we have an OutputSchema, we can't fall back to wrapper format
-		// because it won't match the schema. Return an error instead.
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: fmt.Sprintf("Tool output is not valid JSON: %v", err),
-				},
-			},
-		}, nil, nil
-	}
-
-	// Successfully parsed JSON. If it's a map, use it directly
-	// Otherwise wrap it. Output schemas typically define objects.
-	parsedMap, ok := parsedOutput.(map[string]any)
-
-	// Note(jadidbourbaki): this is unlikely to happen, but we handle it gracefully
-	if !ok {
-		zap.L().Error("Tool output is not a map",
-			zap.String("tool", tool.Name),
-			zap.String("stdout", result.Stdout))
-		// If we have an OutputSchema, we can't fall back to wrapper format
-		// because it won't match the schema. Return an error instead.
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: "Tool output is not a JSON object",
-				},
-			},
-		}, nil, nil
-	}
-
-	outputMap = parsedMap
-
-	// Note(jadidbourbaki): After some experimentation, it seems like we
-	// should not set StructuredContent manually, the MCP SDK will set it after validating outputMap.
-	// Also, we shouldn't set Content to raw stdout when we have structured content.
-	callToolResult.Content = nil
 	return callToolResult, outputMap, nil
 }
 
@@ -335,6 +394,146 @@ func (o *OrlaServer) Reload() error {
 
 	o.rebuildServer()
 	return nil
+}
+
+// stopAllCapsules stops all running capsules
+func (o *OrlaServer) stopAllCapsules() {
+	o.capsulesMu.Lock()
+	defer o.capsulesMu.Unlock()
+
+	for name, capsule := range o.capsules {
+		if err := capsule.Stop(); err != nil {
+			zap.L().Error("Failed to stop capsule",
+				zap.String("tool", name),
+				zap.Error(err))
+		} else {
+			zap.L().Debug("Stopped capsule", zap.String("tool", name))
+		}
+	}
+
+	o.capsules = make(map[string]*core.CapsuleManager)
+}
+
+// handleCapsuleToolCall handles tool calls for capsule mode tools by sending JSON-RPC requests to the running process
+func (o *OrlaServer) handleCapsuleToolCall(
+	ctx context.Context,
+	tool *core.ToolManifest,
+	input map[string]any,
+) (*mcp.CallToolResult, map[string]any, error) {
+	callStartTime := time.Now()
+
+	// Get the capsule manager for this tool
+	o.capsulesMu.RLock()
+	capsule, capsuleOk := o.capsules[tool.Name]
+	o.capsulesMu.RUnlock()
+
+	if !capsuleOk {
+		duration := time.Since(callStartTime).Seconds()
+		core.LogToolExecution(tool.Name, duration, fmt.Errorf("capsule not found: %s", tool.Name))
+
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: fmt.Sprintf("Capsule '%s' is not running", tool.Name),
+				},
+			},
+		}, nil, fmt.Errorf("capsule not found: %s", tool.Name)
+	}
+
+	// Send JSON-RPC request to capsule
+	jsonrpcResponse, callErr := capsule.CallTool(ctx, input)
+
+	if callErr != nil {
+		duration := time.Since(callStartTime).Seconds()
+		core.LogToolExecution(tool.Name, duration, callErr)
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: fmt.Sprintf("Capsule tool call failed: %v", callErr),
+				},
+			},
+		}, nil, callErr
+	}
+
+	// Check for JSON-RPC error
+	if jsonrpcResponse.Error != nil {
+		duration := time.Since(callStartTime).Seconds()
+		core.LogToolExecution(tool.Name, duration, fmt.Errorf("JSON-RPC error: %s", jsonrpcResponse.Error.Message))
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: jsonrpcResponse.Error.Message,
+				},
+			},
+		}, nil, fmt.Errorf("JSON-RPC error: %s", jsonrpcResponse.Error.Message)
+	}
+
+	// Convert JSON-RPC result to stdout string
+	var stdoutStr string
+
+	if jsonrpcResponse.Result != nil {
+		// If result is a string, use it directly
+		if strResult, ok := jsonrpcResponse.Result.(string); ok {
+			stdoutStr = strResult
+		} else {
+			// Otherwise, marshal to JSON string
+			resultBytes, jsonErr := json.Marshal(jsonrpcResponse.Result)
+			if jsonErr != nil {
+				duration := time.Since(callStartTime).Seconds()
+				core.LogToolExecution(tool.Name, duration, fmt.Errorf("failed to serialize capsule result: %w", jsonErr))
+				return &mcp.CallToolResult{
+					IsError: true,
+					Content: []mcp.Content{
+						&mcp.TextContent{
+							Text: fmt.Sprintf("Failed to serialize capsule result: %v", jsonErr),
+						},
+					},
+				}, nil, fmt.Errorf("failed to serialize result: %w", jsonErr)
+			}
+			stdoutStr = string(resultBytes)
+		}
+	}
+
+	var outputSchema map[string]any
+	if tool.MCP != nil && tool.MCP.OutputSchema != nil {
+		outputSchema = tool.MCP.OutputSchema
+	}
+
+	// If we have an output schema and the result is already a map, use it directly
+	// Otherwise, let buildToolResponse parse it from the stdout string
+	if outputSchema != nil {
+		resultMap, resultMapOk := jsonrpcResponse.Result.(map[string]any)
+		if resultMapOk {
+			// Result is already a map, use it directly
+			callToolResult := &mcp.CallToolResult{
+				IsError: false,
+				Content: nil, // Structured content, no text content
+			}
+
+			duration := time.Since(callStartTime).Seconds()
+			core.LogToolExecution(tool.Name, duration, nil)
+
+			return callToolResult, resultMap, nil
+		}
+	}
+
+	// Use the shared response builder (will parse JSON from stdout if needed)
+	callToolResult, outputMap := buildToolResponse(
+		tool.Name,
+		stdoutStr,
+		"",  // No stderr for capsule mode
+		0,   // No exit code for capsule mode
+		nil, // No execution error for capsule mode
+		outputSchema,
+	)
+
+	duration := time.Since(callStartTime).Seconds()
+	core.LogToolExecution(tool.Name, duration, nil)
+
+	return callToolResult, outputMap, nil
 }
 
 // Serve starts the server on the given address using HTTP (Streamable HTTP transport per MCP spec)
