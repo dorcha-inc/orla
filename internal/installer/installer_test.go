@@ -294,12 +294,12 @@ func TestInstallTool_Success(t *testing.T) {
 
 	// Mock GetInstalledToolsDir
 	installDir := filepath.Join(tmpDir, "tools")
-	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
-	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
+	registry.GetInstalledToolsDirFunc = func() (string, error) {
 		return installDir, nil
 	}
 	defer func() {
-		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
 	}()
 
 	// Test InstallTool - should log success
@@ -870,12 +870,12 @@ tools:
 func TestListInstalledTools(t *testing.T) {
 	// Create a temporary install directory
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
-	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
+	registry.GetInstalledToolsDirFunc = func() (string, error) {
 		return tmpDir, nil
 	}
 	defer func() {
-		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
 	}()
 
 	// Create tool structure: TOOL-NAME/VERSION/tool.yaml
@@ -949,12 +949,12 @@ func TestListInstalledTools(t *testing.T) {
 
 func TestListInstalledTools_EmptyDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
-	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
+	registry.GetInstalledToolsDirFunc = func() (string, error) {
 		return tmpDir, nil
 	}
 	defer func() {
-		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
 	}()
 
 	tools, err := ListInstalledTools()
@@ -964,12 +964,12 @@ func TestListInstalledTools_EmptyDirectory(t *testing.T) {
 
 func TestUninstallTool(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
-	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
+	registry.GetInstalledToolsDirFunc = func() (string, error) {
 		return tmpDir, nil
 	}
 	defer func() {
-		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
 	}()
 
 	// Create tool directory structure
@@ -994,12 +994,12 @@ func TestUninstallTool(t *testing.T) {
 
 func TestUninstallTool_NotInstalled(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
-	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
+	registry.GetInstalledToolsDirFunc = func() (string, error) {
 		return tmpDir, nil
 	}
 	defer func() {
-		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
 	}()
 
 	err := UninstallTool("nonexistent-tool")
@@ -1123,12 +1123,12 @@ func TestUpdateTool(t *testing.T) {
 
 	// Mock GetInstalledToolsDir
 	installDir := filepath.Join(tmpDir, "tools")
-	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
-	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
+	registry.GetInstalledToolsDirFunc = func() (string, error) {
 		return installDir, nil
 	}
 	defer func() {
-		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
 	}()
 
 	// First, install version 1.0.0
@@ -1169,16 +1169,102 @@ func TestUpdateTool(t *testing.T) {
 
 func TestUpdateTool_NotInstalled(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := *registry.GetInstalledToolsDirFunc
-	*registry.GetInstalledToolsDirFunc = func() (string, error) {
+	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
+	registry.GetInstalledToolsDirFunc = func() (string, error) {
 		return tmpDir, nil
 	}
 	defer func() {
-		*registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
 	}()
 
 	var buf bytes.Buffer
 	err := UpdateTool(exampleRegistryURL, "nonexistent-tool", &buf)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not installed")
+}
+
+func TestInstallLocalTool(t *testing.T) {
+	// Set up temporary directories
+	localToolDir := t.TempDir()
+	installDir := t.TempDir()
+
+	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
+	registry.GetInstalledToolsDirFunc = func() (string, error) {
+		return installDir, nil
+	}
+	defer func() {
+		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+	}()
+
+	// Create tool.yaml manifest
+	manifest := &ToolManifest{
+		Name:        "local-test-tool",
+		Version:     "0.1.0",
+		Description: "A local test tool",
+		Entrypoint:  "bin/tool",
+	}
+
+	manifestData, err := yaml.Marshal(manifest)
+	require.NoError(t, err)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filepath.Join(localToolDir, "tool.yaml"), manifestData, 0644))
+
+	// Create entrypoint
+	entrypointPath := filepath.Join(localToolDir, "bin", "tool")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(filepath.Dir(entrypointPath), 0755))
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(entrypointPath, []byte("#!/bin/sh\necho 'local tool'"), 0755))
+
+	// Install local tool
+	var buf bytes.Buffer
+	err = InstallLocalTool(localToolDir, &buf)
+	require.NoError(t, err)
+
+	// Verify tool was installed
+	expectedInstallPath := filepath.Join(installDir, "local-test-tool", "0.1.0")
+	assert.DirExists(t, expectedInstallPath)
+
+	// Verify tool.yaml was copied
+	// #nosec G304 -- paths are constructed from test temp directories, safe
+	installedManifest, err := LoadManifest(expectedInstallPath)
+	require.NoError(t, err)
+	assert.Equal(t, "local-test-tool", installedManifest.Name)
+	assert.Equal(t, "0.1.0", installedManifest.Version)
+
+	// Verify entrypoint was copied
+	// #nosec G304 -- paths are constructed from test temp directories, safe
+	installedEntrypoint := filepath.Join(expectedInstallPath, "bin", "tool")
+	assert.FileExists(t, installedEntrypoint)
+}
+
+func TestInstallLocalTool_ErrorCases(t *testing.T) {
+	installDir := t.TempDir()
+	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
+	registry.GetInstalledToolsDirFunc = func() (string, error) {
+		return installDir, nil
+	}
+	defer func() {
+		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+	}()
+
+	// Test: local path doesn't exist
+	var buf bytes.Buffer
+	err := InstallLocalTool("/nonexistent/path", &buf)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "does not exist")
+
+	// Test: local path is a file (not a directory)
+	filePath := filepath.Join(t.TempDir(), "not-a-dir")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filePath, []byte("not a directory"), 0644))
+	err = InstallLocalTool(filePath, &buf)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a directory")
+
+	// Test: missing tool.yaml
+	toolDir := t.TempDir()
+	err = InstallLocalTool(toolDir, &buf)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to load manifest")
 }

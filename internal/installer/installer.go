@@ -70,7 +70,7 @@ func InstallTool(registryURL, toolName, versionConstraint string, progressWriter
 	}
 
 	// Get install directory using version from tool.yaml (source of truth)
-	installBaseDir, errGetInstallBaseDir := (*registry.GetInstalledToolsDirFunc)()
+	installBaseDir, errGetInstallBaseDir := registry.GetInstalledToolsDir()
 	if errGetInstallBaseDir != nil {
 		return fmt.Errorf("failed to get install base directory: %w", errGetInstallBaseDir)
 	}
@@ -119,6 +119,62 @@ func cloneToolRepository(repoURL, tag, targetDir string) error {
 	return nil
 }
 
+// InstallLocalTool installs a tool from a local directory or archive (archive support not yet implemented)
+func InstallLocalTool(localPath string, progressWriter io.Writer) error {
+	// Resolve local path to absolute path
+	absLocalPath, absErr := filepath.Abs(localPath)
+	if absErr != nil {
+		return fmt.Errorf("failed to resolve local path: %w", absErr)
+	}
+
+	// Check if path exists
+	info, statErr := os.Stat(absLocalPath)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return fmt.Errorf("local path does not exist: %s", absLocalPath)
+		}
+		return fmt.Errorf("failed to stat local path: %w", statErr)
+	}
+
+	// TODO: Support archives (tarballs, zip files) - for now only directories
+	if !info.IsDir() {
+		return fmt.Errorf("local path must be a directory (archive support not yet implemented): %s", absLocalPath)
+	}
+
+	// Load and validate manifest
+	manifest, errLoadManifest := LoadManifest(absLocalPath)
+	if errLoadManifest != nil {
+		return fmt.Errorf("failed to load manifest: %w", errLoadManifest)
+	}
+
+	errValidateManifest := ValidateManifest(manifest, absLocalPath)
+	if errValidateManifest != nil {
+		return fmt.Errorf("failed to validate manifest: %w", errValidateManifest)
+	}
+
+	// Get install directory using version from tool.yaml (source of truth)
+	installBaseDir, errGetInstallBaseDir := registry.GetInstalledToolsDir()
+	if errGetInstallBaseDir != nil {
+		return fmt.Errorf("failed to get install base directory: %w", errGetInstallBaseDir)
+	}
+
+	installDir := filepath.Join(installBaseDir, manifest.Name, manifest.Version)
+
+	// Install to target directory
+	errInstallToDirectory := InstallToDirectory(absLocalPath, installDir, progressWriter)
+	if errInstallToDirectory != nil {
+		return fmt.Errorf("failed to install tool to directory: %w", errInstallToDirectory)
+	}
+
+	zap.L().Info("Local tool installed successfully",
+		zap.String("tool", manifest.Name),
+		zap.String("version", manifest.Version),
+		zap.String("source", absLocalPath),
+		zap.String("path", installDir))
+
+	return nil
+}
+
 // InstallToDirectory copies tool files from source to target directory
 func InstallToDirectory(sourceDir, targetDir string, progressWriter io.Writer) error {
 	// Create target directory
@@ -142,7 +198,7 @@ type InstalledToolInfo struct {
 // ListInstalledTools returns a list of all installed tools with their versions
 // Multiple versions of the same tool will be listed separately
 func ListInstalledTools() ([]InstalledToolInfo, error) {
-	installDir, err := (*registry.GetInstalledToolsDirFunc)()
+	installDir, err := registry.GetInstalledToolsDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get install directory: %w", err)
 	}
@@ -201,7 +257,7 @@ func ListInstalledTools() ([]InstalledToolInfo, error) {
 
 // UninstallTool removes an installed tool
 func UninstallTool(toolName string) error {
-	installDir, err := (*registry.GetInstalledToolsDirFunc)()
+	installDir, err := registry.GetInstalledToolsDir()
 	if err != nil {
 		return fmt.Errorf("failed to get install directory: %w", err)
 	}
@@ -223,7 +279,7 @@ func UninstallTool(toolName string) error {
 // UpdateTool updates a tool to the latest version
 func UpdateTool(registryURL, toolName string, progressWriter io.Writer) error {
 	// Check if tool is installed
-	installDir, errInstallDir := (*registry.GetInstalledToolsDirFunc)()
+	installDir, errInstallDir := registry.GetInstalledToolsDir()
 	if errInstallDir != nil {
 		return fmt.Errorf("failed to get install directory: %w", errInstallDir)
 	}

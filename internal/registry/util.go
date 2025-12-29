@@ -20,19 +20,18 @@ func GetOrlaHomeDir() (string, error) {
 	return filepath.Join(homeDir, ".orla"), nil
 }
 
-// getInstalledToolsDirFunc is a function variable for getting installed tools directory (can be swapped for testing)
-var getInstalledToolsDirFunc = GetInstalledToolsDir
-
-// GetInstalledToolsDirFunc is exported for testing purposes (pointer to function variable)
-var GetInstalledToolsDirFunc *func() (string, error) = &getInstalledToolsDirFunc
-
-// GetInstalledToolsDir returns the ~/.orla/tools directory path
-func GetInstalledToolsDir() (string, error) {
+// GetInstalledToolsDirFunc is a function variable for getting installed tools directory (can be swapped for testing)
+var GetInstalledToolsDirFunc = func() (string, error) {
 	orlaHome, err := GetOrlaHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get orla home directory: %w", err)
 	}
 	return filepath.Join(orlaHome, "tools"), nil
+}
+
+// GetInstalledToolsDir returns the ~/.orla/tools directory path
+func GetInstalledToolsDir() (string, error) {
+	return GetInstalledToolsDirFunc()
 }
 
 // GetRegistryCacheDir returns the ~/.orla/cache/registry directory path
