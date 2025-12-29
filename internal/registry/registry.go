@@ -384,7 +384,7 @@ func SearchTools(registry *RegistryIndex, query string) []ToolEntry {
 
 // ClearRegistryCache clears the registry cache by removing the entire cache directory
 func ClearRegistryCache() error {
-	cacheDir, errGetCacheDir := GetRegistryCacheDir()
+	cacheDir, errGetCacheDir := getRegistryCacheDirFunc()
 	if errGetCacheDir != nil {
 		return fmt.Errorf("failed to get cache directory: %w", errGetCacheDir)
 	}

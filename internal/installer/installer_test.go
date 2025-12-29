@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -182,8 +183,8 @@ func TestInstallTool_InvalidRegistry(t *testing.T) {
 
 func TestInstallTool_Success(t *testing.T) {
 	// Set up zap logger with observer
-	core, logs := observer.New(zap.InfoLevel)
-	logger := zap.New(core)
+	coreLogger, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(coreLogger)
 	zap.ReplaceGlobals(logger)
 
 	tmpDir := t.TempDir()
@@ -200,7 +201,7 @@ func TestInstallTool_Success(t *testing.T) {
 	require.NoError(t, cmd.Run())
 
 	// Create tool.yaml
-	toolManifest := &ToolManifest{
+	toolManifest := &core.ToolManifest{
 		Name:        "test-tool",
 		Version:     "1.0.0",
 		Description: "Test tool",
@@ -883,7 +884,7 @@ func TestListInstalledTools(t *testing.T) {
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(tool1Dir, 0755))
 
-	tool1Manifest := &ToolManifest{
+	tool1Manifest := &core.ToolManifest{
 		Name:        "tool1",
 		Version:     "1.0.0",
 		Description: "First tool",
@@ -899,7 +900,7 @@ func TestListInstalledTools(t *testing.T) {
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(tool1v2Dir, 0755))
 
-	tool1v2Manifest := &ToolManifest{
+	tool1v2Manifest := &core.ToolManifest{
 		Name:        "tool1",
 		Version:     "2.0.0",
 		Description: "First tool v2",
@@ -915,7 +916,7 @@ func TestListInstalledTools(t *testing.T) {
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(tool2Dir, 0755))
 
-	tool2Manifest := &ToolManifest{
+	tool2Manifest := &core.ToolManifest{
 		Name:        "tool2",
 		Version:     "1.5.0",
 		Description: "Second tool",
@@ -1022,12 +1023,13 @@ func TestUpdateTool(t *testing.T) {
 	require.NoError(t, cmd.Run())
 
 	// Create tool.yaml
-	toolManifest := &ToolManifest{
+	toolManifest := &core.ToolManifest{
 		Name:        "test-tool",
 		Version:     "2.0.0",
 		Description: "Test tool updated",
 		Entrypoint:  "bin/tool",
 	}
+
 	manifestData, err := yaml.Marshal(toolManifest)
 	require.NoError(t, err)
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
@@ -1137,7 +1139,7 @@ func TestUpdateTool(t *testing.T) {
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(tool1Dir, 0755))
 
-	tool1Manifest := &ToolManifest{
+	tool1Manifest := &core.ToolManifest{
 		Name:        "test-tool",
 		Version:     "1.0.0",
 		Description: "Test tool",
@@ -1197,7 +1199,7 @@ func TestInstallLocalTool(t *testing.T) {
 	}()
 
 	// Create tool.yaml manifest
-	manifest := &ToolManifest{
+	manifest := &core.ToolManifest{
 		Name:        "local-test-tool",
 		Version:     "0.1.0",
 		Description: "A local test tool",

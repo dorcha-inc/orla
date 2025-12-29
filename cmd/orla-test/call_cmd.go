@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -83,7 +84,8 @@ orla binary will be spawned and communication happens via stdin/stdout.`,
 				return err
 			}
 
-			fmt.Print(output)
+			output = strings.TrimSuffix(output, "\n")
+			fmt.Println(output)
 			return nil
 		},
 	}

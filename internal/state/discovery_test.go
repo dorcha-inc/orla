@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dorcha-inc/orla/internal/installer"
+	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -20,7 +20,7 @@ func TestScanInstalledTools(t *testing.T) {
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 
 	// Create tool.yaml
-	manifest := &installer.ToolManifest{
+	manifest := &core.ToolManifest{
 		Name:        "fs",
 		Version:     "0.1.0",
 		Description: "Filesystem tool",
@@ -59,13 +59,13 @@ func TestScanInstalledTools_MultipleVersions(t *testing.T) {
 	require.NoError(t, os.MkdirAll(v2Dir, 0755))
 
 	// Create manifests
-	manifest1 := &installer.ToolManifest{
+	manifest1 := &core.ToolManifest{
 		Name:        "fs",
 		Version:     "0.1.0",
 		Description: "Filesystem tool v1",
 		Entrypoint:  "bin/fs",
 	}
-	manifest2 := &installer.ToolManifest{
+	manifest2 := &core.ToolManifest{
 		Name:        "fs",
 		Version:     "0.2.0",
 		Description: "Filesystem tool v2",
@@ -151,7 +151,7 @@ func TestScanInstalledTools_ManifestValidationFailed(t *testing.T) {
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 
 	// Create manifest with missing required field (description)
-	manifest := &installer.ToolManifest{
+	manifest := &core.ToolManifest{
 		Name:       "fs",
 		Version:    "0.1.0",
 		Entrypoint: "bin/fs",
@@ -178,7 +178,7 @@ func TestScanInstalledTools_EntrypointNotFound(t *testing.T) {
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 
 	// Create valid manifest
-	manifest := &installer.ToolManifest{
+	manifest := &core.ToolManifest{
 		Name:        "fs",
 		Version:     "0.1.0",
 		Description: "Filesystem tool",

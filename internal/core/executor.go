@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ type Command interface {
 	StdoutPipe() (io.ReadCloser, error)
 	StderrPipe() (io.ReadCloser, error)
 	SetStdin(io.Reader)
+	SetEnv([]string)
 	Start() error
 	Wait() error
 }
@@ -35,6 +37,10 @@ type execCommand struct {
 
 func (e *execCommand) SetStdin(r io.Reader) {
 	e.Stdin = r
+}
+
+func (e *execCommand) SetEnv(env []string) {
+	e.Env = env
 }
 
 // Explicitly forward methods from *exec.Cmd to satisfy the Command interface
@@ -113,21 +119,38 @@ type OrlaToolExecutionResult struct {
 }
 
 // Execute executes a tool with the given arguments and input
-func (e *OrlaToolExecutor) Execute(ctx context.Context, tool *ToolEntry, args []string, stdin string) (*OrlaToolExecutionResult, error) {
+func (e *OrlaToolExecutor) Execute(ctx context.Context, tool *ToolManifest, args []string, stdin string) (*OrlaToolExecutionResult, error) {
 	// Create context with timeout using the clock
 	execCtx, cancel := clockwork.WithTimeout(ctx, e.clock, e.timeout)
 	defer cancel()
 
-	// Build command
+	// Build command with runtime args appended
 	var cmd Command
+	allArgs := args
+	if tool.Runtime != nil && len(tool.Runtime.Args) > 0 {
+		allArgs = append(args, tool.Runtime.Args...)
+	}
+
 	if tool.Interpreter != "" {
 		// Script with interpreter
 		cmdArgs := []string{tool.Path}
-		cmdArgs = append(cmdArgs, args...)
+		cmdArgs = append(cmdArgs, allArgs...)
 		cmd = e.commandRunner.CommandContext(execCtx, tool.Interpreter, cmdArgs...)
 	} else {
 		// Binary executable
-		cmd = e.commandRunner.CommandContext(execCtx, tool.Path, args...)
+		cmd = e.commandRunner.CommandContext(execCtx, tool.Path, allArgs...)
+	}
+
+	// Set environment variables if specified
+	if tool.Runtime != nil && len(tool.Runtime.Env) > 0 {
+		// Get current environment
+		env := os.Environ()
+		// Add runtime environment variables (will override existing ones)
+		for key, value := range tool.Runtime.Env {
+			env = append(env, fmt.Sprintf("%s=%s", key, value))
+		}
+		// Set environment on command
+		cmd.SetEnv(env)
 	}
 
 	// Set up stdin

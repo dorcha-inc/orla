@@ -590,8 +590,8 @@ Table of Contents
    The two RFCs work together:
 
       RFC 3: Install tool → ~/.orla/tools/fs/0.1.0/
-      tool.yaml: runtime.mode = "simple" → Use RFC 1 execution
-      tool.yaml: runtime.mode = "capsule" → Use lifecycle management
+      tool.yaml: runtime.mode = "simple" -> Use RFC 1 execution
+      tool.yaml: runtime.mode = "capsule" -> Use lifecycle management
 
    Note: RFC 2 (Tool Capsules) concepts are merged into RFC 3 via the
    runtime section of tool.yaml.  RFC 2's orla-tool.json format is

@@ -36,7 +36,7 @@ func TestNewToolsRegistry(t *testing.T) {
 func TestToolsRegistry_AddTool(t *testing.T) {
 	registry := NewToolsRegistry()
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "test-tool",
 		Description: "A test tool",
 		Path:        "/path/to/tool",
@@ -56,14 +56,14 @@ func TestToolsRegistry_AddTool(t *testing.T) {
 func TestToolsRegistry_AddTool_Duplicate(t *testing.T) {
 	registry := NewToolsRegistry()
 
-	tool1 := &core.ToolEntry{
+	tool1 := &core.ToolManifest{
 		Name:        "test-tool",
 		Description: "First tool",
 		Path:        "/path/to/tool1",
 		Interpreter: "",
 	}
 
-	tool2 := &core.ToolEntry{
+	tool2 := &core.ToolManifest{
 		Name:        "test-tool",
 		Description: "Second tool",
 		Path:        "/path/to/tool2",
@@ -91,7 +91,7 @@ func TestToolsRegistry_AddTool_Duplicate(t *testing.T) {
 func TestToolsRegistry_GetTool(t *testing.T) {
 	registry := NewToolsRegistry()
 
-	tool := &core.ToolEntry{
+	tool := &core.ToolManifest{
 		Name:        "test-tool",
 		Description: "A test tool",
 		Path:        "/path/to/tool",
@@ -123,21 +123,21 @@ func TestToolsRegistry_ListTools(t *testing.T) {
 	assert.Equal(t, 0, len(tools))
 
 	// Add some tools
-	tool1 := &core.ToolEntry{
+	tool1 := &core.ToolManifest{
 		Name:        "tool1",
 		Description: "First tool",
 		Path:        "/path/to/tool1",
 		Interpreter: "",
 	}
 
-	tool2 := &core.ToolEntry{
+	tool2 := &core.ToolManifest{
 		Name:        "tool2",
 		Description: "Second tool",
 		Path:        "/path/to/tool2",
 		Interpreter: "/bin/sh",
 	}
 
-	tool3 := &core.ToolEntry{
+	tool3 := &core.ToolManifest{
 		Name:        "tool3",
 		Description: "Third tool",
 		Path:        "/path/to/tool3",
@@ -156,7 +156,7 @@ func TestToolsRegistry_ListTools(t *testing.T) {
 	assert.Equal(t, 3, len(tools))
 
 	// Verify all tools are present (order may vary)
-	toolMap := make(map[string]*core.ToolEntry)
+	toolMap := make(map[string]*core.ToolManifest)
 	for _, tool := range tools {
 		toolMap[tool.Name] = tool
 	}

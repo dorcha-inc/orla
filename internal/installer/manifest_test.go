@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -14,7 +15,7 @@ func TestLoadManifest(t *testing.T) {
 	tmpDir := t.TempDir()
 	manifestPath := filepath.Join(tmpDir, "tool.yaml")
 
-	manifest := &ToolManifest{
+	manifest := &core.ToolManifest{
 		Name:        "test-tool",
 		Version:     "1.0.0",
 		Description: "Test tool",
@@ -48,7 +49,7 @@ func TestValidateManifest(t *testing.T) {
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	require.NoError(t, os.WriteFile(entrypointPath, []byte("#!/bin/sh\necho test"), 0755))
 
-	manifest := &ToolManifest{
+	manifest := &core.ToolManifest{
 		Name:        "test-tool",
 		Version:     "1.0.0",
 		Description: "Test tool",
@@ -110,27 +111,27 @@ func TestValidateManifest_RuntimeMode(t *testing.T) {
 	require.NoError(t, os.WriteFile(entrypointPath, []byte("#!/bin/sh\necho test"), 0755))
 
 	// Valid manifest with simple runtime mode
-	manifest := &ToolManifest{
+	manifest := &core.ToolManifest{
 		Name:        "test-tool",
 		Version:     "1.0.0",
 		Description: "Test tool",
 		Entrypoint:  "bin/tool",
-		Runtime: &RuntimeConfig{
-			Mode: RuntimeModeSimple,
+		Runtime: &core.RuntimeConfig{
+			Mode: core.RuntimeModeSimple,
 		},
 	}
 	err := ValidateManifest(manifest, tmpDir)
 	assert.NoError(t, err)
-	assert.Equal(t, RuntimeModeSimple, manifest.Runtime.Mode)
+	assert.Equal(t, core.RuntimeModeSimple, manifest.Runtime.Mode)
 
 	// Valid manifest with capsule runtime mode (should warn but succeed)
-	manifest.Runtime.Mode = RuntimeModeCapsule
+	manifest.Runtime.Mode = core.RuntimeModeCapsule
 	err = ValidateManifest(manifest, tmpDir)
 	assert.NoError(t, err)
-	assert.Equal(t, RuntimeModeCapsule, manifest.Runtime.Mode)
+	assert.Equal(t, core.RuntimeModeCapsule, manifest.Runtime.Mode)
 
 	// Invalid runtime mode
-	manifest.Runtime.Mode = RuntimeMode("invalid")
+	manifest.Runtime.Mode = core.RuntimeMode("invalid")
 	err = ValidateManifest(manifest, tmpDir)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid runtime.mode")
@@ -140,13 +141,13 @@ func TestValidateManifest_RuntimeMode(t *testing.T) {
 	err = ValidateManifest(manifest, tmpDir)
 	assert.NoError(t, err)
 	assert.NotNil(t, manifest.Runtime)
-	assert.Equal(t, RuntimeModeSimple, manifest.Runtime.Mode)
+	assert.Equal(t, core.RuntimeModeSimple, manifest.Runtime.Mode)
 
 	// Empty runtime mode (should default to simple)
-	manifest.Runtime = &RuntimeConfig{Mode: ""}
+	manifest.Runtime = &core.RuntimeConfig{Mode: ""}
 	err = ValidateManifest(manifest, tmpDir)
 	assert.NoError(t, err)
-	assert.Equal(t, RuntimeModeSimple, manifest.Runtime.Mode)
+	assert.Equal(t, core.RuntimeModeSimple, manifest.Runtime.Mode)
 }
 
 func TestValidateManifest_Executable(t *testing.T) {
@@ -158,7 +159,7 @@ func TestValidateManifest_Executable(t *testing.T) {
 	// Non-executable file (should still pass validation, just log debug)
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	require.NoError(t, os.WriteFile(entrypointPath, []byte("#!/bin/sh\necho test"), 0600))
-	manifest := &ToolManifest{
+	manifest := &core.ToolManifest{
 		Name:        "test-tool",
 		Version:     "1.0.0",
 		Description: "Test tool",
@@ -200,7 +201,7 @@ func TestLoadManifest_OptionalFields(t *testing.T) {
 	manifestPath := filepath.Join(tmpDir, "tool.yaml")
 
 	// Test manifest with all optional fields
-	manifest := &ToolManifest{
+	manifest := &core.ToolManifest{
 		Name:         "test-tool",
 		Version:      "1.0.0",
 		Description:  "Test tool",
@@ -211,8 +212,8 @@ func TestLoadManifest_OptionalFields(t *testing.T) {
 		Homepage:     "https://example.com",
 		Keywords:     []string{"test", "tool"},
 		Dependencies: []string{"dep1", "dep2"},
-		Runtime: &RuntimeConfig{
-			Mode: RuntimeModeSimple,
+		Runtime: &core.RuntimeConfig{
+			Mode: core.RuntimeModeSimple,
 		},
 	}
 
@@ -229,5 +230,5 @@ func TestLoadManifest_OptionalFields(t *testing.T) {
 	assert.Equal(t, []string{"test", "tool"}, loaded.Keywords)
 	assert.Equal(t, []string{"dep1", "dep2"}, loaded.Dependencies)
 	assert.NotNil(t, loaded.Runtime)
-	assert.Equal(t, RuntimeModeSimple, loaded.Runtime.Mode)
+	assert.Equal(t, core.RuntimeModeSimple, loaded.Runtime.Mode)
 }
