@@ -1708,6 +1708,132 @@ func TestHandleToolCall_CapsuleMode_NotRunning(t *testing.T) {
 	assert.Contains(t, textContent.Text, "Capsule")
 }
 
+// TestHandleCapsuleToolCall_JSONRPCError tests handling JSON-RPC error responses
+func TestHandleCapsuleToolCall_JSONRPCError(t *testing.T) {
+	if runtime.GOOS == windowsOS {
+		t.Skip("Windows capsule script tests not implemented")
+	}
+
+	cfg := createTestConfig(t)
+	srv := NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+
+	// Create a capsule mode tool that returns JSON-RPC error
+	scriptPath := createErrorCapsuleScript(t)
+	capsuleTool := &core.ToolManifest{
+		Name:        "error-capsule-tool",
+		Version:     "1.0.0",
+		Description: "A capsule mode tool that returns errors",
+		Path:        scriptPath,
+		Runtime: &core.RuntimeConfig{
+			Mode:             core.RuntimeModeCapsule,
+			StartupTimeoutMs: 5000,
+		},
+	}
+
+	err := cfg.ToolsRegistry.AddTool(capsuleTool)
+	require.NoError(t, err)
+
+	// Rebuild to start the capsule
+	srv.rebuildServer()
+
+	// Wait a bit for capsule to be ready
+	time.Sleep(100 * time.Millisecond)
+
+	// Call the tool - should get JSON-RPC error
+	result, output, err := srv.handleCapsuleToolCall(context.Background(), capsuleTool, map[string]any{})
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "Should return error for JSON-RPC error response")
+	assert.Nil(t, output)
+
+	// Cleanup
+	srv.capsules.Range(func(_ string, cap *core.CapsuleManager) bool {
+		_ = cap.Stop() //nolint:errcheck // cleanup in test
+		return true
+	})
+}
+
+// TestHandleCapsuleToolCall_CallToolError tests handling CallTool errors
+func TestHandleCapsuleToolCall_CallToolError(t *testing.T) {
+	if runtime.GOOS == windowsOS {
+		t.Skip("Windows capsule script tests not implemented")
+	}
+
+	cfg := createTestConfig(t)
+	srv := NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+
+	// Create a capsule mode tool
+	scriptPath := createRespondingCapsuleScript(t)
+	capsuleTool := &core.ToolManifest{
+		Name:        "capsule-tool",
+		Version:     "1.0.0",
+		Description: "A capsule mode tool",
+		Path:        scriptPath,
+		Runtime: &core.RuntimeConfig{
+			Mode:             core.RuntimeModeCapsule,
+			StartupTimeoutMs: 5000,
+		},
+	}
+
+	err := cfg.ToolsRegistry.AddTool(capsuleTool)
+	require.NoError(t, err)
+
+	// Rebuild to start the capsule
+	srv.rebuildServer()
+
+	// Wait a bit for capsule to be ready
+	time.Sleep(100 * time.Millisecond)
+
+	// Stop the capsule to cause CallTool to fail
+	srv.capsules.Range(func(_ string, cap *core.CapsuleManager) bool {
+		_ = cap.Stop() //nolint:errcheck // cleanup in test
+		return true
+	})
+
+	// Wait a bit for capsule to stop
+	time.Sleep(50 * time.Millisecond)
+
+	// Call the tool - should get error because capsule is stopped
+	result, output, err := srv.handleCapsuleToolCall(context.Background(), capsuleTool, map[string]any{})
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "Should return error when CallTool fails")
+	assert.Nil(t, output)
+}
+
+// createErrorCapsuleScript creates a capsule script that returns JSON-RPC errors
+func createErrorCapsuleScript(t *testing.T) string {
+	t.Helper()
+
+	if runtime.GOOS == windowsOS {
+		t.Skip("Windows capsule script tests not implemented")
+		return ""
+	}
+
+	scriptContent := `#!/bin/sh
+# Send handshake
+echo '{"jsonrpc":"2.0","method":"orla.hello","params":{"name":"error-capsule-tool","version":"1.0.0","capabilities":["tools"]}}'
+
+# Read and respond to JSON-RPC requests with errors
+while IFS= read -r line; do
+  REQ_ID=$(echo "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  if [ -n "$REQ_ID" ]; then
+    # Send error response
+    echo "{\"jsonrpc\":\"2.0\",\"id\":$REQ_ID,\"error\":{\"code\":-1,\"message\":\"Test error\"}}"
+  fi
+done
+`
+
+	scriptFile := filepath.Join(t.TempDir(), "error-capsule.sh")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err := os.WriteFile(scriptFile, []byte(scriptContent), 0755)
+	require.NoError(t, err)
+
+	return scriptFile
+}
+
 // TestRebuildServer_CapsuleFailsToStart tests that tools with failing capsules are not registered
 func TestRebuildServer_CapsuleFailsToStart(t *testing.T) {
 	if runtime.GOOS == windowsOS {

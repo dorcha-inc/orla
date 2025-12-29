@@ -245,6 +245,51 @@ func TestExecute_StderrCapture(t *testing.T) {
 	assert.Contains(t, result.Stderr, "stderr message")
 }
 
+// TestExecute_WithEnvironmentVariables tests that environment variables are properly set
+func TestExecute_WithEnvironmentVariables(t *testing.T) {
+	if runtime.GOOS == windowsOS {
+		t.Skip("Skipping environment test on Windows")
+	}
+
+	executor := NewOrlaToolExecutor(10)
+
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "test-script.sh")
+	scriptContent := "#!/bin/sh\necho $TEST_VAR\n"
+
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
+	require.NoError(t, err)
+
+	tool := &ToolManifest{
+		Name:        "test-script",
+		Path:        scriptPath,
+		Interpreter: "/bin/sh",
+		Runtime: &RuntimeConfig{
+			Env: map[string]string{
+				"TEST_VAR": "test-value",
+			},
+		},
+	}
+
+	result, err := executor.Execute(context.Background(), tool, []string{}, "")
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Contains(t, result.Stdout, "test-value")
+}
+
+// TestExecCommand_SetEnv tests that SetEnv properly sets environment variables
+func TestExecCommand_SetEnv(t *testing.T) {
+	cmd := &execCommand{
+		Cmd: exec.Command("echo", "test"),
+	}
+
+	env := []string{"TEST_VAR=test-value", "ANOTHER_VAR=another-value"}
+	cmd.SetEnv(env)
+
+	assert.Equal(t, env, cmd.Env)
+}
+
 // mockCommandRunner creates commands that respect context cancellation from fake clocks
 // This allows us to test timeouts without relying on real system time
 //
