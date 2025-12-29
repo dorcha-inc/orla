@@ -530,19 +530,11 @@ Table of Contents
 
    Update a tool to the latest version.
 
-      orla registry add URL
+      orla cache clear
 
-   Add a custom registry.
-
-10.3. Registry Commands
-
-      orla registry list
-
-   List configured registries.
-
-      orla registry update
-
-   Update the registry index cache.
+   Clear the registry cache. This removes all cached registry indexes and
+   cloned registry repositories. The cache will be rebuilt automatically on
+   the next registry operation.
 
 11. Security Considerations
 

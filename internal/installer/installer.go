@@ -128,12 +128,9 @@ func InstallLocalTool(localPath string, progressWriter io.Writer) error {
 	}
 
 	// Check if path exists
-	info, statErr := os.Stat(absLocalPath)
-	if statErr != nil {
-		if os.IsNotExist(statErr) {
-			return fmt.Errorf("local path does not exist: %s", absLocalPath)
-		}
-		return fmt.Errorf("failed to stat local path: %w", statErr)
+	info, err := core.FileStat(absLocalPath, "local path does not exist", "failed to stat local path")
+	if err != nil {
+		return err
 	}
 
 	// TODO: Support archives (tarballs, zip files) - for now only directories
@@ -263,12 +260,14 @@ func UninstallTool(toolName string) error {
 	}
 
 	toolDir := filepath.Join(installDir, toolName)
-	if _, err := os.Stat(toolDir); os.IsNotExist(err) {
-		return fmt.Errorf("tool '%s' is not installed", toolName)
+	_, errStat := core.FileStat(toolDir, fmt.Sprintf("tool '%s' not installed", toolName), "failed to stat tool directory")
+	if errStat != nil {
+		return errStat
 	}
 
 	// Remove the entire tool directory (includes all versions)
-	if err := os.RemoveAll(toolDir); err != nil {
+	errRemove := os.RemoveAll(toolDir)
+	if errRemove != nil {
 		return fmt.Errorf("failed to remove tool directory: %w", err)
 	}
 
@@ -285,11 +284,9 @@ func UpdateTool(registryURL, toolName string, progressWriter io.Writer) error {
 	}
 
 	toolDir := filepath.Join(installDir, toolName)
-	if _, errStat := os.Stat(toolDir); errStat != nil {
-		if os.IsNotExist(errStat) {
-			return fmt.Errorf("tool '%s' is not installed: %w", toolName, errStat)
-		}
-		return fmt.Errorf("failed to stat tool directory '%s': %w", toolDir, errStat)
+	_, errStat := core.FileStat(toolDir, fmt.Sprintf("tool '%s' not installed", toolName), "failed to stat tool directory")
+	if errStat != nil {
+		return errStat
 	}
 
 	// Install latest version (InstallTool handles this)

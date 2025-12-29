@@ -71,3 +71,16 @@ func CopyDirectory(src, dst string, skipDirs []string) error {
 		return nil
 	})
 }
+
+// FileStat returns the file info for a given path. If the path is not found,
+// it returns an error with the notFoundMessage. If there is another error, it returns an error with the otherMessage.
+func FileStat(path string, notFoundMessage string, otherMessage string) (os.FileInfo, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf(notFoundMessage+" (path: %s): %w", path, err)
+		}
+		return nil, fmt.Errorf(otherMessage+" (path: %s): %w", path, err)
+	}
+	return info, nil
+}

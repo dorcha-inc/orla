@@ -37,6 +37,7 @@ discovers and executes tools from the filesystem.`,
 	rootCmd.AddCommand(newSearchCmd())
 	rootCmd.AddCommand(newUninstallCmd())
 	rootCmd.AddCommand(newUpdateCmd())
+	rootCmd.AddCommand(newCacheCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

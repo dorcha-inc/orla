@@ -142,3 +142,48 @@ func TestCopyDirectory_ErrorCases(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to open destination directory")
 }
+
+func TestFileStat(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Test: file exists
+	filePath := filepath.Join(tmpDir, "test.txt")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(filePath, []byte("test"), 0644))
+
+	info, err := FileStat(filePath, "file not found", "other error")
+	require.NoError(t, err)
+	assert.NotNil(t, info)
+	assert.Equal(t, "test.txt", info.Name())
+	assert.False(t, info.IsDir())
+
+	// Test: directory exists
+	dirPath := filepath.Join(tmpDir, "subdir")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(dirPath, 0755))
+
+	info, err = FileStat(dirPath, "directory not found", "other error")
+	require.NoError(t, err)
+	assert.NotNil(t, info)
+	assert.True(t, info.IsDir())
+}
+
+func TestFileStat_NotFound(t *testing.T) {
+	nonexistentPath := filepath.Join(t.TempDir(), "nonexistent.txt")
+
+	_, err := FileStat(nonexistentPath, "file not found", "other error")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "file not found")
+	assert.Contains(t, err.Error(), nonexistentPath)
+}
+
+func TestFileStat_OtherError(t *testing.T) {
+	// Test with an invalid path that causes a different error
+	// On Unix, a path with null bytes should cause an error
+	invalidPath := string([]byte{0})
+
+	_, err := FileStat(invalidPath, "file not found", "stat failed")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "stat failed")
+	assert.Contains(t, err.Error(), invalidPath)
+}

@@ -381,3 +381,30 @@ func SearchTools(registry *RegistryIndex, query string) []ToolEntry {
 
 	return results
 }
+
+// ClearRegistryCache clears the registry cache by removing the entire cache directory
+func ClearRegistryCache() error {
+	cacheDir, errGetCacheDir := GetRegistryCacheDir()
+	if errGetCacheDir != nil {
+		return fmt.Errorf("failed to get cache directory: %w", errGetCacheDir)
+	}
+
+	// Check if cache directory exists
+	info, errStat := core.FileStat(cacheDir, "cache directory not found", "failed to stat cache directory")
+	if errStat != nil {
+		return errStat
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("cache directory is not a directory: %s", cacheDir)
+	}
+
+	// Remove the entire cache directory
+	errRemove := os.RemoveAll(cacheDir)
+	if errRemove != nil {
+		return fmt.Errorf("failed to remove cache directory: %w", errRemove)
+	}
+
+	fmt.Println("Cache cleared successfully.")
+	return nil
+}
