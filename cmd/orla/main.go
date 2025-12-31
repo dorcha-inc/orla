@@ -32,11 +32,7 @@ discovers and executes tools from the filesystem.`,
 
 	// Add subcommands
 	rootCmd.AddCommand(newServeCmd())
-	rootCmd.AddCommand(newInstallCmd())
-	rootCmd.AddCommand(newListCmd())
-	rootCmd.AddCommand(newSearchCmd())
-	rootCmd.AddCommand(newUninstallCmd())
-	rootCmd.AddCommand(newUpdateCmd())
+	rootCmd.AddCommand(newToolCmd()) // Tool management commands (RFC 4)
 	rootCmd.AddCommand(newCacheCmd())
 
 	if err := rootCmd.Execute(); err != nil {

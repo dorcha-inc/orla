@@ -3,15 +3,16 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/dorcha-inc/orla/internal/installer"
 	"github.com/dorcha-inc/orla/internal/registry"
+	"github.com/dorcha-inc/orla/internal/tool"
 )
 
-// newInstallCmd creates the install command
-func newInstallCmd() *cobra.Command {
+// newToolInstallCmd creates the tool install command
+func newToolInstallCmd() *cobra.Command {
 	var (
 		registryURL string
 		version     string
@@ -27,10 +28,10 @@ to ~/.orla/tools/TOOL-NAME/VERSION/ and automatically registered with the orla r
 When using --local, TOOL-NAME should not be provided as it will be read from the tool.yaml manifest.
 
 Examples:
-  orla install fs
-  orla install fs@0.1.0
-  orla install fs --version latest
-  orla install --local ./path/to/tool`,
+  orla tool install fs
+  orla tool install fs@0.1.0
+  orla tool install fs --version latest
+  orla tool install --local ./path/to/tool`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			// Check if --local flag is set
 			localFlag, getLocalFlagErr := cmd.Flags().GetString("local")
@@ -58,38 +59,25 @@ Examples:
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Handle local installation
-			if localPath != "" {
-				if err := installer.InstallLocalTool(localPath, os.Stdout); err != nil {
-					return fmt.Errorf("failed to install local tool: %w", err)
+			var toolName string
+			if len(args) > 0 {
+				toolName = args[0]
+				// Handle version in tool name (e.g., "fs@0.1.0")
+				if strings.Contains(toolName, "@") {
+					parts := strings.SplitN(toolName, "@", 2)
+					toolName = parts[0]
+					if version == "" || version == "latest" {
+						version = parts[1]
+					}
 				}
-				fmt.Println("Tool is now available. Restart orla server to use it.")
-				return nil
 			}
 
-			// Args validation (above) ensures tool name is provided when not using --local
-			// so we can safely access the first argument here.
-			toolName := args[0]
-
-			// Use default registry if not specified
-			if registryURL == "" {
-				registryURL = registry.DefaultRegistryURL
-			}
-
-			// Use "latest" if version not specified
-			if version == "" {
-				version = "latest"
-			}
-
-			// Install the tool
-			if err := installer.InstallTool(registryURL, toolName, version, os.Stdout); err != nil {
-				return fmt.Errorf("failed to install tool: %w", err)
-			}
-
-			fmt.Printf("Successfully installed %s\n", toolName)
-			fmt.Println("Tool is now available. Restart orla server to use it.")
-
-			return nil
+			return tool.InstallTool(toolName, tool.InstallOptions{
+				RegistryURL: registryURL,
+				Version:     version,
+				LocalPath:   localPath,
+				Writer:      os.Stdout,
+			})
 		},
 	}
 
