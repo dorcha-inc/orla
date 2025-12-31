@@ -7,6 +7,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/installer"
 )
@@ -24,7 +25,17 @@ func ListTools(opts ListOptions) error {
 		opts.Writer = os.Stdout
 	}
 
-	tools, err := installer.ListInstalledTools()
+	// Load config to get ToolsDir (handles project > user > default precedence)
+	cfg, err := config.LoadConfig("")
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if cfg.ToolsDir == "" {
+		return fmt.Errorf("tools directory not configured")
+	}
+	toolsDir := cfg.ToolsDir
+
+	tools, err := installer.ListInstalledTools(toolsDir)
 	if err != nil {
 		return fmt.Errorf("failed to list installed tools: %w", err)
 	}

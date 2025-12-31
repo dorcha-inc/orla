@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/installer"
 	"github.com/dorcha-inc/orla/internal/registry"
@@ -24,9 +25,19 @@ func InstallTool(toolName string, opts InstallOptions) error {
 		opts.Writer = os.Stdout
 	}
 
+	// Load config to get ToolsDir (handles project > user > default precedence)
+	cfg, err := config.LoadConfig("")
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if cfg.ToolsDir == "" {
+		return fmt.Errorf("tools directory not configured")
+	}
+	toolsDir := cfg.ToolsDir
+
 	// Handle local installation
 	if opts.LocalPath != "" {
-		if err := installer.InstallLocalTool(opts.LocalPath, opts.Writer); err != nil {
+		if err := installer.InstallLocalTool(opts.LocalPath, toolsDir, opts.Writer); err != nil {
 			return fmt.Errorf("failed to install local tool: %w", err)
 		}
 		core.MustFprintf(opts.Writer, "Tool is now available. Restart orla server to use it.\n")
@@ -44,7 +55,7 @@ func InstallTool(toolName string, opts InstallOptions) error {
 	}
 
 	// Install the tool
-	if err := installer.InstallTool(opts.RegistryURL, toolName, opts.Version, opts.Writer); err != nil {
+	if err := installer.InstallTool(opts.RegistryURL, toolName, opts.Version, toolsDir, opts.Writer); err != nil {
 		return fmt.Errorf("failed to install tool: %w", err)
 	}
 

@@ -11,21 +11,14 @@ import (
 
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/installer"
-	"github.com/dorcha-inc/orla/internal/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
 func TestGetToolInfo_NotInstalled(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, _, cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	var buf bytes.Buffer
 	err := GetToolInfo("nonexistent-tool", InfoOptions{
@@ -36,14 +29,8 @@ func TestGetToolInfo_NotInstalled(t *testing.T) {
 }
 
 func TestGetToolInfo_DefaultWriter(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, _, cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Test that nil writer defaults to os.Stdout
 	err := GetToolInfo("nonexistent-tool", InfoOptions{
@@ -54,17 +41,11 @@ func TestGetToolInfo_DefaultWriter(t *testing.T) {
 }
 
 func TestGetToolInfo_Simple(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, toolsDir, cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Create tool structure: TOOL-NAME/VERSION/tool.yaml
-	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	toolDir := filepath.Join(toolsDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 
@@ -94,16 +75,10 @@ func TestGetToolInfo_Simple(t *testing.T) {
 }
 
 func TestGetToolInfo_WithOptionalFields(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, toolsDir, cleanup := setupTestConfig(t)
+	defer cleanup()
 
-	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	toolDir := filepath.Join(toolsDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 
@@ -142,16 +117,10 @@ func TestGetToolInfo_WithOptionalFields(t *testing.T) {
 }
 
 func TestGetToolInfo_WithRuntime(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, toolsDir, cleanup := setupTestConfig(t)
+	defer cleanup()
 
-	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	toolDir := filepath.Join(toolsDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 
@@ -190,16 +159,10 @@ func TestGetToolInfo_WithRuntime(t *testing.T) {
 }
 
 func TestGetToolInfo_JSON(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, toolsDir, cleanup := setupTestConfig(t)
+	defer cleanup()
 
-	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	toolDir := filepath.Join(toolsDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 
@@ -237,16 +200,10 @@ func TestGetToolInfo_JSON(t *testing.T) {
 }
 
 func TestGetToolInfo_JSON_WithRuntime(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, toolsDir, cleanup := setupTestConfig(t)
+	defer cleanup()
 
-	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	toolDir := filepath.Join(toolsDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 
@@ -288,17 +245,11 @@ func TestGetToolInfo_JSON_WithRuntime(t *testing.T) {
 }
 
 func TestGetToolInfo_MultipleVersions(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, toolsDir, cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Create tool with version 1.0.0
-	tool1Dir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	tool1Dir := filepath.Join(toolsDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(tool1Dir, 0755))
 
@@ -314,7 +265,7 @@ func TestGetToolInfo_MultipleVersions(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tool1Dir, installer.ToolManifestFileName), manifestData1, 0644))
 
 	// Create same tool with version 2.0.0 (should be selected as latest)
-	tool2Dir := filepath.Join(tmpDir, "test-tool", "2.0.0")
+	tool2Dir := filepath.Join(toolsDir, "test-tool", "2.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(tool2Dir, 0755))
 
@@ -342,17 +293,11 @@ func TestGetToolInfo_MultipleVersions(t *testing.T) {
 }
 
 func TestGetToolInfo_NoValidVersions(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, toolsDir, cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Create tool directory but without a valid manifest
-	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	toolDir := filepath.Join(toolsDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 	// Don't create tool.yaml
@@ -365,36 +310,12 @@ func TestGetToolInfo_NoValidVersions(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to find tool version")
 }
 
-func TestGetToolInfo_Error_GetInstallDir(t *testing.T) {
-	// Mock GetInstalledToolsDir to return an error
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return "", assert.AnError
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
-
-	var buf bytes.Buffer
-	err := GetToolInfo("test-tool", InfoOptions{
-		Writer: &buf,
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get install directory")
-}
-
 func TestGetToolInfo_Error_LoadManifest(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, toolsDir, cleanup := setupTestConfig(t)
+	defer cleanup()
 
 	// Create tool directory with invalid manifest
-	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	toolDir := filepath.Join(toolsDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 	// Create invalid YAML
@@ -451,16 +372,10 @@ func TestFindLatestToolVersion_NoValidVersions(t *testing.T) {
 }
 
 func TestGetToolInfo_JSON_WithMCP(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, toolsDir, cleanup := setupTestConfig(t)
+	defer cleanup()
 
-	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	toolDir := filepath.Join(toolsDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 
@@ -495,16 +410,10 @@ func TestGetToolInfo_JSON_WithMCP(t *testing.T) {
 }
 
 func TestGetToolInfo_JSON_WithHotLoad(t *testing.T) {
-	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	_, toolsDir, cleanup := setupTestConfig(t)
+	defer cleanup()
 
-	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
+	toolDir := filepath.Join(toolsDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
 	require.NoError(t, os.MkdirAll(toolDir, 0755))
 

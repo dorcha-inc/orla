@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/state"
 )
@@ -22,7 +23,7 @@ import (
 const windowsOS = "windows"
 
 // createTestConfig creates a test configuration with a tools directory
-func createTestConfig(t *testing.T) *state.OrlaConfig {
+func createTestConfig(t *testing.T) *config.OrlaConfig {
 	tmpDir := t.TempDir()
 	toolsDir := filepath.Join(tmpDir, "tools")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
@@ -45,7 +46,7 @@ func createTestConfig(t *testing.T) *state.OrlaConfig {
 		tool.Description = "A test tool"
 	}
 
-	return &state.OrlaConfig{
+	return &config.OrlaConfig{
 		ToolsDir:      toolsDir,
 		ToolsRegistry: registry,
 		Port:          8080,
@@ -193,7 +194,7 @@ func TestNewOrlaServer_WithEmptyToolsRegistry(t *testing.T) {
 	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
 	require.NoError(t, err)
 
-	cfg := &state.OrlaConfig{
+	cfg := &config.OrlaConfig{
 		ToolsDir:      toolsDir,
 		ToolsRegistry: registry,
 		Port:          8080,
@@ -226,7 +227,7 @@ func TestNewOrlaServer_WithMultipleTools(t *testing.T) {
 	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
 	require.NoError(t, err)
 
-	cfg := &state.OrlaConfig{
+	cfg := &config.OrlaConfig{
 		ToolsDir:      toolsDir,
 		ToolsRegistry: registry,
 		Port:          8080,
@@ -268,7 +269,7 @@ timeout: 60
 	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
 	require.NoError(t, err)
 
-	cfg := &state.OrlaConfig{
+	cfg := &config.OrlaConfig{
 		ToolsDir:      toolsDir,
 		ToolsRegistry: registry,
 		Port:          8080,
@@ -502,7 +503,7 @@ func TestReload(t *testing.T) {
 	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
 	require.NoError(t, err)
 
-	cfg := &state.OrlaConfig{
+	cfg := &config.OrlaConfig{
 		ToolsDir:      toolsDir,
 		ToolsRegistry: registry,
 		Port:          8080,
@@ -698,7 +699,7 @@ func TestNewOrlaServer_EmptyToolsDirectory(t *testing.T) {
 	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
 	require.NoError(t, err)
 
-	cfg := &state.OrlaConfig{
+	cfg := &config.OrlaConfig{
 		ToolsDir:      toolsDir,
 		ToolsRegistry: registry,
 		Port:          8080,
@@ -1354,7 +1355,7 @@ func TestNewOrlaServer_WithZeroTimeout(t *testing.T) {
 	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
 	require.NoError(t, err)
 
-	cfg := &state.OrlaConfig{
+	cfg := &config.OrlaConfig{
 		ToolsDir:      toolsDir,
 		ToolsRegistry: registry,
 		Port:          8080,
@@ -1379,7 +1380,7 @@ func TestNewOrlaServer_WithLargeTimeout(t *testing.T) {
 	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
 	require.NoError(t, err)
 
-	cfg := &state.OrlaConfig{
+	cfg := &config.OrlaConfig{
 		ToolsDir:      toolsDir,
 		ToolsRegistry: registry,
 		Port:          8080,
@@ -1442,7 +1443,7 @@ func TestRebuildServer_Concurrent(t *testing.T) {
 // TestNewOrlaServer_WithNilToolsRegistry tests server creation with nil ToolsRegistry
 // This should not panic but might cause issues - testing edge case
 func TestNewOrlaServer_WithNilToolsRegistry(t *testing.T) {
-	cfg := &state.OrlaConfig{
+	cfg := &config.OrlaConfig{
 		ToolsDir:      "/tmp/tools",
 		ToolsRegistry: nil, // Nil registry
 		Port:          8080,

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/installer"
 	"github.com/dorcha-inc/orla/internal/registry"
@@ -23,13 +24,23 @@ func UpdateTool(toolName string, opts UpdateOptions) error {
 		opts.Writer = os.Stdout
 	}
 
+	// Load config to get ToolsDir (handles project > user > default precedence)
+	cfg, err := config.LoadConfig("")
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+	if cfg.ToolsDir == "" {
+		return fmt.Errorf("tools directory not configured")
+	}
+	toolsDir := cfg.ToolsDir
+
 	// Use default registry if not specified
 	if opts.RegistryURL == "" {
 		opts.RegistryURL = registry.DefaultRegistryURL
 	}
 
 	// Update the tool
-	if err := installer.UpdateTool(opts.RegistryURL, toolName, opts.Writer); err != nil {
+	if err := installer.UpdateTool(opts.RegistryURL, toolName, toolsDir, opts.Writer); err != nil {
 		return fmt.Errorf("failed to update tool: %w", err)
 	}
 

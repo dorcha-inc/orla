@@ -2,6 +2,7 @@ package tool
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,16 +20,29 @@ func TestInstallTool_SuccessMessage(t *testing.T) {
 	// Note: Full installation testing is done in installer package tests.
 	// This test verifies the wrapper writes success messages.
 	// We test the local path case which is simpler and doesn't require registry setup.
-	localToolDir := t.TempDir()
-	installDir := t.TempDir()
+	tmpDir := t.TempDir()
+	localToolDir := filepath.Join(tmpDir, "local-tool")
+	installDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(installDir, 0755))
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(localToolDir, 0755))
 
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return installDir, nil
-	}
+	// Create orla.yaml config to use project-local tools directory
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+	configContent := fmt.Sprintf("tools_dir: %s\n", installDir)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+	// Change to temp directory so config.LoadConfig finds orla.yaml
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
 	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
+			t.Logf("Failed to restore working directory: %v", chdirErr)
+		}
 	}()
+	require.NoError(t, os.Chdir(tmpDir))
 
 	// Create tool.yaml manifest
 	manifest := &core.ToolManifest{
@@ -65,16 +79,29 @@ func TestInstallTool_SuccessMessage(t *testing.T) {
 
 func TestInstallTool_LocalPath(t *testing.T) {
 	// Set up temporary directories
-	localToolDir := t.TempDir()
-	installDir := t.TempDir()
+	tmpDir := t.TempDir()
+	localToolDir := filepath.Join(tmpDir, "local-tool")
+	installDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(installDir, 0755))
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(localToolDir, 0755))
 
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return installDir, nil
-	}
+	// Create orla.yaml config to use project-local tools directory
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+	configContent := fmt.Sprintf("tools_dir: %s\n", installDir)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+	// Change to temp directory so config.LoadConfig finds orla.yaml
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
 	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
+			t.Logf("Failed to restore working directory: %v", chdirErr)
+		}
 	}()
+	require.NoError(t, os.Chdir(tmpDir))
 
 	// Create tool.yaml manifest
 	manifest := &core.ToolManifest{
@@ -108,17 +135,29 @@ func TestInstallTool_LocalPath(t *testing.T) {
 }
 
 func TestInstallTool_LocalPath_Error(t *testing.T) {
-	installDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return installDir, nil
-	}
+	tmpDir := t.TempDir()
+	installDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(installDir, 0755))
+
+	// Create orla.yaml config
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+	configContent := fmt.Sprintf("tools_dir: %s\n", installDir)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+	// Change to temp directory
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
 	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
+			t.Logf("Failed to restore working directory: %v", chdirErr)
+		}
 	}()
+	require.NoError(t, os.Chdir(tmpDir))
 
 	var buf bytes.Buffer
-	err := InstallTool("", InstallOptions{
+	err = InstallTool("", InstallOptions{
 		LocalPath: "/nonexistent/path",
 		Writer:    &buf,
 	})
@@ -128,16 +167,28 @@ func TestInstallTool_LocalPath_Error(t *testing.T) {
 
 func TestInstallTool_RegistryInstall_Error(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
+	installDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(installDir, 0755))
+
+	// Create orla.yaml config
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+	configContent := fmt.Sprintf("tools_dir: %s\n", installDir)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+	// Change to temp directory
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
 	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
+			t.Logf("Failed to restore working directory: %v", chdirErr)
+		}
 	}()
+	require.NoError(t, os.Chdir(tmpDir))
 
 	var buf bytes.Buffer
-	err := InstallTool("nonexistent-tool", InstallOptions{
+	err = InstallTool("nonexistent-tool", InstallOptions{
 		RegistryURL: registry.DefaultRegistryURL,
 		Version:     "latest",
 		Writer:      &buf,
@@ -148,16 +199,29 @@ func TestInstallTool_RegistryInstall_Error(t *testing.T) {
 
 func TestInstallTool_EmptyToolName_WithLocalPath(t *testing.T) {
 	// Test that empty tool name is allowed when using local path
-	localToolDir := t.TempDir()
-	installDir := t.TempDir()
+	tmpDir := t.TempDir()
+	localToolDir := filepath.Join(tmpDir, "local-tool")
+	installDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(installDir, 0755))
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(localToolDir, 0755))
 
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return installDir, nil
-	}
+	// Create orla.yaml config
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+	configContent := fmt.Sprintf("tools_dir: %s\n", installDir)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+	// Change to temp directory
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
 	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
+			t.Logf("Failed to restore working directory: %v", chdirErr)
+		}
 	}()
+	require.NoError(t, os.Chdir(tmpDir))
 
 	// Create tool.yaml manifest
 	manifest := &core.ToolManifest{
@@ -192,16 +256,29 @@ func TestInstallTool_EmptyToolName_WithLocalPath(t *testing.T) {
 
 func TestInstallTool_LocalPathTakesPrecedence(t *testing.T) {
 	// Test that when LocalPath is provided, registry URL and version are ignored
-	localToolDir := t.TempDir()
-	installDir := t.TempDir()
+	tmpDir := t.TempDir()
+	localToolDir := filepath.Join(tmpDir, "local-tool")
+	installDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(installDir, 0755))
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(localToolDir, 0755))
 
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return installDir, nil
-	}
+	// Create orla.yaml config
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+	configContent := fmt.Sprintf("tools_dir: %s\n", installDir)
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+	// Change to temp directory
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
 	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
+		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
+			t.Logf("Failed to restore working directory: %v", chdirErr)
+		}
 	}()
+	require.NoError(t, os.Chdir(tmpDir))
 
 	// Create tool.yaml manifest
 	manifest := &core.ToolManifest{

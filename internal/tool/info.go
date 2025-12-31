@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/installer"
-	"github.com/dorcha-inc/orla/internal/registry"
 	"go.uber.org/zap"
 	"golang.org/x/mod/semver"
 )
@@ -26,11 +26,15 @@ func GetToolInfo(toolName string, opts InfoOptions) error {
 		opts.Writer = os.Stdout
 	}
 
-	// Get installed tools directory
-	installDir, err := registry.GetInstalledToolsDir()
+	// Load config to get ToolsDir (handles project > user > default precedence)
+	cfg, err := config.LoadConfig("")
 	if err != nil {
-		return fmt.Errorf("failed to get install directory: %w", err)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
+	if cfg.ToolsDir == "" {
+		return fmt.Errorf("tools directory not configured")
+	}
+	installDir := cfg.ToolsDir
 
 	// Find the tool directory (use latest version if multiple exist)
 	toolBaseDir := filepath.Join(installDir, toolName)

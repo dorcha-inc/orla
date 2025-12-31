@@ -223,7 +223,8 @@ Table of Contents
    The server runs in-process and exposes all tools discovered via:
 
    - Directory-based discovery (RFC 1): ./tools/ directory
-   - Installed tools (RFC 3): ~/.orla/tools/*/VERSION/
+   - Installed tools (RFC 3): tools_dir/TOOL-NAME/VERSION/ (project-local)
+                              or ~/.orla/tools/TOOL-NAME/VERSION/ (global)
 
    The internal server MUST use stdio transport for communication with
    the agent model.  The server MUST be started automatically when Agent
@@ -419,7 +420,8 @@ Table of Contents
    Server Mode:
 
    - Directory-based discovery (RFC 1): Scan ./tools/ for executables
-   - Installed tools (RFC 3): Scan ~/.orla/tools/*/VERSION/ for
+   - Installed tools (RFC 3): Scan tools_dir/TOOL-NAME/VERSION/ (project-local)
+                              or ~/.orla/tools/TOOL-NAME/VERSION/ (global) for
      tool.yaml manifests
 
    All discovered tools MUST be exposed to the agent model via MCP.
