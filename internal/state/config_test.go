@@ -45,6 +45,16 @@ func TestNewDefaultOrlaConfig(t *testing.T) {
 	assert.Equal(t, 30, cfg.Timeout)
 	assert.Equal(t, "json", cfg.LogFormat)
 	assert.Equal(t, "info", cfg.LogLevel)
+
+	// Verify agent mode defaults (RFC 4)
+	assert.Equal(t, "ollama:ministral-3:8b", cfg.Model)
+	assert.True(t, cfg.AutoStartOllama)
+	assert.False(t, cfg.AutoConfigureOllamaService)
+	assert.Equal(t, 10, cfg.MaxToolCalls)
+	assert.True(t, cfg.Streaming)
+	assert.Equal(t, OrlaOutputFormatAuto, cfg.OutputFormat)
+	assert.True(t, cfg.ConfirmDestructive)
+	assert.False(t, cfg.DryRun)
 }
 
 // TestNewDefaultOrlaConfig_NonexistentToolsDir tests graceful handling when tools directory doesn't exist

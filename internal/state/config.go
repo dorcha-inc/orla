@@ -10,25 +10,60 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type OrlaOutputFormat string
+
+const (
+	OrlaOutputFormatAuto  OrlaOutputFormat = "auto"
+	OrlaOutputFormatRich  OrlaOutputFormat = "rich"
+	OrlaOutputFormatPlain OrlaOutputFormat = "plain"
+)
+
 // OrlaConfig represents the orla configuration, including
 // the tools directory, the port to listen on, the timeout
 // for tool executions, the log format, and the log level.
+// It also includes Agent Mode configuration (RFC 4).
 type OrlaConfig struct {
+	// Server mode configuration (RFC 1)
 	ToolsDir      string         `yaml:"tools_dir,omitempty"`      // the directory containing the tools
 	ToolsRegistry *ToolsRegistry `yaml:"tools_registry,omitempty"` // the tools registry
 	Port          int            `yaml:"port,omitempty"`           // the port to listen on
 	Timeout       int            `yaml:"timeout,omitempty"`        // the timeout for tool executions in seconds
 	LogFormat     string         `yaml:"log_format,omitempty"`     // the log format, "json" or "pretty"
 	LogLevel      string         `yaml:"log_level,omitempty"`      // the log level, "debug", "info", "warn", "error", "fatal"
+	LogFile       string         `yaml:"log_file,omitempty"`       // optional log file path
+
+	// Agent mode configuration (RFC 4)
+	Model                      string           `yaml:"model,omitempty"`                         // model identifier (e.g., "ollama:ministral-3:8b", "openai:gpt-4")
+	AutoStartOllama            bool             `yaml:"auto_start_ollama,omitempty"`             // automatically start Ollama if not running
+	AutoConfigureOllamaService bool             `yaml:"auto_configure_ollama_service,omitempty"` // configure Ollama as system service
+	MaxToolCalls               int              `yaml:"max_tool_calls,omitempty"`                // maximum tool calls per prompt
+	Streaming                  bool             `yaml:"streaming,omitempty"`                     // enable streaming responses
+	OutputFormat               OrlaOutputFormat `yaml:"output_format,omitempty"`                 // output format: "auto", "rich", or "plain"
+	ConfirmDestructive         bool             `yaml:"confirm_destructive,omitempty"`           // prompt for destructive actions
+	DryRun                     bool             `yaml:"dry_run,omitempty"`                       // default to non-dry-run mode
 }
 
 // NewDefaultOrlaConfig returns a configuration with default values
 func NewDefaultOrlaConfig() (*OrlaConfig, error) {
 	cfg := &OrlaConfig{
+		// Server mode defaults (RFC 1)
 		Port:      8080,
 		Timeout:   30,
 		LogFormat: "json",
 		LogLevel:  "info",
+		LogFile:   "", // No log file by default
+
+		// Agent mode defaults (RFC 4)
+		// Default model: ministral-3:8b - designed for edge deployment, works well on laptops
+		// Supports tool calling and is optimized for agentic workflows
+		Model:                      "ollama:ministral-3:8b",
+		AutoStartOllama:            true,
+		AutoConfigureOllamaService: false, // Don't auto-configure service by default (requires user consent)
+		MaxToolCalls:               10,
+		Streaming:                  true,
+		OutputFormat:               OrlaOutputFormatAuto, // Auto-detect TTY/colors
+		ConfirmDestructive:         true,
+		DryRun:                     false,
 	}
 
 	toolsDir := "./tools"
@@ -231,6 +266,38 @@ func validateConfig(cfg *OrlaConfig) error {
 	}
 	if cfg.LogLevel != "" && !validLogLevels[cfg.LogLevel] {
 		return fmt.Errorf("log_level must be one of: debug, info, warn, error, fatal, got '%s'", cfg.LogLevel)
+	}
+
+	// Validate agent mode configuration (RFC 4)
+	// Set default model if not specified
+	if cfg.Model == "" {
+		cfg.Model = "ollama:ministral-3:8b"
+	}
+
+	// Set default max_tool_calls if not specified
+	if cfg.MaxToolCalls == 0 {
+		cfg.MaxToolCalls = 10
+	}
+
+	// Validate max_tool_calls
+	if cfg.MaxToolCalls < 1 {
+		return fmt.Errorf("max_tool_calls must be at least 1, got %d", cfg.MaxToolCalls)
+	}
+
+	// Set default output_format if not specified
+	if cfg.OutputFormat == "" {
+		cfg.OutputFormat = OrlaOutputFormatAuto
+	}
+
+	// Validate output_format
+	validOutputFormats := map[OrlaOutputFormat]struct{}{
+		OrlaOutputFormatAuto:  {},
+		OrlaOutputFormatRich:  {},
+		OrlaOutputFormatPlain: {},
+	}
+
+	if _, ok := validOutputFormats[cfg.OutputFormat]; !ok {
+		return fmt.Errorf("output_format must be one of: auto, rich, plain, got '%s'", cfg.OutputFormat)
 	}
 
 	return nil
