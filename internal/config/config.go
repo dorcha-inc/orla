@@ -52,6 +52,8 @@ type OrlaConfig struct {
 	OutputFormat       OrlaOutputFormat `yaml:"output_format,omitempty" mapstructure:"output_format"`             // output format: "auto", "rich", or "plain"
 	ConfirmDestructive bool             `yaml:"confirm_destructive,omitempty" mapstructure:"confirm_destructive"` // prompt for destructive actions
 	DryRun             bool             `yaml:"dry_run,omitempty" mapstructure:"dry_run"`                         // default to non-dry-run mode
+	ShowThinking       bool             `yaml:"show_thinking,omitempty" mapstructure:"show_thinking"`             // show thinking trace output (for thinking-capable models)
+	ShowToolCalls      bool             `yaml:"show_tool_calls,omitempty" mapstructure:"show_tool_calls"`         // show detailed tool call information
 }
 
 // SetToolsDir updates the tools directory and rebuilds the tools registry.
@@ -194,11 +196,8 @@ func setViperDefaults() {
 	viper.SetDefault("output_format", "auto")
 	viper.SetDefault("confirm_destructive", true)
 	viper.SetDefault("dry_run", false)
-
-	// ToolsDir default: relative path ".orla/tools" (resolved in postProcessConfig)
-	// - With project config: resolved to project-dir/.orla/tools
-	// - Without project config: overridden to ~/.orla/tools in postProcessConfig
-	viper.SetDefault("tools_dir", DefaultToolsDir)
+	viper.SetDefault("show_thinking", false)
+	viper.SetDefault("show_tool_calls", false)
 }
 
 // LoadConfig loads configuration with precedence: project config > user config > defaults
@@ -274,21 +273,14 @@ func postProcessConfig(cfg *OrlaConfig, configFileDir string) error {
 	// Set tools directory (handles path resolution and registry rebuild)
 	toolsDir := cfg.ToolsDir
 
-	// If toolsDir is empty, use the default
+	// If toolsDir is empty (not set in config), use global ~/.orla/tools
 	if toolsDir == "" {
-		if configFileDir != "" {
-			// Project config exists: use default ".orla/tools" (relative to project)
-			toolsDir = viper.GetString("tools_dir")
-			zap.L().Debug("Installing tools in project directory", zap.String("tools_dir", toolsDir))
-		} else {
-			// No project config: use global ~/.orla/tools
-			orlaHome, err := registry.GetOrlaHomeDir()
-			if err != nil {
-				return fmt.Errorf("failed to get orla home directory: %w", err)
-			}
-			toolsDir = filepath.Join(orlaHome, "tools")
-			zap.L().Debug("Installing tools globally in orla home directory", zap.String("orla_home", orlaHome))
+		orlaHome, err := registry.GetOrlaHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get orla home directory: %w", err)
 		}
+		toolsDir = filepath.Join(orlaHome, "tools")
+		zap.L().Debug("tools_dir not set in config, using global tools directory", zap.String("tools_dir", toolsDir))
 	}
 
 	// Resolve relative paths relative to the appropriate config directory

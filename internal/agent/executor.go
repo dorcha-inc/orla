@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/dorcha-inc/orla/internal/config"
@@ -36,36 +37,116 @@ func NewExecutor(cfg *config.OrlaConfig) (*Executor, error) {
 	}, nil
 }
 
-func defaultStreamHandler(event model.StreamEvent) error {
-	switch e := event.(type) {
-	case *model.ContentEvent:
-		fmt.Print(e.Content)
-	case *model.ToolCallEvent:
-		// Format tool call with params if available
-		if e.Name == "" {
-			return fmt.Errorf("tool call name is empty")
-		}
+// createStreamHandler creates a stream handler with state tracking for thinking/content transitions
+func createStreamHandler(cfg *config.OrlaConfig) StreamHandler {
+	var inThinking bool
+	thinkingEnabled := cfg != nil && cfg.ShowThinking
+	showToolCalls := cfg != nil && cfg.ShowToolCalls
+	var toolNames []string
+	var inToolCalls bool
 
-		if len(e.Arguments) == 0 {
-			fmt.Printf("\ntool call received: %s\n", e.Name)
-			return nil
+	completeThinking := func() {
+		if !thinkingEnabled {
+			tui.ProgressSuccess("")
+		} else {
+			tui.Info("\ncompleted the think\n\n")
 		}
-
-		argsJSON, err := json.MarshalIndent(e.Arguments, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal tool call arguments: %w", err)
-		}
-		fmt.Printf("\ntool call received: %s\nparams: %s\n", e.Name, string(argsJSON))
-	default:
-		return fmt.Errorf("unknown stream event type: %T", e)
+		inThinking = false
 	}
 
-	// Flush stdout to ensure immediate output
-	syncErr := os.Stdout.Sync()
-	if syncErr != nil {
-		zap.L().Error("failed to flush stdout", zap.Error(syncErr))
+	completeToolCalls := func() {
+		if inToolCalls && !showToolCalls {
+			toolList := ""
+			if len(toolNames) > 0 {
+				toolList = strings.Join(toolNames, ", ")
+			}
+			tui.ProgressSuccess(fmt.Sprintf("calling tools: %s", toolList))
+			toolNames = nil
+			inToolCalls = false
+		}
 	}
-	return nil
+
+	return func(event model.StreamEvent) error {
+		switch e := event.(type) {
+		case *model.ThinkingEvent:
+			// Print "thinking:" prefix when thinking starts
+			if !inThinking {
+				inThinking = true
+				if !thinkingEnabled {
+					tui.Progress("having a think...")
+					break
+				}
+				tui.Info("having a think:\n")
+			}
+
+			// When we are in thinking but thinking is disabled, break out of the loop
+			if !thinkingEnabled {
+				break
+			}
+
+			fmt.Print(tui.RenderThinking(e.Content))
+		case *model.ContentEvent:
+			if inThinking {
+				completeThinking()
+			}
+			if inToolCalls {
+				completeToolCalls()
+			}
+
+			fmt.Print(e.Content)
+		case *model.ToolCallEvent:
+			if inThinking {
+				completeThinking()
+			}
+
+			// Format tool call with params if available
+			if e.Name == "" {
+				return fmt.Errorf("tool call name is empty")
+			}
+
+			// Track tool names for progress message
+			if !showToolCalls {
+				if !inToolCalls {
+					inToolCalls = true
+				}
+				// Add tool name if not already in list
+				found := false
+				for _, name := range toolNames {
+					if name == e.Name {
+						found = true
+						break
+					}
+				}
+				if !found {
+					toolNames = append(toolNames, e.Name)
+					toolList := strings.Join(toolNames, ", ")
+					tui.Progress(fmt.Sprintf("calling tools: %s", toolList))
+				}
+				return nil
+			}
+
+			// Show detailed tool call info when enabled
+			if len(e.Arguments) == 0 {
+				fmt.Printf("\ntool call received: %s\n", e.Name)
+				return nil
+			}
+
+			argsJSON, err := json.MarshalIndent(e.Arguments, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal tool call arguments: %w", err)
+			}
+			fmt.Printf("\ntool call received: %s\nparams: %s\n", e.Name, string(argsJSON))
+		default:
+			return fmt.Errorf("unknown stream event type: %T", e)
+		}
+
+		// Flush stdout to ensure immediate output
+		syncErr := os.Stdout.Sync()
+		if syncErr != nil {
+			zap.L().Error("failed to flush stdout", zap.Error(syncErr))
+		}
+		return nil
+	}
 }
 
 // ExecuteAgentPrompt is the main entry point for agent execution
@@ -117,7 +198,13 @@ func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 	if clientErr != nil {
 		return fmt.Errorf("failed to create MCP client: %w", clientErr)
 	}
-	tui.ProgressSuccess("Connected to tools")
+
+	mcpTools, err := mcpClient.ListTools(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list tools: %w", err)
+	}
+
+	tui.ProgressSuccess(fmt.Sprintf("Connected to %d tools", len(mcpTools)))
 
 	defer core.LogDeferredError(mcpClient.Close)
 
@@ -127,7 +214,7 @@ func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 	// Create stream handler if streaming is enabled
 	var streamHandler StreamHandler
 	if cfg.Streaming {
-		streamHandler = defaultStreamHandler
+		streamHandler = createStreamHandler(cfg)
 	}
 
 	// Execute agent loop (handles both streaming and non-streaming internally)
@@ -144,6 +231,13 @@ func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 	if cfg.Streaming {
 		fmt.Println()
 		return nil
+	}
+
+	// Print thinking trace if present and enabled (non-streaming)
+	if cfg.ShowThinking && response.Thinking != "" {
+		fmt.Print(tui.RenderThinking("thinking: "))
+		fmt.Print(tui.RenderThinking(response.Thinking))
+		fmt.Print("\n\n")
 	}
 
 	// Print final response content

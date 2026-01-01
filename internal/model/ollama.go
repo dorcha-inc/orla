@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	defaultOllamaHost         = "http://localhost:11434"
-	defaultOllamaTimeout      = 10 * time.Minute
-	defaultOllamaTemperature  = 0.7
+	defaultOllamaHost        = "http://localhost:11434"
+	defaultOllamaTimeout     = 10 * time.Minute
+	defaultOllamaTemperature = 0.7
 	// defaultStreamBufferSize is the buffer size for streaming response channels
 	// This allows the producer (HTTP stream reader) to get slightly ahead of the consumer
 	// without blocking, while keeping memory usage reasonable
@@ -106,6 +106,11 @@ func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*
 	}
 
 	// Build request
+	thinkEnabled := false
+	if p.cfg != nil {
+		thinkEnabled = p.cfg.ShowThinking
+	}
+
 	reqBody := ollamaChatRequest{
 		Model:    p.modelName,
 		Messages: ollamaMessages,
@@ -113,6 +118,7 @@ func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*
 		Options: ollamaOptions{
 			Temperature: defaultOllamaTemperature,
 		},
+		Think: thinkEnabled,
 	}
 
 	// Add tools if provided (Ollama supports tool calling natively)
@@ -172,7 +178,8 @@ func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*
 		zap.Bool("has_tool_calls", ollamaResp.Message.ToolCalls != nil))
 
 	response := &Response{
-		Content: ollamaResp.Message.Content,
+		Content:  ollamaResp.Message.Content,
+		Thinking: ollamaResp.Message.Thinking,
 	}
 
 	// Parse tool calls if present
@@ -275,6 +282,7 @@ func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-
 	ch := make(chan StreamEvent, defaultStreamBufferSize)
 	response := &Response{
 		Content:   "",
+		Thinking:  "",
 		ToolCalls: []ToolCallWithID{},
 	}
 
@@ -284,6 +292,7 @@ func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-
 		decoder := json.NewDecoder(body)
 		chunkCount := 0
 		contentChunks := 0
+		thinkingChunks := 0
 		var accumulatedToolCalls []ollamaToolCall
 
 		for {
@@ -299,6 +308,13 @@ func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-
 			}
 
 			chunkCount++
+
+			// Accumulate thinking trace
+			if chunk.Message.Thinking != "" {
+				response.Thinking += chunk.Message.Thinking
+				thinkingChunks++
+				ch <- &ThinkingEvent{Content: chunk.Message.Thinking}
+			}
 
 			// Accumulate content
 			if chunk.Message.Content != "" {
@@ -335,6 +351,7 @@ func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-
 				zap.L().Debug("Stream done flag received",
 					zap.Int("total_chunks", chunkCount),
 					zap.Int("content_chunks", contentChunks),
+					zap.Int("thinking_chunks", thinkingChunks),
 					zap.Int("accumulated_tool_calls", len(accumulatedToolCalls)))
 				break
 			}
@@ -379,6 +396,7 @@ type ollamaChatRequest struct {
 	Options  ollamaOptions   `json:"options,omitempty"`
 	Tools    []ollamaTool    `json:"tools,omitempty"`
 	Format   string          `json:"format,omitempty"`
+	Think    bool            `json:"think,omitempty"` // Enable thinking trace
 }
 
 type ollamaChatResponse struct {
@@ -389,6 +407,7 @@ type ollamaChatResponse struct {
 type ollamaResponseMessage struct {
 	Role      string           `json:"role"`
 	Content   string           `json:"content"`
+	Thinking  string           `json:"thinking,omitempty"`
 	ToolCalls []ollamaToolCall `json:"tool_calls,omitempty"`
 }
 

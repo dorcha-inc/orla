@@ -66,12 +66,6 @@ func (l *Loop) Execute(ctx context.Context, prompt string, messages []model.Mess
 		zap.Int("tool_count", len(tools)),
 		zap.Int("message_count", len(messages)))
 
-	// Print info to stderr (only if TTY, won't interfere with piping)
-	// This is informational, not a long-running operation, so no spinner needed
-	if len(tools) > 0 {
-		tui.Info("%s", fmt.Sprintf("Found %d tool(s), processing request...\n", len(tools)))
-	}
-
 	// Build conversation messages
 	conversation := make([]model.Message, len(messages))
 	copy(conversation, messages)

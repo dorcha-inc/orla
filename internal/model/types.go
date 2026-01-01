@@ -47,6 +47,7 @@ type ToolResultWithID struct {
 // Response represents a model response
 type Response struct {
 	Content     string             `json:"content"`      // Text content from the model
+	Thinking    string             `json:"thinking"`     // Thinking trace from the model (if supported)
 	ToolCalls   []ToolCallWithID   `json:"tool_calls"`   // Tool calls requested by the model
 	ToolResults []ToolResultWithID `json:"tool_results"` // Tool results returned by the model
 }
@@ -85,6 +86,7 @@ type StreamEventType string
 const (
 	StreamEventTypeContent  StreamEventType = "content"  // Text content chunk
 	StreamEventTypeToolCall StreamEventType = "toolcall" // Tool call notification
+	StreamEventTypeThinking StreamEventType = "thinking" // Thinking trace chunk
 )
 
 // ContentEvent represents a content chunk in the stream
@@ -104,4 +106,13 @@ type ToolCallEvent struct {
 
 func (e *ToolCallEvent) Type() StreamEventType {
 	return StreamEventTypeToolCall
+}
+
+// ThinkingEvent represents a thinking trace chunk in the stream
+type ThinkingEvent struct {
+	Content string
+}
+
+func (e *ThinkingEvent) Type() StreamEventType {
+	return StreamEventTypeThinking
 }

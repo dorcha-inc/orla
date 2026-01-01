@@ -409,8 +409,10 @@ func TestPostProcessConfig_WithProjectConfig(t *testing.T) {
 	err := postProcessConfig(cfg, configFileDir)
 	require.NoError(t, err)
 
-	// Should use .orla/tools relative to project config
-	expectedToolsDir := filepath.Join(tmpDir, ".orla", "tools")
+	// When tools_dir is not set, should use global ~/.orla/tools
+	orlaHome, err := registry.GetOrlaHomeDir()
+	require.NoError(t, err)
+	expectedToolsDir := filepath.Join(orlaHome, "tools")
 	assert.Equal(t, expectedToolsDir, cfg.ToolsDir)
 }
 

@@ -44,6 +44,7 @@ import (
 var (
 	colorGreen = lipgloss.ANSIColor(2) // ANSI green
 	colorBlue  = lipgloss.ANSIColor(4) // ANSI blue
+	colorGray  = lipgloss.ANSIColor(8) // ANSI gray (bright black)
 )
 
 // UI provides terminal UI functionality with automatic TTY detection
@@ -74,7 +75,8 @@ var (
 	defaultUI *UI
 
 	// Style definitions using ansi package
-	successStyle = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
+	successStyle  = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
+	thinkingStyle = lipgloss.NewStyle().Foreground(colorGray)
 )
 
 func init() {
@@ -312,6 +314,15 @@ func (u *UI) RenderMarkdown(content string, width int) (string, error) {
 	return renderer.Render(content)
 }
 
+// RenderThinking renders thinking trace content with a distinct style
+// Returns styled text if colors are enabled, otherwise returns plain text
+func (u *UI) RenderThinking(content string) string {
+	if !u.colorEnabled || !u.stdoutIsTTY {
+		return content
+	}
+	return thinkingStyle.Render(content)
+}
+
 // Default returns the default UI instance
 func Default() *UI {
 	return defaultUI
@@ -342,4 +353,9 @@ func ProgressSuccess(message string) {
 // RenderMarkdown renders markdown content using the default UI
 func RenderMarkdown(content string, width int) (string, error) {
 	return defaultUI.RenderMarkdown(content, width)
+}
+
+// RenderThinking renders thinking trace content using the default UI
+func RenderThinking(content string) string {
+	return defaultUI.RenderThinking(content)
 }
