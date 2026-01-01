@@ -60,7 +60,7 @@ type Provider interface {
 	// messages: conversation history
 	// tools: available tools (for tool calling) - uses mcp.Tool for MCP compatibility
 	// stream: if true, stream responses via the returned channel
-	Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool) (*Response, <-chan string, error)
+	Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool) (*Response, <-chan StreamEvent, error)
 
 	// EnsureReady ensures the model provider is ready (e.g., starts Ollama if needed)
 	// Returns an error if the provider cannot be made ready
@@ -71,4 +71,37 @@ type Provider interface {
 type StreamWriter interface {
 	io.Writer
 	Flush() error
+}
+
+// StreamEvent represents a single event in the streaming response
+type StreamEvent interface {
+	// Type returns the type of stream event
+	Type() StreamEventType
+}
+
+// StreamEventType represents the type of stream event
+type StreamEventType string
+
+const (
+	StreamEventTypeContent  StreamEventType = "content"  // Text content chunk
+	StreamEventTypeToolCall StreamEventType = "toolcall" // Tool call notification
+)
+
+// ContentEvent represents a content chunk in the stream
+type ContentEvent struct {
+	Content string
+}
+
+func (e *ContentEvent) Type() StreamEventType {
+	return StreamEventTypeContent
+}
+
+// ToolCallEvent represents a tool call notification in the stream
+type ToolCallEvent struct {
+	Name      string
+	Arguments map[string]any
+}
+
+func (e *ToolCallEvent) Type() StreamEventType {
+	return StreamEventTypeToolCall
 }

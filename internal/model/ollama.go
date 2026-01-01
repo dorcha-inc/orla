@@ -102,7 +102,7 @@ func (p *OllamaProvider) EnsureReady(ctx context.Context) error {
 }
 
 // Chat sends a chat request to Ollama
-func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool) (*Response, <-chan string, error) {
+func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool) (*Response, <-chan StreamEvent, error) {
 	// Ensure Ollama is ready
 	if err := p.EnsureReady(ctx); err != nil {
 		return nil, nil, err
@@ -317,14 +317,32 @@ func (p *OllamaProvider) waitForReady(ctx context.Context, timeout time.Duration
 	}
 }
 
+// getArgumentsForToolCall extracts the arguments for a tool call from the Ollama tool call
+// It returns the arguments as a map[string]any which is compatible with ToolCallEvent.Arguments
+// It returns an error if the arguments cannot be unmarshalled
+func getArgumentsForToolCall(toolCall ollamaToolCall) (map[string]any, error) {
+	// Extract arguments from the tool call
+	var args map[string]any
+	switch v := toolCall.Function.Arguments.(type) {
+	case map[string]any:
+		args = v
+	case string:
+		// JSON string, unmarshal it
+		if err := json.Unmarshal([]byte(v), &args); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tool call arguments: %w", err)
+		}
+	}
+	return args, nil
+}
+
 // handleStreamResponse handles streaming responses from Ollama
 // It returns both a Response object (with accumulated content and tool calls) and a channel for streaming content
 // The Response object is updated as chunks arrive, and tool calls are populated when the stream completes
 // The response is accessed concurrently: the goroutine writes to it while the caller reads after the channel closes.
 // To ensure proper synchronization, we use a mutex to protect writes, and the channel close provides
 // a happens-before guarantee that all writes are complete before the caller reads.
-func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-chan string) {
-	ch := make(chan string, defaultStreamBufferSize)
+func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-chan StreamEvent) {
+	ch := make(chan StreamEvent, defaultStreamBufferSize)
 	response := &Response{
 		Content:   "",
 		ToolCalls: []ToolCallWithID{},
@@ -356,16 +374,31 @@ func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-
 			if chunk.Message.Content != "" {
 				response.Content += chunk.Message.Content
 				contentChunks++
-				ch <- chunk.Message.Content
+				ch <- &ContentEvent{Content: chunk.Message.Content}
 			}
 
 			// Accumulate tool calls if present in this chunk
 			if len(chunk.Message.ToolCalls) > 0 {
 				accumulatedToolCalls = append(accumulatedToolCalls, chunk.Message.ToolCalls...)
-				zap.L().Debug("Tool calls found in stream chunk",
-					zap.Int("chunk_num", chunkCount),
-					zap.Int("tool_calls_count", len(chunk.Message.ToolCalls)),
-					zap.Int("total_accumulated", len(accumulatedToolCalls)))
+
+				// Send tool call events through the stream
+				for _, toolCall := range chunk.Message.ToolCalls {
+					toolName := toolCall.Function.Name
+					if toolName == "" {
+						toolName = "unknown"
+					}
+
+					args, err := getArgumentsForToolCall(toolCall)
+					if err != nil {
+						zap.L().Error("Failed to get arguments for tool call", zap.String("tool", toolName), zap.Error(err))
+						continue
+					}
+
+					ch <- &ToolCallEvent{
+						Name:      toolName,
+						Arguments: args,
+					}
+				}
 			}
 
 			if chunk.Done {

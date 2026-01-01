@@ -3,6 +3,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,6 +12,8 @@ import (
 	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/model"
+	"github.com/dorcha-inc/orla/internal/tui"
+	"go.uber.org/zap"
 )
 
 // Executor handles agent execution with proper setup and teardown
@@ -31,6 +34,38 @@ func NewExecutor(cfg *config.OrlaConfig) (*Executor, error) {
 		cfg:      cfg,
 		provider: provider,
 	}, nil
+}
+
+func defaultStreamHandler(event model.StreamEvent) error {
+	switch e := event.(type) {
+	case *model.ContentEvent:
+		fmt.Print(e.Content)
+	case *model.ToolCallEvent:
+		// Format tool call with params if available
+		if e.Name == "" {
+			return fmt.Errorf("tool call name is empty")
+		}
+
+		if len(e.Arguments) == 0 {
+			fmt.Printf("\ntool call received: %s\n", e.Name)
+			return nil
+		}
+
+		argsJSON, err := json.MarshalIndent(e.Arguments, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal tool call arguments: %w", err)
+		}
+		fmt.Printf("\ntool call received: %s\nparams: %s\n", e.Name, string(argsJSON))
+	default:
+		return fmt.Errorf("unknown stream event type: %T", e)
+	}
+
+	// Flush stdout to ensure immediate output
+	syncErr := os.Stdout.Sync()
+	if syncErr != nil {
+		zap.L().Error("failed to flush stdout", zap.Error(syncErr))
+	}
+	return nil
 }
 
 // ExecuteAgentPrompt is the main entry point for agent execution
@@ -68,17 +103,21 @@ func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 	}()
 
 	// Ensure model is ready
+	tui.Progress("Ensuring model is ready...")
 	ensureReadyErr := executor.provider.EnsureReady(ctx)
 	if ensureReadyErr != nil {
 		return fmt.Errorf("model not ready: %w", ensureReadyErr)
 	}
+	tui.ProgressSuccess("Model ready")
 
 	// Create MCP client (connects to internal server)
 	// Use empty string to use current executable
+	tui.Progress("Connecting to tools...")
 	mcpClient, clientErr := NewClient(ctx)
 	if clientErr != nil {
 		return fmt.Errorf("failed to create MCP client: %w", clientErr)
 	}
+	tui.ProgressSuccess("Connected to tools")
 
 	defer core.LogDeferredError(mcpClient.Close)
 
@@ -88,15 +127,7 @@ func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 	// Create stream handler if streaming is enabled
 	var streamHandler StreamHandler
 	if cfg.Streaming {
-		streamHandler = func(chunk string) error {
-			fmt.Print(chunk)
-			// Note: We don't call os.Stdout.Sync() here because:
-			// 1. It's not necessary for most use cases (stdout is line-buffered by default)
-			// 2. It can fail with "inappropriate ioctl for device" when stdout is redirected
-			//    or is not a regular file (e.g., pipes, terminals in some configurations)
-			// 3. The Go runtime handles buffering appropriately for interactive terminals
-			return nil
-		}
+		streamHandler = defaultStreamHandler
 	}
 
 	// Execute agent loop (handles both streaming and non-streaming internally)
@@ -117,13 +148,17 @@ func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 
 	// Print final response content
 	// Note: If streaming was enabled and there were no tool calls, the response was already
-	// printed via the stream handler. If there were tool calls, the final response after
-	// tool calls was NOT streamed (we only stream iteration 0), so we need to print it.
-	// We can't easily distinguish these cases, so we always print to ensure the final
-	// response after tool calls is shown. This may cause slight duplication if streaming
-	// was enabled and there were no tool calls, but that's acceptable.
+	// printed via the stream handler.
 	if response.Content != "" {
-		fmt.Println(response.Content)
+		// Try to render as markdown if it looks like markdown
+		rendered, err := tui.RenderMarkdown(response.Content, 80)
+		if err == nil && rendered != response.Content {
+			// Successfully rendered markdown
+			fmt.Print(rendered)
+		} else {
+			// Plain text or rendering failed
+			fmt.Println(response.Content)
+		}
 	}
 
 	return nil

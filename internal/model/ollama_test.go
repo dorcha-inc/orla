@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/dorcha-inc/orla/internal/config"
+	orlaTesting "github.com/dorcha-inc/orla/internal/testing"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 const (
-	testModelName      = "qwen3:0.6b"
 	testInvalidBaseURL = "http://localhost:42424" // Used for testing connection failures
 )
 
@@ -34,7 +34,7 @@ func ensureOllamaAvailable(t *testing.T) *OllamaProvider {
 	cfg := &config.OrlaConfig{
 		AutoStartOllama: true, // Enable auto-start for integration tests
 	}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err, "Failed to create Ollama provider")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -52,7 +52,7 @@ func ensureOllamaAvailable(t *testing.T) *OllamaProvider {
 	_, _, testErr := provider.Chat(ctx, testMessages, nil, false)
 	if testErr != nil {
 		if strings.Contains(testErr.Error(), "model") && strings.Contains(testErr.Error(), "not found") {
-			t.Fatalf("Model '%s' is not available. Please pull it with: ollama pull %s", testModelName, testModelName)
+			t.Fatalf("Model '%s' is not available. Please pull it with: ollama pull %s", orlaTesting.GetTestModelName(), orlaTesting.GetTestModelName())
 		}
 		// Other errors might be transient, but let's fail anyway to be safe
 		require.NoError(t, testErr, "Failed to verify model availability")
@@ -64,7 +64,7 @@ func ensureOllamaAvailable(t *testing.T) *OllamaProvider {
 func TestNewOllamaProvider(t *testing.T) {
 	cfg := &config.OrlaConfig{}
 
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 	assert.NotNil(t, provider)
 	assert.Equal(t, "ollama", provider.Name())
@@ -83,7 +83,7 @@ func TestNewOllamaProvider_WithEnvVar(t *testing.T) {
 
 	require.NoError(t, os.Setenv("OLLAMA_HOST", "http://custom:11434"))
 	cfg := &config.OrlaConfig{}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 	assert.Equal(t, "ollama", provider.Name())
 }
@@ -96,7 +96,7 @@ func TestOllamaProvider_EnsureReady_NoAutoStart(t *testing.T) {
 	// Create a provider with a baseURL that will fail to connect (simulating Ollama not running)
 	// Use a valid port number that's guaranteed not to have Ollama running
 	provider := &OllamaProvider{
-		modelName: testModelName,
+		modelName: orlaTesting.GetTestModelName(),
 		baseURL:   "http://localhost:42424", // Different port from default 11434
 		client:    &http.Client{Timeout: 1 * time.Second},
 		cfg:       cfg,
@@ -211,7 +211,9 @@ func TestOllamaProvider_Chat_Streaming_Integration(t *testing.T) {
 				t.Logf("Stream closed. Received %d chunks total", len(chunks))
 				goto done
 			}
-			chunks = append(chunks, chunk)
+			if contentEvent, ok := chunk.(*ContentEvent); ok {
+				chunks = append(chunks, contentEvent.Content)
+			}
 			t.Logf("Stream chunk [%d]: %s", len(chunks), chunk)
 		case <-timeout:
 			t.Fatalf("Stream timeout after receiving %d chunks", len(chunks))
@@ -296,7 +298,7 @@ func intPtr(i int) *int {
 
 func TestOllamaProvider_SetTimeout(t *testing.T) {
 	cfg := &config.OrlaConfig{}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 
 	originalTimeout := provider.client.Timeout
@@ -311,7 +313,7 @@ func TestOllamaProvider_EnsureReady_NotInstalled(t *testing.T) {
 	cfg := &config.OrlaConfig{
 		AutoStartOllama: false,
 	}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 
 	// Override the baseURL to point to a non-existent host
@@ -336,7 +338,7 @@ func TestOllamaProvider_waitForReady_Timeout(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.OrlaConfig{}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 	provider.baseURL = server.URL
 
@@ -365,7 +367,7 @@ func TestOllamaProvider_waitForReady_Success(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.OrlaConfig{}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 	provider.baseURL = server.URL
 
@@ -386,7 +388,7 @@ func TestOllamaProvider_waitForReady_ContextCancelled(t *testing.T) {
 	defer server.Close()
 
 	cfg := &config.OrlaConfig{}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 	provider.baseURL = server.URL
 
@@ -515,7 +517,7 @@ func TestOllamaProvider_EnsureReady_IsRunningError(t *testing.T) {
 	cfg := &config.OrlaConfig{
 		AutoStartOllama: false,
 	}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 
 	// Use a baseURL that will cause connection errors
@@ -533,7 +535,7 @@ func TestOllamaProvider_Chat_EnsureReadyFails(t *testing.T) {
 	cfg := &config.OrlaConfig{
 		AutoStartOllama: false,
 	}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 
 	// Use a baseURL that will make isRunning return false
@@ -573,7 +575,7 @@ func TestOllamaProvider_Chat_HTTPError(t *testing.T) {
 		AutoStartOllama: false,
 	}
 	provider := &OllamaProvider{
-		modelName: testModelName,
+		modelName: orlaTesting.GetTestModelName(),
 		baseURL:   server.URL,
 		client:    &http.Client{Timeout: 5 * time.Second},
 		cfg:       cfg,
@@ -614,7 +616,7 @@ func TestOllamaProvider_Chat_DecodeError(t *testing.T) {
 		AutoStartOllama: false,
 	}
 	provider := &OllamaProvider{
-		modelName: testModelName,
+		modelName: orlaTesting.GetTestModelName(),
 		baseURL:   server.URL,
 		client:    &http.Client{Timeout: 5 * time.Second},
 		cfg:       cfg,
@@ -662,7 +664,7 @@ func TestOllamaProvider_Chat_WithTools_NoToolCalls(t *testing.T) {
 		AutoStartOllama: false,
 	}
 	provider := &OllamaProvider{
-		modelName: testModelName,
+		modelName: orlaTesting.GetTestModelName(),
 		baseURL:   server.URL,
 		client:    &http.Client{Timeout: 5 * time.Second},
 		cfg:       cfg,
@@ -697,7 +699,7 @@ func TestOllamaProvider_startOllama_NotInstalled(t *testing.T) {
 	cfg := &config.OrlaConfig{
 		AutoStartOllama: true,
 	}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 
 	// Temporarily modify PATH to exclude ollama
@@ -723,7 +725,7 @@ func TestOllamaProvider_EnsureReady_StartOllamaFails(t *testing.T) {
 	cfg := &config.OrlaConfig{
 		AutoStartOllama: true,
 	}
-	provider, err := NewOllamaProvider(testModelName, cfg)
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
 
 	// Use a baseURL that will make isRunning return false
@@ -785,7 +787,7 @@ func TestOllamaProvider_Chat_Mock(t *testing.T) {
 
 	// Create provider with custom base URL
 	provider := &OllamaProvider{
-		modelName: testModelName,
+		modelName: orlaTesting.GetTestModelName(),
 		baseURL:   server.URL,
 		client:    &http.Client{Timeout: 5 * time.Second},
 		cfg:       cfg,
@@ -842,7 +844,7 @@ func TestOllamaProvider_Chat_Mock_WithToolCalls(t *testing.T) {
 	}
 
 	provider := &OllamaProvider{
-		modelName: testModelName,
+		modelName: orlaTesting.GetTestModelName(),
 		baseURL:   server.URL,
 		client:    &http.Client{Timeout: 5 * time.Second},
 		cfg:       cfg,

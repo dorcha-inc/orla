@@ -4,22 +4,30 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/model"
+	"github.com/dorcha-inc/orla/internal/tui"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )
 
+// MCPClient is an interface for MCP client operations used by the agent loop
+type MCPClient interface {
+	ListTools(ctx context.Context) ([]*mcp.Tool, error)
+	CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
+}
+
 // Loop orchestrates the agent execution flow
 type Loop struct {
-	client   *Client
+	client   MCPClient
 	provider model.Provider
 	cfg      *config.OrlaConfig
 }
 
 // NewLoop creates a new agent loop
-func NewLoop(client *Client, provider model.Provider, cfg *config.OrlaConfig) *Loop {
+func NewLoop(client MCPClient, provider model.Provider, cfg *config.OrlaConfig) *Loop {
 	return &Loop{
 		client:   client,
 		provider: provider,
@@ -27,8 +35,8 @@ func NewLoop(client *Client, provider model.Provider, cfg *config.OrlaConfig) *L
 	}
 }
 
-// StreamHandler is a function that handles streaming chunks
-type StreamHandler func(chunk string) error
+// StreamHandler is a function that handles streaming events
+type StreamHandler func(event model.StreamEvent) error
 
 // Execute runs a single agent execution cycle
 // It implements the agent loop from RFC 4 Section 4.4:
@@ -58,6 +66,12 @@ func (l *Loop) Execute(ctx context.Context, prompt string, messages []model.Mess
 		zap.Int("tool_count", len(tools)),
 		zap.Int("message_count", len(messages)))
 
+	// Print info to stderr (only if TTY, won't interfere with piping)
+	// This is informational, not a long-running operation, so no spinner needed
+	if len(tools) > 0 {
+		tui.Info("%s", fmt.Sprintf("Found %d tool(s), processing request...\n", len(tools)))
+	}
+
 	// Build conversation messages
 	conversation := make([]model.Message, len(messages))
 	copy(conversation, messages)
@@ -82,12 +96,15 @@ func (l *Loop) Execute(ctx context.Context, prompt string, messages []model.Mess
 
 	// Agent loop: iterate until we get a final response without tool calls
 	for iteration := 0; iteration < maxIterations; iteration++ {
+		tui.Progress(fmt.Sprintf("Processing request (iteration %d)", iteration+1))
+
 		zap.L().Debug("Agent loop iteration",
 			zap.Int("iteration", iteration+1),
 			zap.Int("max_iterations", maxIterations))
 
 		// Send prompt and tools to the model
 		response, streamCh, err := l.provider.Chat(ctx, conversation, mcpTools, stream)
+
 		if err != nil {
 			return nil, fmt.Errorf("model chat failed: %w", err)
 		}
@@ -104,8 +121,9 @@ func (l *Loop) Execute(ctx context.Context, prompt string, messages []model.Mess
 		// If we have a stream channel, consume it before checking for tool calls
 		// This ensures the response object is fully populated
 		if streamCh != nil {
-			for chunk := range streamCh {
-				if err := streamHandler(chunk); err != nil {
+			tui.ProgressSuccess(fmt.Sprintf("Iteration %d completed, stream started.", iteration+1))
+			for event := range streamCh {
+				if err := streamHandler(event); err != nil {
 					return nil, fmt.Errorf("stream handler error: %w", err)
 				}
 			}
@@ -118,8 +136,20 @@ func (l *Loop) Execute(ctx context.Context, prompt string, messages []model.Mess
 			return response, nil
 		}
 
+		// Show tool calls being executed
+		if len(response.ToolCalls) > 0 {
+			toolNames := make([]string, len(response.ToolCalls))
+			for i, tc := range response.ToolCalls {
+				toolNames[i] = tc.McpCallToolParams.Name
+			}
+
+			tui.Progress(fmt.Sprintf("Executing orla mcp tools: %s", strings.Join(toolNames, ", ")))
+		}
+
 		// Execute tool calls
 		toolResults := l.executeToolCalls(ctx, response.ToolCalls)
+
+		tui.ProgressSuccess("")
 
 		// Add tool results to conversation for next iteration
 		// Format: assistant message (with content if any), then tool results as tool messages
