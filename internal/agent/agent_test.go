@@ -854,6 +854,11 @@ func TestClient_Close(t *testing.T) {
 			client:      &Client{McpSession: nil, Cmd: &exec.Cmd{}},
 			expectedErr: false,
 		},
+		{
+			name:        "nil session, cmd with nil process",
+			client:      &Client{McpSession: nil, Cmd: &exec.Cmd{Process: nil}},
+			expectedErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -867,4 +872,12 @@ func TestClient_Close(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetOrlaBin(t *testing.T) {
+	bin, err := getOrlaBin()
+	require.NoError(t, err)
+	assert.NotEmpty(t, bin)
+	// Should return a valid path
+	assert.True(t, len(bin) > 0)
 }

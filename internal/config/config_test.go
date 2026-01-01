@@ -57,8 +57,6 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	// Note: LogFormat and LogLevel are empty strings by default in struct, but validateConfig sets defaults
 	// After validation, they should have defaults
 	assert.Equal(t, DefaultModel, cfg.Model)
-	// Note: AutoStartOllama defaults to true in Viper, but struct default is false
-	// After unmarshaling, it should be true
 	assert.Equal(t, 10, cfg.MaxToolCalls)
 	// Note: Streaming defaults to true in Viper, but struct default is false
 	// After unmarshaling, it should be true

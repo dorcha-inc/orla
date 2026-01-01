@@ -289,55 +289,32 @@ Table of Contents
    Orla MUST:
 
    - Auto-detect if Ollama is running (check http://localhost:11434)
-   - Automatically start Ollama if it is not running (when
-     auto_start_ollama is enabled, which is the default)
    - Support streaming responses from Ollama
    - Handle tool-calling format expected by Ollama
-   - Provide helpful error messages if Ollama cannot be started or is
-     unavailable
+   - Provide helpful error messages if Ollama is not running
 
-   When Orla starts Ollama automatically, it MUST follow this priority
-   order:
+   Orla checks if Ollama is running via HTTP health check.  If Ollama is
+   not running, Orla MUST return a clear error message with instructions
+   to start Ollama manually:
 
-   1. Check if Ollama is already running (via HTTP health check)
+   - macOS: `brew services start ollama`
+   - Linux: `systemctl --user start ollama` (if configured as user
+     service) or `systemctl start ollama` (if configured as system
+     service)
+   - Or run: `ollama serve`
 
-   2. If not running, check if Ollama is configured as a system service:
-      - macOS: Check for launchctl service (com.ollama.ollama)
-      - Linux: Check for systemd service (ollama.service)
-
-   3. If configured as a service but not running, start the service:
-      - macOS: `launchctl load` or `brew services start ollama`
-      - Linux: `systemctl start ollama`
-
-   4. If not configured as a service, configure it as a system service
-      (with user confirmation):
-      - macOS: Create launchd plist and load it via launchctl
-      - Linux: Create systemd unit file and enable/start the service
-      - This ensures Ollama runs independently of Orla and can restart
-        automatically on system reboot
-      - If service configuration fails or is declined, Orla MUST provide
-        clear error messages directing users to either:
-        * Grant necessary permissions and retry
-        * Manually configure Ollama as a service
-        * Start Ollama manually before using Orla
+   Service management is handled by the installation process, not by
+   Orla at runtime.  On macOS, Homebrew manages the Ollama service via
+   `brew services`.  On Linux, the Ollama service should be configured
+   during installation (e.g., via systemd unit file).
 
    Orla SHOULD:
 
    - Check if the requested model is available locally
    - Automatically pull the model if it is not available (with user
      confirmation for large models)
-   - Provide clear status messages about Ollama's state (running,
-     starting, configuring service, etc.)
-
-   Users MAY disable automatic Ollama startup by setting
-   auto_start_ollama: false in configuration.  In this case, Orla MUST
-   provide clear error messages directing users to start Ollama manually.
-
-   Users MAY also disable service configuration by setting
-   auto_configure_ollama_service: false, in which case Orla will only
-   attempt to start existing services.  If no service is configured and
-   Ollama is not running, Orla MUST provide clear error messages directing
-   users to start Ollama manually or enable service configuration.
+   - Provide clear status messages about Ollama's state (running or not
+     running)
 
 5.1.2. Other Local Providers
 
@@ -581,8 +558,9 @@ Table of Contents
 
       # Model configuration
       model: ollama:llama3
-      auto_start_ollama: true  # Automatically start Ollama if not running
-      auto_configure_ollama_service: true  # Configure Ollama as system service
+      # Note: Ollama must be started manually before use
+      # macOS: brew services start ollama
+      # Linux: systemctl --user start ollama (or systemctl start ollama)
       # Note: API keys should be provided via environment variables (see 8.3)
       # Config file values are optional and discouraged for security reasons
 

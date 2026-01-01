@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -22,7 +21,6 @@ import (
 const (
 	defaultOllamaHost         = "http://localhost:11434"
 	defaultOllamaTimeout      = 10 * time.Minute
-	defaultOllamaStartTimeout = 5 * time.Minute
 	defaultOllamaTemperature  = 0.7
 	// defaultStreamBufferSize is the buffer size for streaming response channels
 	// This allows the producer (HTTP stream reader) to get slightly ahead of the consumer
@@ -38,10 +36,6 @@ type OllamaProvider struct {
 	baseURL   string
 	client    *http.Client
 	cfg       *config.OrlaConfig
-
-	// Process tracking
-	processMu sync.Mutex
-	process   *exec.Cmd
 }
 
 // NewOllamaProvider creates a new Ollama provider
@@ -54,10 +48,8 @@ func NewOllamaProvider(modelName string, cfg *config.OrlaConfig) (*OllamaProvide
 	return &OllamaProvider{
 		modelName: modelName,
 		baseURL:   baseURL,
-		client: &http.Client{
-			Timeout: defaultOllamaTimeout,
-		},
-		cfg: cfg,
+		client:    &http.Client{Timeout: defaultOllamaTimeout},
+		cfg:       cfg,
 	}, nil
 }
 
@@ -72,8 +64,9 @@ func (p *OllamaProvider) Name() string {
 }
 
 // EnsureReady ensures Ollama is running and ready
+// It checks if Ollama is running via HTTP health check.
+// If Ollama is not running, it returns an error with instructions to start it manually.
 func (p *OllamaProvider) EnsureReady(ctx context.Context) error {
-	// Check if Ollama is already running
 	running, err := p.isRunning()
 	if err != nil {
 		if errors.Is(err, ErrOllamaNotInstalled) {
@@ -87,18 +80,8 @@ func (p *OllamaProvider) EnsureReady(ctx context.Context) error {
 		return nil
 	}
 
-	// If auto-start is disabled, return error
-	if !p.cfg.AutoStartOllama {
-		return fmt.Errorf("ollama is not running and auto_start_ollama is disabled. Please start Ollama manually")
-	}
-
-	// Try to start Ollama
-	if err := p.startOllama(ctx); err != nil {
-		return fmt.Errorf("failed to start Ollama: %w. Please start Ollama manually or enable auto_start_ollama", err)
-	}
-
-	// Wait for Ollama to be ready
-	return p.waitForReady(ctx, defaultOllamaStartTimeout)
+	// Ollama is not running - provide helpful error message
+	return fmt.Errorf("ollama is not running. Please start Ollama manually:\n  - macOS: brew services start ollama\n  - Linux: systemctl --user start ollama\n  - Or run: ollama serve")
 }
 
 // Chat sends a chat request to Ollama
@@ -236,59 +219,6 @@ func (p *OllamaProvider) isRunning() (bool, error) {
 	}
 
 	return true, nil
-}
-
-// startOllama attempts to start Ollama
-func (p *OllamaProvider) startOllama(ctx context.Context) error {
-	p.processMu.Lock()
-	defer p.processMu.Unlock()
-
-	// Check if we already have a process running
-	if p.process != nil && p.process.Process != nil {
-		// Check if the process is still alive by checking its state
-		// If the process has exited, ProcessState will be non-nil
-		if p.process.ProcessState == nil {
-			// Process is still running
-			zap.L().Debug("Ollama process already running, reusing existing process")
-			return nil
-		}
-		// Process has exited, clear it
-		p.process = nil
-	}
-
-	zap.L().Info("Attempting to start Ollama...")
-
-	// First, try to check if Ollama is installed
-	if _, err := exec.LookPath("ollama"); err != nil {
-		return fmt.Errorf("ollama command not found. Please install Ollama: https://ollama.ai")
-	}
-
-	// Try to start Ollama as a background process
-	cmd := exec.CommandContext(ctx, "ollama", "serve")
-
-	// Start in background (don't wait for it)
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start Ollama: %w. Please start Ollama manually: ollama serve", err)
-	}
-
-	// Store the process reference
-	p.process = cmd
-
-	// Don't wait for the command - let it run in background
-	go func() {
-		if waitErr := cmd.Wait(); waitErr != nil {
-			zap.L().Debug("Ollama process exited", zap.Error(waitErr))
-		}
-		// Clear the process reference when it exits
-		p.processMu.Lock()
-		if p.process == cmd {
-			p.process = nil
-		}
-		p.processMu.Unlock()
-	}()
-
-	zap.L().Info("Ollama process started, waiting for it to become ready...")
-	return nil
 }
 
 // waitForReady waits for Ollama to become ready

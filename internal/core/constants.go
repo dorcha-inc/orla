@@ -10,3 +10,9 @@ const (
 func BugReportMessage() string {
 	return fmt.Sprintf(BugReportTemplate, MaintainerLink)
 }
+
+const (
+	GOOSDarwin  = "darwin"
+	GOOSLinux   = "linux"
+	GOOSWindows = "windows"
+)

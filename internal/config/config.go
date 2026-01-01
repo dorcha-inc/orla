@@ -46,14 +46,12 @@ type OrlaConfig struct {
 	LogFile       string               `yaml:"log_file,omitempty" mapstructure:"log_file"`             // optional log file path
 
 	// Agent mode configuration (RFC 4)
-	Model                      string           `yaml:"model,omitempty" mapstructure:"model"`                                                 // model identifier (e.g., "ollama:ministral-3:8b", "openai:gpt-4")
-	AutoStartOllama            bool             `yaml:"auto_start_ollama,omitempty" mapstructure:"auto_start_ollama"`                         // automatically start Ollama if not running
-	AutoConfigureOllamaService bool             `yaml:"auto_configure_ollama_service,omitempty" mapstructure:"auto_configure_ollama_service"` // configure Ollama as system service
-	MaxToolCalls               int              `yaml:"max_tool_calls,omitempty" mapstructure:"max_tool_calls"`                               // maximum tool calls per prompt
-	Streaming                  bool             `yaml:"streaming,omitempty" mapstructure:"streaming"`                                         // enable streaming responses
-	OutputFormat               OrlaOutputFormat `yaml:"output_format,omitempty" mapstructure:"output_format"`                                 // output format: "auto", "rich", or "plain"
-	ConfirmDestructive         bool             `yaml:"confirm_destructive,omitempty" mapstructure:"confirm_destructive"`                     // prompt for destructive actions
-	DryRun                     bool             `yaml:"dry_run,omitempty" mapstructure:"dry_run"`                                             // default to non-dry-run mode
+	Model              string           `yaml:"model,omitempty" mapstructure:"model"`                             // model identifier (e.g., "ollama:ministral-3:8b", "openai:gpt-4")
+	MaxToolCalls       int              `yaml:"max_tool_calls,omitempty" mapstructure:"max_tool_calls"`           // maximum tool calls per prompt
+	Streaming          bool             `yaml:"streaming,omitempty" mapstructure:"streaming"`                     // enable streaming responses
+	OutputFormat       OrlaOutputFormat `yaml:"output_format,omitempty" mapstructure:"output_format"`             // output format: "auto", "rich", or "plain"
+	ConfirmDestructive bool             `yaml:"confirm_destructive,omitempty" mapstructure:"confirm_destructive"` // prompt for destructive actions
+	DryRun             bool             `yaml:"dry_run,omitempty" mapstructure:"dry_run"`                         // default to non-dry-run mode
 }
 
 // SetToolsDir updates the tools directory and rebuilds the tools registry.
