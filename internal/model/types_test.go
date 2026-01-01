@@ -16,6 +16,7 @@ func TestMessageRole_String(t *testing.T) {
 		{"user", MessageRoleUser, "user"},
 		{"assistant", MessageRoleAssistant, "assistant"},
 		{"system", MessageRoleSystem, "system"},
+		{"tool", MessageRoleTool, "tool"},
 		{"custom", MessageRole("custom"), "custom"},
 	}
 
@@ -24,6 +25,23 @@ func TestMessageRole_String(t *testing.T) {
 			assert.Equal(t, tt.expected, tt.role.String())
 		})
 	}
+}
+
+func TestStreamEventTypes(t *testing.T) {
+	t.Run("ContentEvent", func(t *testing.T) {
+		e := &ContentEvent{Content: "test"}
+		assert.Equal(t, StreamEventTypeContent, e.Type())
+	})
+
+	t.Run("ToolCallEvent", func(t *testing.T) {
+		e := &ToolCallEvent{Name: "test"}
+		assert.Equal(t, StreamEventTypeToolCall, e.Type())
+	})
+
+	t.Run("ThinkingEvent", func(t *testing.T) {
+		e := &ThinkingEvent{Content: "test"}
+		assert.Equal(t, StreamEventTypeThinking, e.Type())
+	})
 }
 
 func TestMessage(t *testing.T) {

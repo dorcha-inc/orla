@@ -1,10 +1,14 @@
 package model
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,6 +72,7 @@ func TestOllamaProvider_EnsureReady_NotRunning(t *testing.T) {
 
 // Test helper functions
 func TestConvertToolsToOllamaFormat(t *testing.T) {
+
 	tools := []*mcp.Tool{
 		{
 			Name:        "test_tool",
@@ -292,6 +297,7 @@ func TestConvertOllamaToolCalls_DefaultCase(t *testing.T) {
 }
 
 func TestConvertToolsToOllamaFormat_WithSchema(t *testing.T) {
+
 	tools := []*mcp.Tool{
 		{
 			Name:        "test_tool",
@@ -314,6 +320,7 @@ func TestConvertToolsToOllamaFormat_WithSchema(t *testing.T) {
 }
 
 func TestConvertToolsToOllamaFormat_WithoutSchema(t *testing.T) {
+
 	tools := []*mcp.Tool{
 		{
 			Name:        "test_tool",
@@ -331,6 +338,7 @@ func TestConvertToolsToOllamaFormat_WithoutSchema(t *testing.T) {
 
 func TestConvertToolsToOllamaFormat_InvalidSchema(t *testing.T) {
 	// Test with InputSchema that's not a map[string]any
+
 	tools := []*mcp.Tool{
 		{
 			Name:        "test_tool",
@@ -639,4 +647,325 @@ func TestOllamaProvider_Chat_Mock_WithToolCalls(t *testing.T) {
 	assert.Len(t, response.ToolCalls, 1)
 	assert.Equal(t, "get_temperature", response.ToolCalls[0].McpCallToolParams.Name)
 	assert.Equal(t, map[string]any{"city": "Boston"}, response.ToolCalls[0].McpCallToolParams.Arguments)
+}
+
+func TestOllamaProvider_Chat_Stream_Mock(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == ollamaHealthCheckEndpoint {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		// Simulate a streaming response
+		w.Header().Set("Content-Type", "application/json")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.ResponseWriter to be an http.Flusher")
+		}
+
+		// Stream chunks
+		chunks := []string{
+			`{"message": {"role": "assistant", "content": "Hello, "}, "done": false}`,
+			`{"message": {"role": "assistant", "content": "world!"}, "done": false}`,
+			`{"message": {"role": "assistant", "tool_calls": [{"type": "function", "function": {"name": "test_tool", "arguments": {}}}]}}, "done": false}`,
+			`{"done": true}`,
+		}
+
+		for _, chunk := range chunks {
+			_, err := w.Write([]byte(chunk + "\n"))
+			require.NoError(t, err)
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	cfg := &config.OrlaConfig{}
+	provider := &OllamaProvider{
+		modelName: orlaTesting.GetTestModelName(),
+		baseURL:   server.URL,
+		client:    &http.Client{Timeout: 5 * time.Second},
+		cfg:       cfg,
+	}
+
+	ctx := context.Background()
+	messages := []Message{
+		{Role: MessageRoleUser, Content: "Hello"},
+	}
+
+	response, streamCh, err := provider.Chat(ctx, messages, nil, true)
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	require.NotNil(t, streamCh)
+
+	// Consume stream
+	var contentEvents int
+	var toolCallEvents int
+	var accumulatedContent string
+	for event := range streamCh {
+		switch e := event.(type) {
+		case *ContentEvent:
+			contentEvents++
+			accumulatedContent += e.Content
+		case *ToolCallEvent:
+			toolCallEvents++
+			assert.Equal(t, "test_tool", e.Name)
+		}
+	}
+
+	assert.Equal(t, 2, contentEvents)
+	assert.Equal(t, 1, toolCallEvents)
+	assert.Equal(t, "Hello, world!", accumulatedContent)
+	assert.Equal(t, "Hello, world!", response.Content)
+	assert.Len(t, response.ToolCalls, 1)
+	assert.Equal(t, "test_tool", response.ToolCalls[0].McpCallToolParams.Name)
+}
+
+func TestGetArgumentsForToolCall_InvalidJSON(t *testing.T) {
+	toolCall := ollamaToolCall{
+		Function: ollamaToolCallFunction{
+			Arguments: `{"bad": json`,
+		},
+	}
+	args, err := getArgumentsForToolCall(toolCall)
+	assert.Error(t, err)
+	assert.Nil(t, args)
+}
+
+func TestOllamaProvider_Chat_ThinkEnabled_Mock(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == ollamaHealthCheckEndpoint {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		var reqBody ollamaChatRequest
+		err := json.NewDecoder(r.Body).Decode(&reqBody)
+		require.NoError(t, err)
+		assert.True(t, reqBody.Think)
+
+		response := `{
+			"message": {
+				"role": "assistant",
+				"content": "Hello",
+				"thinking": "I am thinking."
+			},
+			"done": true
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err = w.Write([]byte(response))
+		require.NoError(t, err)
+	}))
+	defer server.Close()
+
+	cfg := &config.OrlaConfig{ShowThinking: true}
+	provider := &OllamaProvider{
+		modelName: orlaTesting.GetTestModelName(),
+		baseURL:   server.URL,
+		client:    &http.Client{Timeout: 5 * time.Second},
+		cfg:       cfg,
+	}
+
+	ctx := context.Background()
+	messages := []Message{{Role: MessageRoleUser, Content: "Hello"}}
+
+	response, _, err := provider.Chat(ctx, messages, nil, false)
+	require.NoError(t, err)
+	assert.NotNil(t, response)
+	assert.Equal(t, "I am thinking.", response.Thinking)
+}
+
+func TestOllamaProvider_Chat_WithToolMessage_Mock(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == ollamaHealthCheckEndpoint {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		var reqBody ollamaChatRequest
+		err := json.NewDecoder(r.Body).Decode(&reqBody)
+		require.NoError(t, err)
+		require.Len(t, reqBody.Messages, 1)
+		assert.Equal(t, "tool", reqBody.Messages[0].Role)
+		assert.Equal(t, "test_tool", reqBody.Messages[0].ToolName)
+
+		response := `{"message": {"role": "assistant", "content": "OK"}, "done": true}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err = w.Write([]byte(response))
+		require.NoError(t, err)
+	}))
+	defer server.Close()
+
+	cfg := &config.OrlaConfig{}
+	provider := &OllamaProvider{
+		modelName: orlaTesting.GetTestModelName(),
+		baseURL:   server.URL,
+		client:    &http.Client{Timeout: 5 * time.Second},
+		cfg:       cfg,
+	}
+
+	ctx := context.Background()
+	messages := []Message{
+		{Role: MessageRoleTool, Content: "tool output", ToolName: "test_tool"},
+	}
+
+	_, _, err := provider.Chat(ctx, messages, nil, false)
+	require.NoError(t, err)
+}
+
+func TestOllamaProvider_Chat_NewRequestError(t *testing.T) {
+	cfg := &config.OrlaConfig{}
+	provider := &OllamaProvider{
+		modelName: orlaTesting.GetTestModelName(),
+		baseURL:   "http://invalid-url-with-spaces.com/ a",
+		client:    &http.Client{Timeout: 1 * time.Second},
+		cfg:       cfg,
+	}
+	ctx := context.Background()
+	messages := []Message{{Role: MessageRoleUser, Content: "Hello"}}
+	_, _, err := provider.Chat(ctx, messages, nil, false)
+	assert.Error(t, err)
+}
+
+type errorRoundTripper struct{}
+
+func (e *errorRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	return nil, assert.AnError
+}
+
+func TestOllamaProvider_Chat_ClientDoError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	cfg := &config.OrlaConfig{}
+	provider := &OllamaProvider{
+		modelName: orlaTesting.GetTestModelName(),
+		baseURL:   server.URL,
+		client:    &http.Client{Transport: &errorRoundTripper{}},
+		cfg:       cfg,
+	}
+	ctx := context.Background()
+	messages := []Message{{Role: MessageRoleUser, Content: "Hello"}}
+	_, _, err := provider.Chat(ctx, messages, nil, false)
+	assert.Error(t, err)
+}
+
+func TestIsRunning_NewRequestError(t *testing.T) {
+	provider := &OllamaProvider{
+		baseURL: "http://localhost:11434/\x7f",
+	}
+	_, err := provider.isRunning()
+	assert.Error(t, err)
+}
+
+func TestHandleStreamResponse_DecodeError(t *testing.T) {
+	body := io.NopCloser(strings.NewReader("invalid-json\n"))
+	_, streamCh := (&OllamaProvider{}).handleStreamResponse(body)
+	for range streamCh {
+	}
+	// No assertions needed, just make sure it doesn't panic
+}
+
+func TestConvertOllamaToolCalls_MarshalError(t *testing.T) {
+	ollamaCalls := []ollamaToolCall{
+		{
+			Type: "function",
+			Function: ollamaToolCallFunction{
+				Name:      "test_tool",
+				Arguments: func() {}, // Functions cannot be marshalled to JSON
+			},
+		},
+	}
+	toolCalls := convertOllamaToolCalls(ollamaCalls)
+	assert.Len(t, toolCalls, 1)
+	assert.Equal(t, "test_tool", toolCalls[0].McpCallToolParams.Name)
+	assert.Equal(t, map[string]any{}, toolCalls[0].McpCallToolParams.Arguments)
+}
+
+func TestGetArgumentsForToolCall_MapArgs(t *testing.T) {
+	tc := ollamaToolCall{
+		Function: ollamaToolCallFunction{
+			Arguments: map[string]any{"a": "b"},
+		},
+	}
+
+	args, err := getArgumentsForToolCall(tc)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"a": "b"}, args)
+}
+
+func TestGetArgumentsForToolCall_StringArgs(t *testing.T) {
+	tc := ollamaToolCall{
+		Function: ollamaToolCallFunction{
+			Arguments: `{"x": 1}`,
+		},
+	}
+
+	args, err := getArgumentsForToolCall(tc)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"x": float64(1)}, args)
+}
+
+func TestGetArgumentsForToolCall_InvalidString(t *testing.T) {
+	tc := ollamaToolCall{
+		Function: ollamaToolCallFunction{
+			Arguments: `{invalid json}`,
+		},
+	}
+
+	_, err := getArgumentsForToolCall(tc)
+	require.Error(t, err)
+}
+
+func TestHandleStreamResponse_AccumulationAndEvents(t *testing.T) {
+	// Create three JSON chunks: content, thinking+content, tool_call+done
+	chunk1 := `{ "message": { "content": "Hello", "role": "assistant" }, "done": false }`
+	chunk2 := `{ "message": { "thinking": "[t]", "content": " world", "role": "assistant" }, "done": false }`
+	chunk3 := `{
+        "message": {
+            "content": "",
+            "role": "assistant",
+            "tool_calls": [
+                { "type": "function", "function": { "index": 0, "name": "do_it", "arguments": {"param":"val"} } }
+            ]
+        },
+        "done": true
+    }`
+
+	// Concatenate chunks without separators to simulate streaming JSON objects
+	streamData := chunk1 + chunk2 + chunk3
+
+	rc := io.NopCloser(bytes.NewBufferString(streamData))
+
+	p := &OllamaProvider{}
+	resp, ch := p.handleStreamResponse(rc)
+
+	// Consume events until channel closes
+	var contentBuf string
+	var thinkingBuf string
+	var toolCallEvents int
+
+	for ev := range ch {
+		switch e := ev.(type) {
+		case *ContentEvent:
+			contentBuf += e.Content
+		case *ThinkingEvent:
+			thinkingBuf += e.Content
+		case *ToolCallEvent:
+			toolCallEvents++
+			// ensure argument parsed
+			if v, ok := e.Arguments["param"]; ok {
+				assert.Equal(t, "val", v)
+			}
+		default:
+			t.Fatalf("unexpected event type: %T", ev)
+		}
+	}
+
+	// After channel close, response should have accumulated content and tool calls
+	assert.Equal(t, "Hello world", contentBuf)
+	assert.Equal(t, "[t]", thinkingBuf)
+	// Tool calls are populated after stream completes
+	require.Len(t, resp.ToolCalls, 1)
+	assert.Equal(t, "do_it", resp.ToolCalls[0].McpCallToolParams.Name)
+	assert.Equal(t, 1, toolCallEvents)
 }

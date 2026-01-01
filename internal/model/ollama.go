@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os/exec"
 	"time"
@@ -215,8 +216,16 @@ func (p *OllamaProvider) isRunning() (bool, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		// Connection errors mean Ollama is not running (not an error condition)
-		return false, nil
+		// Connection errors mean Ollama is not running. We treat this as a non-error
+		// for the purpose of this check by returning `false, nil`.
+		// We identify connection errors by checking if the error implements `net.Error`.
+		var netErr net.Error
+		if errors.As(err, &netErr) {
+			return false, nil
+		}
+
+		// Other errors (e.g. invalid URL in request) should be propagated.
+		return false, err
 	}
 	defer core.LogDeferredError(resp.Body.Close)
 
