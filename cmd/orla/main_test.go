@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dorcha-inc/orla/internal/config"
+	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/server"
 	"github.com/dorcha-inc/orla/internal/state"
 	"github.com/stretchr/testify/assert"
@@ -21,11 +22,7 @@ func TestLoadConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
-			t.Logf("Failed to restore working directory: %v", restoreErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 
 	// Change to temp directory and create tools subdirectory
 	err = os.Chdir(tmpDir)
@@ -153,11 +150,7 @@ func TestRunServer(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
-			t.Logf("Failed to restore working directory: %v", restoreErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 
 	// Change to temp directory and create tools subdirectory
 	err = os.Chdir(tmpDir)
@@ -205,11 +198,7 @@ func TestRunServe(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
-			t.Logf("Failed to restore working directory: %v", restoreErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 
 	// Change to temp directory and create tools subdirectory
 	err = os.Chdir(tmpDir)
@@ -243,11 +232,7 @@ func TestRunServe_PortValidationError(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
-			t.Logf("Failed to restore working directory: %v", restoreErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)

@@ -551,11 +551,7 @@ func TestReload_DefaultConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if restoreErr := os.Chdir(originalDir); restoreErr != nil {
-			t.Logf("Failed to restore working directory: %v", restoreErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 
 	err = os.Chdir(tmpDir)
 	require.NoError(t, err)

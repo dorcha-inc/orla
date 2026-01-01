@@ -14,6 +14,7 @@ const (
 	MessageRoleUser      MessageRole = "user"
 	MessageRoleAssistant MessageRole = "assistant"
 	MessageRoleSystem    MessageRole = "system"
+	MessageRoleTool      MessageRole = "tool"
 )
 
 func (r MessageRole) String() string {
@@ -22,8 +23,9 @@ func (r MessageRole) String() string {
 
 // Message represents a chat message in a conversation
 type Message struct {
-	Role    MessageRole `json:"role"`    // "user", "assistant", or "system"
-	Content string      `json:"content"` // Message content
+	Role     MessageRole `json:"role"`                // "user", "assistant", "system", or "tool"
+	Content  string      `json:"content"`             // Message content
+	ToolName string      `json:"tool_name,omitempty"` // Tool name (required when role is "tool")
 }
 
 // ToolCallWithID represents a tool invocation request from the model.

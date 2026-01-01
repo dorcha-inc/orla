@@ -195,7 +195,9 @@ func TestOllamaProvider_Chat_Streaming_Integration(t *testing.T) {
 
 	response, streamCh, err := provider.Chat(ctx, messages, nil, true)
 	require.NoError(t, err)
-	assert.Nil(t, response) // Streaming responses don't return a response object
+	// Streaming responses return a response object that gets populated as chunks arrive
+	// The response is shared between the goroutine (writer) and caller (reader)
+	assert.NotNil(t, response)
 	assert.NotNil(t, streamCh)
 
 	// Read from stream
@@ -219,6 +221,11 @@ func TestOllamaProvider_Chat_Streaming_Integration(t *testing.T) {
 done:
 	assert.NotEmpty(t, chunks, "Should receive at least one chunk")
 	t.Logf("Total streamed content: %s", strings.Join(chunks, ""))
+
+	// After stream completes, response should be populated with the accumulated content
+	// The channel close provides synchronization, so response.Content should be available now
+	assert.NotNil(t, response)
+	assert.Equal(t, strings.Join(chunks, ""), response.Content, "Response content should match streamed chunks")
 }
 
 // Test helper functions

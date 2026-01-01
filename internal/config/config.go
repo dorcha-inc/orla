@@ -17,7 +17,9 @@ import (
 )
 
 const (
-	DefaultToolsDir = ".orla/tools"
+	DefaultToolsDir     = ".orla/tools"
+	DefaultModel        = "ollama:ministral-3:3b"
+	DefaultMaxToolCalls = 10
 )
 
 // OrlaOutputFormat represents the output format for agent mode
@@ -186,10 +188,10 @@ func setViperDefaults() {
 	viper.SetDefault("log_file", "")
 
 	// Agent mode defaults
-	viper.SetDefault("model", "ollama:ministral-3:8b")
+	viper.SetDefault("model", DefaultModel)
 	viper.SetDefault("auto_start_ollama", true)
 	viper.SetDefault("auto_configure_ollama_service", false)
-	viper.SetDefault("max_tool_calls", 10)
+	viper.SetDefault("max_tool_calls", DefaultMaxToolCalls)
 	viper.SetDefault("streaming", true)
 	viper.SetDefault("output_format", "auto")
 	viper.SetDefault("confirm_destructive", true)
@@ -323,6 +325,9 @@ func postProcessConfig(cfg *OrlaConfig, configFileDir string) error {
 }
 
 // validateConfig validates the configuration
+// Note: This function can be called both:
+// 1. After LoadConfig() (viper is configured) - can use viper.IsSet() to detect explicit values
+// 2. Directly on structs (viper not configured) - viper.IsSet() may not work, so we apply defaults
 func validateConfig(cfg *OrlaConfig) error {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30
@@ -340,21 +345,29 @@ func validateConfig(cfg *OrlaConfig) error {
 	if cfg.LogLevel != "" && !validLogLevels[cfg.LogLevel] {
 		return fmt.Errorf("log_level must be one of: debug, info, warn, error, fatal, got '%s'", cfg.LogLevel)
 	}
+
+	// Since viper handles defaults, these are values that were explicitly set to empty or zero
+	// and need to be validated.
 	if cfg.Model == "" {
-		cfg.Model = "ollama:ministral-3:8b"
+		return fmt.Errorf("model cannot be empty (was explicitly set to empty string)")
 	}
+
 	if cfg.MaxToolCalls == 0 {
-		cfg.MaxToolCalls = 10
+		return fmt.Errorf("max_tool_calls cannot be 0 (was explicitly set to 0)")
 	}
+
 	if cfg.MaxToolCalls < 1 {
 		return fmt.Errorf("max_tool_calls must be at least 1, got %d", cfg.MaxToolCalls)
 	}
+
 	if cfg.OutputFormat == "" {
-		cfg.OutputFormat = OrlaOutputFormatAuto
+		return fmt.Errorf("output_format cannot be empty (was explicitly set to empty string)")
 	}
+
 	validOutputFormats := map[OrlaOutputFormat]bool{
 		OrlaOutputFormatAuto: true, OrlaOutputFormatRich: true, OrlaOutputFormatPlain: true,
 	}
+
 	if !validOutputFormats[cfg.OutputFormat] {
 		return fmt.Errorf("output_format must be one of: auto, rich, plain, got '%s'", cfg.OutputFormat)
 	}

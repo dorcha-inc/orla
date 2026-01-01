@@ -56,7 +56,7 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	assert.Equal(t, 30, cfg.Timeout)
 	// Note: LogFormat and LogLevel are empty strings by default in struct, but validateConfig sets defaults
 	// After validation, they should have defaults
-	assert.Equal(t, "ollama:ministral-3:8b", cfg.Model)
+	assert.Equal(t, DefaultModel, cfg.Model)
 	// Note: AutoStartOllama defaults to true in Viper, but struct default is false
 	// After unmarshaling, it should be true
 	assert.Equal(t, 10, cfg.MaxToolCalls)
@@ -329,8 +329,11 @@ func TestListConfig(t *testing.T) {
 
 func TestValidateConfig(t *testing.T) {
 	cfg := &OrlaConfig{
-		Port:    8080,
-		Timeout: 30,
+		Port:         8080,
+		Timeout:      30,
+		Model:        DefaultModel,
+		MaxToolCalls: DefaultMaxToolCalls,
+		OutputFormat: OrlaOutputFormatAuto,
 	}
 
 	err := validateConfig(cfg)
@@ -578,7 +581,7 @@ func TestListConfig_AllDefaults(t *testing.T) {
 
 	modelVal, ok := configMap["model"]
 	require.True(t, ok)
-	assert.Equal(t, "ollama:ministral-3:8b", modelVal.Value)
+	assert.Equal(t, DefaultModel, modelVal.Value)
 	assert.Equal(t, "default", modelVal.Source)
 }
 
@@ -654,15 +657,37 @@ func TestRebuildToolsRegistry(t *testing.T) {
 }
 
 func TestValidateConfig_Defaults(t *testing.T) {
+	// Test that validateConfig errors on empty/zero values when called directly
+	// (since Viper isn't configured, it can't distinguish between unset and explicitly empty)
 	cfg := &OrlaConfig{}
 	err := validateConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "model cannot be empty")
+
+	// When called through LoadConfig, Viper applies defaults during Unmarshal,
+	// so empty values only occur if explicitly set in config files (which should error)
+	// Test this by loading a config with missing fields (should use defaults)
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+	configContent := `port: 9000
+`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmpDir))
+	defer core.LogDeferredError(func() error { return os.Chdir(originalDir) })
+
+	cfg2, err := LoadConfig("")
 	require.NoError(t, err)
 
-	// Should set defaults
-	assert.Equal(t, 30, cfg.Timeout)
-	assert.Equal(t, "ollama:ministral-3:8b", cfg.Model)
-	assert.Equal(t, 10, cfg.MaxToolCalls)
-	assert.Equal(t, OrlaOutputFormatAuto, cfg.OutputFormat)
+	// Should have defaults for fields not in config file
+	assert.Equal(t, 30, cfg2.Timeout)
+	assert.Equal(t, DefaultModel, cfg2.Model)
+	assert.Equal(t, DefaultMaxToolCalls, cfg2.MaxToolCalls)
+	assert.Equal(t, OrlaOutputFormatAuto, cfg2.OutputFormat)
+	assert.Equal(t, 9000, cfg2.Port) // Explicitly set value
 }
 
 func TestConfig_MarshalUnmarshal(t *testing.T) {
@@ -682,4 +707,47 @@ func TestConfig_MarshalUnmarshal(t *testing.T) {
 	assert.Equal(t, cfg.Port, cfg2.Port)
 	assert.Equal(t, cfg.Timeout, cfg2.Timeout)
 	assert.Equal(t, cfg.Model, cfg2.Model)
+}
+
+// TestLoadConfig_ExplicitEmptyValues tests that explicit empty/zero values in config files
+// correctly raise validation errors (they should not silently use defaults)
+func TestLoadConfig_ExplicitEmptyValues(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "orla.yaml")
+
+	// Change to temp directory
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tmpDir))
+	defer core.LogDeferredError(func() error { return os.Chdir(originalDir) })
+
+	// Test 1: Explicit empty model should error
+	configContent := `model: ""
+`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+	_, err = LoadConfig("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "model cannot be empty")
+
+	// Test 2: Explicit zero max_tool_calls should error
+	configContent = `max_tool_calls: 0
+`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+	_, err = LoadConfig("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_tool_calls cannot be 0")
+
+	// Test 3: Missing values (not explicitly set) should use defaults
+	configContent = `port: 9000
+`
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+	cfg, err := LoadConfig("")
+	require.NoError(t, err)
+	// Model and max_tool_calls should have defaults (not explicitly set to empty)
+	assert.Equal(t, DefaultModel, cfg.Model)
+	assert.Equal(t, DefaultMaxToolCalls, cfg.MaxToolCalls)
+	assert.Equal(t, 9000, cfg.Port) // Explicitly set value should be used
 }

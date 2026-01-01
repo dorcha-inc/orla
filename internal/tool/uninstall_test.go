@@ -45,11 +45,7 @@ func TestUninstallTool_Success(t *testing.T) {
 	// Change to temp directory so config.LoadConfig finds orla.yaml
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	// Uninstall tool
@@ -76,11 +72,7 @@ func TestUninstallTool_NotInstalled(t *testing.T) {
 	// Change to temp directory so config.LoadConfig finds orla.yaml
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	// Try to uninstall non-existent tool

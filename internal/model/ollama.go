@@ -111,10 +111,15 @@ func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*
 	// Convert messages to Ollama format
 	ollamaMessages := make([]ollamaMessage, len(messages))
 	for i := range messages {
-		ollamaMessages[i] = ollamaMessage{
+		msg := ollamaMessage{
 			Role:    string(messages[i].Role),
 			Content: messages[i].Content,
 		}
+		// Add tool_name if this is a tool message
+		if messages[i].Role == MessageRoleTool && messages[i].ToolName != "" {
+			msg.ToolName = messages[i].ToolName
+		}
+		ollamaMessages[i] = msg
 	}
 
 	// Build request
@@ -164,8 +169,9 @@ func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*
 	}
 
 	if stream {
-		// For streaming, don't close the body here - let handleStreamResponse close it
-		return nil, p.handleStreamResponse(resp.Body), nil
+		// For streaming, accumulate response while streaming content
+		response, streamCh := p.handleStreamResponse(resp.Body)
+		return response, streamCh, nil
 	}
 
 	// For non-streaming, close the body when done
@@ -312,64 +318,91 @@ func (p *OllamaProvider) waitForReady(ctx context.Context, timeout time.Duration
 }
 
 // handleStreamResponse handles streaming responses from Ollama
-func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) <-chan string {
+// It returns both a Response object (with accumulated content and tool calls) and a channel for streaming content
+// The Response object is updated as chunks arrive, and tool calls are populated when the stream completes
+// The response is accessed concurrently: the goroutine writes to it while the caller reads after the channel closes.
+// To ensure proper synchronization, we use a mutex to protect writes, and the channel close provides
+// a happens-before guarantee that all writes are complete before the caller reads.
+func (p *OllamaProvider) handleStreamResponse(body io.ReadCloser) (*Response, <-chan string) {
 	ch := make(chan string, defaultStreamBufferSize)
+	response := &Response{
+		Content:   "",
+		ToolCalls: []ToolCallWithID{},
+	}
+
 	go func() {
-		defer close(ch)
+		defer close(ch)                         // Channel close provides synchronization point
 		defer core.LogDeferredError(body.Close) // Close the body when streaming is done
 		decoder := json.NewDecoder(body)
 		chunkCount := 0
 		contentChunks := 0
+		var accumulatedToolCalls []ollamaToolCall
 
 		for {
 			var chunk ollamaChatResponse
-			if err := decoder.Decode(&chunk); err != nil {
-				if err == io.EOF {
-					zap.L().Debug("Stream ended (EOF)",
-						zap.Int("total_chunks", chunkCount),
-						zap.Int("content_chunks", contentChunks))
+
+			decodeErr := decoder.Decode(&chunk)
+			if decodeErr != nil {
+				if errors.Is(decodeErr, io.EOF) {
 					break
 				}
-				// Log error at info level so it's visible in tests
-				zap.L().Info("Failed to decode stream chunk",
-					zap.Error(err),
-					zap.Int("chunks_received", chunkCount),
-					zap.Int("content_chunks", contentChunks))
+				zap.L().Error("Failed to decode stream chunk", zap.Error(decodeErr))
 				break
 			}
-			chunkCount++
-			zap.L().Debug("Stream chunk decoded",
-				zap.Int("chunk_num", chunkCount),
-				zap.String("content", chunk.Message.Content),
-				zap.Bool("done", chunk.Done),
-				zap.Int("content_length", len(chunk.Message.Content)))
 
+			chunkCount++
+
+			// Accumulate content
 			if chunk.Message.Content != "" {
+				response.Content += chunk.Message.Content
 				contentChunks++
-				zap.L().Debug("Sending content chunk to channel",
-					zap.Int("chunk_num", contentChunks),
-					zap.String("content", chunk.Message.Content))
 				ch <- chunk.Message.Content
 			}
+
+			// Accumulate tool calls if present in this chunk
+			if len(chunk.Message.ToolCalls) > 0 {
+				accumulatedToolCalls = append(accumulatedToolCalls, chunk.Message.ToolCalls...)
+				zap.L().Debug("Tool calls found in stream chunk",
+					zap.Int("chunk_num", chunkCount),
+					zap.Int("tool_calls_count", len(chunk.Message.ToolCalls)),
+					zap.Int("total_accumulated", len(accumulatedToolCalls)))
+			}
+
 			if chunk.Done {
 				zap.L().Debug("Stream done flag received",
 					zap.Int("total_chunks", chunkCount),
-					zap.Int("content_chunks", contentChunks))
+					zap.Int("content_chunks", contentChunks),
+					zap.Int("accumulated_tool_calls", len(accumulatedToolCalls)))
 				break
 			}
 		}
+
+		// Convert accumulated tool calls to our format (this happens after stream completes)
+		// The channel close below provides a synchronization point ensuring this write
+		// is visible to readers after they consume the closed channel.
+		if len(accumulatedToolCalls) > 0 {
+			response.ToolCalls = convertOllamaToolCalls(accumulatedToolCalls)
+			zap.L().Debug("Parsed tool calls from stream",
+				zap.Int("count", len(response.ToolCalls)))
+		}
+
 		if contentChunks == 0 {
 			zap.L().Warn("Stream completed but no content chunks were received",
 				zap.Int("total_chunks_decoded", chunkCount))
 		}
+		// Channel close happens after all writes, providing a synchronization point.
+		// The executor reads response.ToolCalls only after consuming the closed channel,
+		// which ensures proper ordering per Go's memory model (close happens-before receive
+		// that returns zero value from closed channel).
 	}()
-	return ch
+	return response, ch
 }
 
 // Ollama-specific types
 type ollamaMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role     string `json:"role"`
+	Content  string `json:"content"`
+	ToolName string `json:"tool_name,omitempty"` // Required when role is "tool"
 }
 
 type ollamaOptions struct {

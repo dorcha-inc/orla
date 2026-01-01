@@ -37,11 +37,7 @@ func TestInstallTool_SuccessMessage(t *testing.T) {
 	// Change to temp directory so config.LoadConfig finds orla.yaml
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	// Create tool.yaml manifest
@@ -96,11 +92,7 @@ func TestInstallTool_LocalPath(t *testing.T) {
 	// Change to temp directory so config.LoadConfig finds orla.yaml
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	// Create tool.yaml manifest
@@ -149,11 +141,7 @@ func TestInstallTool_LocalPath_Error(t *testing.T) {
 	// Change to temp directory
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	var buf bytes.Buffer
@@ -180,11 +168,7 @@ func TestInstallTool_RegistryInstall_Error(t *testing.T) {
 	// Change to temp directory
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	var buf bytes.Buffer
@@ -216,11 +200,7 @@ func TestInstallTool_EmptyToolName_WithLocalPath(t *testing.T) {
 	// Change to temp directory
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	// Create tool.yaml manifest
@@ -273,11 +253,7 @@ func TestInstallTool_LocalPathTakesPrecedence(t *testing.T) {
 	// Change to temp directory
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	// Create tool.yaml manifest

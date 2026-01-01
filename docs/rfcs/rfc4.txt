@@ -118,17 +118,19 @@ Table of Contents
 
    Orla MUST support the following agent-oriented commands:
 
-      orla "<prompt>"
+      orla agent <prompt>
 
    Execute a one-shot agent prompt.  Orla processes the prompt, selects
    and invokes appropriate tools, and returns the result.  This command
-   MUST support streaming output by default.  When a prompt is provided
-   as the first argument to the root command, Orla MUST interpret it as
-   an agent execution request.
+   MUST support streaming output by default.  The prompt is provided as
+   a single argument.  When the prompt contains spaces, users MUST quote
+   it in the shell (e.g., `orla agent "list files"`), but from the
+   program's perspective, it is received as a single string argument.
 
-   Note: The root command accepting a prompt directly follows common CLI
-   patterns (e.g., `git commit`, `docker run`) and provides the shortest
-   possible syntax for the most common use case.
+   Examples:
+      orla agent "list files in the current directory"
+      orla agent "generate a Dockerfile for this repo"
+      orla agent --model ollama:llama3 "explain this code"
 
       orla chat
 
@@ -194,9 +196,14 @@ Table of Contents
 3.5. Examples
 
       orla tool install fs
-      orla "list files in the current directory"
-      orla "generate a Dockerfile for this repo"
+      orla agent "list files in the current directory"
+      orla agent "generate a Dockerfile for this repo"
+      orla agent --model ollama:llama3 "explain this code"
       orla chat
+
+   Note: The quotes in the examples are for shell syntax (to handle spaces
+   in the prompt).  The program receives the prompt as a single string
+   argument regardless of whether quotes were used in the shell.
       orla config set model=ollama:llama3
       orla config set model=openai:gpt-4
       orla serve --stdio

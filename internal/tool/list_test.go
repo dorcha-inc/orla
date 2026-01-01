@@ -59,11 +59,7 @@ func TestListTools_EmptyList_Simple(t *testing.T) {
 	// Change to temp directory
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	var buf bytes.Buffer
@@ -409,11 +405,7 @@ func TestListTools_ErrorFromListInstalledTools(t *testing.T) {
 	// Change to temp directory
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	var buf bytes.Buffer

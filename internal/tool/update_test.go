@@ -46,11 +46,7 @@ func TestUpdateTool_Success(t *testing.T) {
 	// Change to temp directory so config.LoadConfig finds orla.yaml
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 }
 
@@ -69,11 +65,7 @@ func TestUpdateTool_NotInstalled(t *testing.T) {
 	// Change to temp directory so config.LoadConfig finds orla.yaml
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	// Try to update non-existent tool
@@ -102,11 +94,7 @@ func TestUpdateTool_DefaultWriter(t *testing.T) {
 	// Change to temp directory so config.LoadConfig finds orla.yaml
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	// Try to update non-existent tool with nil Writer (should use os.Stdout)
@@ -137,11 +125,7 @@ func TestUpdateTool_CustomRegistryURL(t *testing.T) {
 	// Change to temp directory so config.LoadConfig finds orla.yaml
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
-	defer func() {
-		if chdirErr := os.Chdir(originalDir); chdirErr != nil {
-			t.Logf("Failed to restore working directory: %v", chdirErr)
-		}
-	}()
+	defer core.LogDeferredError1(os.Chdir, originalDir)
 	require.NoError(t, os.Chdir(tmpDir))
 
 	// Test with custom registry URL
