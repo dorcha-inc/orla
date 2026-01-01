@@ -6,9 +6,12 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // captureStderr captures stderr output and returns it as a string
@@ -275,50 +278,122 @@ func TestReset(t *testing.T) {
 	assert.NotSame(t, original, newUI)
 }
 
-func TestUI_Progress_SpinnerState(t *testing.T) {
+func TestUI_RenderThinking(t *testing.T) {
 	ui := New()
 
-	// Start progress
-	_, err := captureStderr(func() {
-		ui.Progress("First message")
-	})
-	require.NoError(t, err)
+	content := "This is thinking content"
+	rendered := ui.RenderThinking(content)
 
-	// Update progress with new message
-	secondOutput, err := captureStderr(func() {
-		ui.Progress("Second message")
-	})
-	require.NoError(t, err)
+	// Should return content (may be styled if colors enabled)
+	assert.NotEmpty(t, rendered)
+	assert.Contains(t, rendered, "This is thinking content")
 
-	if ui.Enabled() {
-		// Should contain the new message
-		assert.Contains(t, secondOutput, "Second message", "Progress should update message")
-		// Should not contain old message in this output (it was cleared)
-		assert.NotContains(t, secondOutput, "First message", "Progress should clear old message")
+	// If colors disabled or not TTY, should return original
+	if !ui.ColorEnabled() || !ui.StdoutIsTTY() {
+		assert.Equal(t, content, rendered)
 	}
 }
 
-func TestUI_ProgressSuccess_ClearsSpinner(t *testing.T) {
-	ui := New()
+func TestRenderThinking_Convenience(t *testing.T) {
+	content := "test thinking"
+	rendered := RenderThinking(content)
+	assert.NotEmpty(t, rendered)
+	assert.Contains(t, rendered, "test thinking")
+}
 
-	// Start progress
-	_, err := captureStderr(func() {
-		ui.Progress("Processing...")
-	})
-	require.NoError(t, err)
+func TestUI_ProgressSuccess_WithoutSpinner(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled bool
+	}{
+		{
+			name:    "UI enabled",
+			enabled: true,
+		},
+		{
+			name:    "UI disabled",
+			enabled: false,
+		},
+	}
 
-	// Complete with success
-	successOutput, err := captureStderr(func() {
-		ui.ProgressSuccess("Done!")
-	})
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ui := New()
+			ui.enabled = tt.enabled
 
-	if ui.Enabled() {
-		// Success output should contain the success message
-		assert.Contains(t, successOutput, "Done!", "ProgressSuccess should output message")
-		assert.Contains(t, successOutput, "✓", "ProgressSuccess should include checkmark")
-		// Progress output should have been cleared (we can't easily verify this without
-		// checking for clear sequences, but the fact that successOutput doesn't contain
-		// "Processing..." is a good sign)
+			// Set up observer to capture logs
+			core, logs := observer.New(zap.ErrorLevel)
+			logger := zap.New(core)
+			zap.ReplaceGlobals(logger)
+			defer zap.ReplaceGlobals(zap.NewNop()) // Restore default logger
+
+			// ProgressSuccess without a spinner should not crash
+			ui.ProgressSuccess("test")
+
+			// Verify behavior based on enabled state
+			if ui.enabled {
+				require.GreaterOrEqual(t, logs.Len(), 1, "Should log error when UI is enabled and no spinner exists")
+				entry := logs.All()[0]
+				assert.Equal(t, "ProgressSuccess called without a spinner", entry.Message)
+				assert.Equal(t, zap.ErrorLevel, entry.Level)
+			} else {
+				// If UI is disabled, ProgressSuccess returns early and doesn't log
+				assert.Equal(t, 0, logs.Len(), "Should not log when UI is disabled")
+			}
+		})
+	}
+}
+
+func TestUI_Progress_UpdateExisting(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled bool
+	}{
+		{
+			name:    "UI enabled",
+			enabled: true,
+		},
+		{
+			name:    "UI disabled",
+			enabled: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ui := New()
+			ui.enabled = tt.enabled
+			// Also set stderrIsTTY to true so output works (captureStderr handles the actual capture)
+			ui.stderrIsTTY = true
+
+			// Start a spinner - capture all output in one go since spinner runs in goroutine
+			output, err := captureStderr(func() {
+				ui.Progress("first message")
+				// Give spinner time to output
+				time.Sleep(150 * time.Millisecond)
+
+				// Update with same message (should update frame, not create new spinner)
+				ui.Progress("first message")
+				time.Sleep(50 * time.Millisecond)
+
+				// Update with different message
+				ui.Progress("second message")
+				time.Sleep(50 * time.Millisecond)
+
+				// Complete
+				ui.ProgressSuccess("done")
+				time.Sleep(50 * time.Millisecond)
+			})
+			require.NoError(t, err)
+
+			if ui.enabled {
+				assert.Contains(t, output, "first message", "Should output first message when enabled")
+				assert.Contains(t, output, "second message", "Should output second message")
+				assert.Contains(t, output, "done", "Should output success message")
+				assert.Contains(t, output, "✓", "Should include checkmark")
+			} else {
+				assert.Empty(t, output, "Should not output when disabled")
+			}
+		})
 	}
 }
