@@ -84,7 +84,7 @@ func createStreamHandler(cfg *config.OrlaConfig) StreamHandler {
 				break
 			}
 
-			fmt.Print(tui.RenderThinking(e.Content))
+			tui.ThinkingMessage(e.Content)
 		case *model.ContentEvent:
 			if inThinking {
 				completeThinking()
@@ -126,8 +126,9 @@ func createStreamHandler(cfg *config.OrlaConfig) StreamHandler {
 			}
 
 			// Show detailed tool call info when enabled
+			// Tool calls are metadata, so they go to stderr (consistent with thinking messages)
 			if len(e.Arguments) == 0 {
-				fmt.Printf("\ntool call received: %s\n", e.Name)
+				fmt.Fprintf(os.Stderr, "\ntool call received: %s\n", e.Name)
 				return nil
 			}
 
@@ -135,7 +136,7 @@ func createStreamHandler(cfg *config.OrlaConfig) StreamHandler {
 			if err != nil {
 				return fmt.Errorf("failed to marshal tool call arguments: %w", err)
 			}
-			fmt.Printf("\ntool call received: %s\nparams: %s\n", e.Name, string(argsJSON))
+			fmt.Fprintf(os.Stderr, "\ntool call received: %s\nparams: %s\n", e.Name, string(argsJSON))
 		default:
 			return fmt.Errorf("unknown stream event type: %T", e)
 		}
@@ -153,6 +154,9 @@ func createStreamHandler(cfg *config.OrlaConfig) StreamHandler {
 // It handles the full flow: config loading, executor creation, context/signal handling, and execution
 // prompt: the agent prompt as a single string (should be quoted when called from CLI)
 func ExecuteAgentPrompt(prompt string, modelOverride string) error {
+	if prompt == "" {
+		return fmt.Errorf("prompt is required")
+	}
 
 	// Load config
 	cfg, configErr := config.LoadConfig("")
@@ -235,9 +239,9 @@ func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 
 	// Print thinking trace if present and enabled (non-streaming)
 	if cfg.ShowThinking && response.Thinking != "" {
-		fmt.Print(tui.RenderThinking("thinking: "))
-		fmt.Print(tui.RenderThinking(response.Thinking))
-		fmt.Print("\n\n")
+		tui.ThinkingMessage("thinking: ")
+		tui.ThinkingMessage(response.Thinking)
+		tui.Info("\n\n")
 	}
 
 	// Print final response content

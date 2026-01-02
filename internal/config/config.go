@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/registry"
 	"github.com/dorcha-inc/orla/internal/state"
 	"github.com/spf13/viper"
@@ -22,6 +23,32 @@ const (
 	DefaultMaxToolCalls = 10
 )
 
+type OrlaLogLevel string
+
+const (
+	OrlaLogLevelDebug OrlaLogLevel = "debug"
+	OrlaLogLevelInfo  OrlaLogLevel = "info"
+	OrlaLogLevelWarn  OrlaLogLevel = "warn"
+	OrlaLogLevelError OrlaLogLevel = "error"
+	OrlaLogLevelFatal OrlaLogLevel = "fatal"
+)
+
+func ValidLogLevels() map[OrlaLogLevel]struct{} {
+	return map[OrlaLogLevel]struct{}{
+		OrlaLogLevelDebug: {},
+		OrlaLogLevelInfo:  {},
+		OrlaLogLevelWarn:  {},
+		OrlaLogLevelError: {},
+		OrlaLogLevelFatal: {},
+	}
+}
+
+func IsValidLogLevel(level OrlaLogLevel) bool {
+	validLogLevels := ValidLogLevels()
+	_, ok := validLogLevels[level]
+	return ok
+}
+
 // OrlaOutputFormat represents the output format for agent mode
 type OrlaOutputFormat string
 
@@ -30,6 +57,38 @@ const (
 	OrlaOutputFormatRich  OrlaOutputFormat = "rich"
 	OrlaOutputFormatPlain OrlaOutputFormat = "plain"
 )
+
+func ValidOutputFormats() map[OrlaOutputFormat]struct{} {
+	return map[OrlaOutputFormat]struct{}{
+		OrlaOutputFormatAuto:  {},
+		OrlaOutputFormatRich:  {},
+		OrlaOutputFormatPlain: {},
+	}
+}
+
+func IsValidOutputFormat(format OrlaOutputFormat) bool {
+	_, ok := ValidOutputFormats()[format]
+	return ok
+}
+
+type OrlaLogFormat string
+
+const (
+	OrlaLogFormatPretty OrlaLogFormat = "pretty"
+	OrlaLogFormatJSON   OrlaLogFormat = "json"
+)
+
+func ValidLogFormats() map[OrlaLogFormat]struct{} {
+	return map[OrlaLogFormat]struct{}{
+		OrlaLogFormatPretty: {},
+		OrlaLogFormatJSON:   {},
+	}
+}
+
+func IsValidLogFormat(format OrlaLogFormat) bool {
+	_, ok := ValidLogFormats()[format]
+	return ok
+}
 
 // OrlaConfig represents the orla configuration, including
 // the tools directory, the port to listen on, the timeout
@@ -41,7 +100,7 @@ type OrlaConfig struct {
 	ToolsRegistry *state.ToolsRegistry `yaml:"tools_registry,omitempty" mapstructure:"tools_registry"` // the tools registry
 	Port          int                  `yaml:"port,omitempty" mapstructure:"port"`                     // the port to listen on
 	Timeout       int                  `yaml:"timeout,omitempty" mapstructure:"timeout"`               // the timeout for tool executions in seconds
-	LogFormat     string               `yaml:"log_format,omitempty" mapstructure:"log_format"`         // the log format, "json" or "pretty"
+	LogFormat     OrlaLogFormat        `yaml:"log_format,omitempty" mapstructure:"log_format"`         // the log format, "pretty" or "json"
 	LogLevel      string               `yaml:"log_level,omitempty" mapstructure:"log_level"`           // the log level, "debug", "info", "warn", "error", "fatal"
 	LogFile       string               `yaml:"log_file,omitempty" mapstructure:"log_file"`             // optional log file path
 
@@ -319,21 +378,18 @@ func postProcessConfig(cfg *OrlaConfig, configFileDir string) error {
 // 1. After LoadConfig() (viper is configured) - can use viper.IsSet() to detect explicit values
 // 2. Directly on structs (viper not configured) - viper.IsSet() may not work, so we apply defaults
 func validateConfig(cfg *OrlaConfig) error {
-	if cfg.Timeout == 0 {
-		cfg.Timeout = 30
-	}
 	if cfg.Port < 0 || cfg.Port > 65535 {
 		return fmt.Errorf("port must be between 0 and 65535, got %d", cfg.Port)
 	}
 	if cfg.Timeout < 1 {
 		return fmt.Errorf("timeout must be at least 1 second, got %d", cfg.Timeout)
 	}
-	if cfg.LogFormat != "" && cfg.LogFormat != "json" && cfg.LogFormat != "pretty" {
-		return fmt.Errorf("log_format must be 'json' or 'pretty', got '%s'", cfg.LogFormat)
+
+	if cfg.LogFormat != "" && !IsValidLogFormat(cfg.LogFormat) {
+		return fmt.Errorf("log_format must be one of: %s, got '%s'", core.JoinMapKeys(ValidLogFormats()), cfg.LogFormat)
 	}
-	validLogLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true, "fatal": true}
-	if cfg.LogLevel != "" && !validLogLevels[cfg.LogLevel] {
-		return fmt.Errorf("log_level must be one of: debug, info, warn, error, fatal, got '%s'", cfg.LogLevel)
+	if cfg.LogLevel != "" && !IsValidLogLevel(OrlaLogLevel(cfg.LogLevel)) {
+		return fmt.Errorf("log_level must be one of: %s, got '%s'", core.JoinMapKeys(ValidLogLevels()), cfg.LogLevel)
 	}
 
 	// Since viper handles defaults, these are values that were explicitly set to empty or zero
@@ -342,25 +398,14 @@ func validateConfig(cfg *OrlaConfig) error {
 		return fmt.Errorf("model cannot be empty (was explicitly set to empty string)")
 	}
 
-	if cfg.MaxToolCalls == 0 {
-		return fmt.Errorf("max_tool_calls cannot be 0 (was explicitly set to 0)")
-	}
-
 	if cfg.MaxToolCalls < 1 {
 		return fmt.Errorf("max_tool_calls must be at least 1, got %d", cfg.MaxToolCalls)
 	}
 
-	if cfg.OutputFormat == "" {
-		return fmt.Errorf("output_format cannot be empty (was explicitly set to empty string)")
+	if !IsValidOutputFormat(cfg.OutputFormat) {
+		return fmt.Errorf("output_format must be one of: %s, got '%s'", core.JoinMapKeys(ValidOutputFormats()), cfg.OutputFormat)
 	}
 
-	validOutputFormats := map[OrlaOutputFormat]bool{
-		OrlaOutputFormatAuto: true, OrlaOutputFormatRich: true, OrlaOutputFormatPlain: true,
-	}
-
-	if !validOutputFormats[cfg.OutputFormat] {
-		return fmt.Errorf("output_format must be one of: auto, rich, plain, got '%s'", cfg.OutputFormat)
-	}
 	return nil
 }
 

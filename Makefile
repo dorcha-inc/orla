@@ -28,7 +28,7 @@ test-e2e: ## Run end-to-end tests for all examples
 .PHONY: coverage
 coverage: ## Generate coverage report (coverage.html, excludes integration tests)
 	@# Tests all packages (excluding integration tests); codecov.yml excludes cmd/ and examples/ in CI/CD
-	go test -coverprofile=coverage.out -covermode=atomic ./...
+	go test -coverprofile=coverage.out -covermode=atomic ./internal/...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 

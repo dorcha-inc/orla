@@ -138,8 +138,7 @@ func TestLoadConfig_EnvironmentVariableOverride(t *testing.T) {
 	defer cleanup()
 
 	// Set environment variable
-	require.NoError(t, os.Setenv("ORLA_PORT", "5000"))
-	defer core.LogDeferredError(func() error { return os.Unsetenv("ORLA_PORT") })
+	t.Setenv("ORLA_PORT", "5000")
 
 	cfg, loadConfigErr := LoadConfig("")
 	require.NoError(t, loadConfigErr)
@@ -222,18 +221,11 @@ func TestGetConfigValue_UnknownKey(t *testing.T) {
 }
 
 func TestGetConfigValue_EnvironmentVariable(t *testing.T) {
-	require.NoError(t, os.Setenv("ORLA_PORT", "7777"))
-	defer core.LogDeferredError(func() error { return os.Unsetenv("ORLA_PORT") })
+	t.Setenv("ORLA_PORT", "7777")
 
 	portVal, err := GetConfigValue("port")
 	require.NoError(t, err)
-	// Environment variables are strings, but Viper may convert them
-	// Accept either string or int
-	if strVal, ok := portVal.Value.(string); ok {
-		assert.Equal(t, "7777", strVal)
-	} else {
-		assert.Equal(t, 7777, portVal.Value)
-	}
+	assert.Equal(t, "7777", portVal.Value)
 	assert.Equal(t, "env", portVal.Source)
 }
 
@@ -357,7 +349,7 @@ func TestValidateConfig(t *testing.T) {
 	cfg.LogFormat = invalidValue
 	err = validateConfig(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "log_format must be 'json' or 'pretty'")
+	assert.Contains(t, err.Error(), "log_format must be one of")
 
 	// Test invalid log level
 	cfg.LogFormat = "json"
@@ -431,8 +423,8 @@ func TestPostProcessConfig_ToolsRegistry(t *testing.T) {
 		ToolsDir: toolPath,
 	}
 
-	// This should rebuild the registry from the tools directory
-	err := cfg.rebuildToolsRegistry()
+	err := postProcessConfig(cfg, "")
+
 	// Should not error
 	require.NoError(t, err)
 	assert.NotNil(t, cfg.ToolsRegistry)
@@ -454,6 +446,50 @@ func TestPostProcessConfig_ToolsRegistry_NoConfigFileDir(t *testing.T) {
 	err := postProcessConfig(cfg, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "config file directory is not set but ToolsRegistry is set")
+}
+
+func TestPostProcessConfig_ToolsRegistry_WithConfigFileDir(t *testing.T) {
+	// Test the success case when ToolsRegistry is set and configFileDir is provided
+	tmpDir := t.TempDir()
+
+	// Create a tool file in the config directory
+	toolPath := filepath.Join(tmpDir, "tool1")
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	require.NoError(t, os.WriteFile(toolPath, []byte("#!/bin/sh\necho test\n"), 0755))
+
+	cfg := &OrlaConfig{
+		ToolsRegistry: &state.ToolsRegistry{
+			Tools: map[string]*core.ToolManifest{
+				"tool1": {
+					Name: "tool1",
+					Path: "tool1", // Relative path should be resolved
+				},
+			},
+		},
+	}
+
+	// configFileDir should be the directory containing the config file, not the file itself
+	configFileDir := tmpDir
+
+	err := postProcessConfig(cfg, configFileDir)
+	require.NoError(t, err)
+
+	// Verify that the relative path was resolved to an absolute path
+	assert.NotNil(t, cfg.ToolsRegistry)
+	assert.NotNil(t, cfg.ToolsRegistry.Tools["tool1"])
+	assert.True(t, filepath.IsAbs(cfg.ToolsRegistry.Tools["tool1"].Path), "Tool path should be resolved to absolute path")
+	assert.Equal(t, toolPath, cfg.ToolsRegistry.Tools["tool1"].Path, "Tool path should be resolved correctly")
+
+	// Let's test when the tool path is empty and the entrypoint is set
+	tools := cfg.ToolsRegistry.Tools
+	tools["tool2"] = &core.ToolManifest{
+		Name:       "tool2",
+		Entrypoint: "tool2",
+	}
+	err = postProcessConfig(cfg, configFileDir)
+	require.NoError(t, err)
+	assert.NotNil(t, cfg.ToolsRegistry)
+	assert.NotNil(t, cfg.ToolsRegistry.Tools["tool2"])
 }
 
 func TestGetUserConfigPath(t *testing.T) {
@@ -529,7 +565,7 @@ dry_run: true
 
 	assert.Equal(t, 9000, cfg.Port)
 	assert.Equal(t, 60, cfg.Timeout)
-	assert.Equal(t, "pretty", cfg.LogFormat)
+	assert.Equal(t, OrlaLogFormatPretty, cfg.LogFormat)
 	assert.Equal(t, "debug", cfg.LogLevel)
 	assert.Equal(t, "openai:gpt-4", cfg.Model)
 	assert.Equal(t, 20, cfg.MaxToolCalls)
@@ -591,8 +627,7 @@ func TestConfigValue_Source(t *testing.T) {
 	defer cleanup()
 
 	// Set environment variable
-	require.NoError(t, os.Setenv("ORLA_TIMEOUT", "99"))
-	defer core.LogDeferredError(func() error { return os.Unsetenv("ORLA_TIMEOUT") })
+	t.Setenv("ORLA_TIMEOUT", "99")
 
 	// Get timeout (should come from env)
 	// Note: environment variables are strings, but Viper converts them to the expected type
@@ -662,7 +697,6 @@ func TestValidateConfig_Defaults(t *testing.T) {
 	cfg := &OrlaConfig{}
 	err := validateConfig(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "model cannot be empty")
 
 	// When called through LoadConfig, Viper applies defaults during Unmarshal,
 	// so empty values only occur if explicitly set in config files (which should error)
@@ -688,6 +722,48 @@ func TestValidateConfig_Defaults(t *testing.T) {
 	assert.Equal(t, DefaultMaxToolCalls, cfg2.MaxToolCalls)
 	assert.Equal(t, OrlaOutputFormatAuto, cfg2.OutputFormat)
 	assert.Equal(t, 9000, cfg2.Port) // Explicitly set value
+}
+
+func TestValidateConfig_BadValues(t *testing.T) {
+	cfg := &OrlaConfig{
+		Port: 70000,
+	}
+
+	err := validateConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "port must be between 0 and 65535")
+
+	cfg = &OrlaConfig{
+		Model:        "test",
+		MaxToolCalls: 10,
+		Timeout:      0,
+		OutputFormat: "auto",
+	}
+
+	err = validateConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timeout must be at least 1 second")
+
+	cfg.Timeout = 30
+	cfg.Model = ""
+
+	err = validateConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "model cannot be empty")
+
+	cfg.Model = "test"
+	cfg.MaxToolCalls = 0
+
+	err = validateConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_tool_calls must be at least 1")
+
+	cfg.MaxToolCalls = 10
+	cfg.OutputFormat = "invalid"
+
+	err = validateConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "output_format must be one of")
 }
 
 func TestConfig_MarshalUnmarshal(t *testing.T) {
@@ -737,7 +813,7 @@ func TestLoadConfig_ExplicitEmptyValues(t *testing.T) {
 	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
 	_, err = LoadConfig("")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "max_tool_calls cannot be 0")
+	assert.Contains(t, err.Error(), "max_tool_calls must be at least 1")
 
 	// Test 3: Missing values (not explicitly set) should use defaults
 	configContent = `port: 9000

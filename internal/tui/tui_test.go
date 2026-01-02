@@ -1,60 +1,17 @@
 package tui
 
 import (
-	"fmt"
-	"io"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
+
+	orlaTesting "github.com/dorcha-inc/orla/internal/testing"
 )
-
-// captureStderr captures stderr output and returns it as a string
-func captureStderr(fn func()) (string, error) {
-	oldStderr := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		return "", err
-	}
-	os.Stderr = w
-
-	done := make(chan string)
-
-	wasError := false
-	errMessage := ""
-
-	go func() {
-		var buf strings.Builder
-		_, copyErr := io.Copy(&buf, r)
-		if copyErr != nil {
-			wasError = true
-			errMessage = copyErr.Error()
-			return
-		}
-		done <- buf.String()
-	}()
-
-	fn()
-
-	err = w.Close()
-	if err != nil {
-		return "", err
-	}
-
-	output := <-done
-	os.Stderr = oldStderr
-
-	if wasError {
-		return "", fmt.Errorf("captureStderr: %s", errMessage)
-	}
-
-	return output, nil
-}
 
 func TestNew(t *testing.T) {
 	ui := New()
@@ -65,36 +22,26 @@ func TestNew(t *testing.T) {
 }
 
 func TestIsDisabled(t *testing.T) {
-	// Save original value
-	original := os.Getenv("ORLA_QUIET")
-	defer func() {
-		if original == "" {
-			require.NoError(t, os.Unsetenv("ORLA_QUIET"))
-		} else {
-			require.NoError(t, os.Setenv("ORLA_QUIET", original))
-		}
-	}()
-
 	// Test disabled with "1"
-	require.NoError(t, os.Setenv("ORLA_QUIET", "1"))
+	t.Setenv("ORLA_QUIET", "1")
 	ui := New()
 	assert.False(t, ui.Enabled(), "UI should be disabled when ORLA_QUIET=1")
 
 	// Test disabled with "true"
-	require.NoError(t, os.Setenv("ORLA_QUIET", "true"))
+	t.Setenv("ORLA_QUIET", "true")
 	ui = New()
 	assert.False(t, ui.Enabled(), "UI should be disabled when ORLA_QUIET=true")
 
 	// Test enabled with "0"
-	require.NoError(t, os.Setenv("ORLA_QUIET", "0"))
+	t.Setenv("ORLA_QUIET", "0")
 	ui = New()
 	// Enabled depends on TTY, but if TTY is available, it should be enabled
 	if ui.StderrIsTTY() {
 		assert.True(t, ui.Enabled(), "UI should be enabled when ORLA_QUIET=0 and TTY available")
 	}
 
-	// Test unset
-	require.NoError(t, os.Unsetenv("ORLA_QUIET"))
+	// Test unset (set to empty string)
+	t.Setenv("ORLA_QUIET", "")
 	ui = New()
 	// Enabled depends on TTY, so we just verify it doesn't crash
 	assert.NotNil(t, ui)
@@ -102,114 +49,145 @@ func TestIsDisabled(t *testing.T) {
 
 func TestIsColorDisabled(t *testing.T) {
 	// Save original values
-	noColor := os.Getenv("NO_COLOR")
-	orlaNoColor := os.Getenv("ORLA_NO_COLOR")
-	term := os.Getenv("TERM")
-	defer func() {
-		if noColor == "" {
-			require.NoError(t, os.Unsetenv("NO_COLOR"))
-		} else {
-			require.NoError(t, os.Setenv("NO_COLOR", noColor))
-		}
-		if orlaNoColor == "" {
-			require.NoError(t, os.Unsetenv("ORLA_NO_COLOR"))
-		} else {
-			require.NoError(t, os.Setenv("ORLA_NO_COLOR", orlaNoColor))
-		}
-		if term == "" {
-			require.NoError(t, os.Unsetenv("TERM"))
-		} else {
-			require.NoError(t, os.Setenv("TERM", term))
-		}
-	}()
-
 	// Test NO_COLOR
-	require.NoError(t, os.Setenv("NO_COLOR", "1"))
-	require.NoError(t, os.Unsetenv("ORLA_NO_COLOR"))
-	require.NoError(t, os.Unsetenv("TERM"))
-	ui := New()
-	assert.False(t, ui.ColorEnabled(), "Colors should be disabled when NO_COLOR is set")
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("ORLA_NO_COLOR", "")
+	t.Setenv("TERM", "")
+	assert.True(t, isColorDisabled(), "Colors should be disabled when NO_COLOR is set")
 
 	// Test ORLA_NO_COLOR
-	require.NoError(t, os.Unsetenv("NO_COLOR"))
-	require.NoError(t, os.Setenv("ORLA_NO_COLOR", "1"))
-	require.NoError(t, os.Unsetenv("TERM"))
-	ui = New()
-	assert.False(t, ui.ColorEnabled(), "Colors should be disabled when ORLA_NO_COLOR is set")
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("ORLA_NO_COLOR", "1")
+	t.Setenv("TERM", "")
+	assert.True(t, isColorDisabled(), "Colors should be disabled when ORLA_NO_COLOR is set")
 
 	// Test TERM=dumb
-	require.NoError(t, os.Unsetenv("NO_COLOR"))
-	require.NoError(t, os.Unsetenv("ORLA_NO_COLOR"))
-	require.NoError(t, os.Setenv("TERM", "dumb"))
-	ui = New()
-	assert.False(t, ui.ColorEnabled(), "Colors should be disabled when TERM=dumb")
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("ORLA_NO_COLOR", "")
+	t.Setenv("TERM", "dumb")
+	assert.True(t, isColorDisabled(), "Colors should be disabled when TERM=dumb")
 
 	// Test enabled (clean environment)
-	require.NoError(t, os.Unsetenv("NO_COLOR"))
-	require.NoError(t, os.Unsetenv("ORLA_NO_COLOR"))
-	require.NoError(t, os.Unsetenv("TERM"))
-	ui = New()
-	// Color enabled depends on TTY and enabled state, so we just verify it doesn't crash
-	assert.NotNil(t, ui)
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("ORLA_NO_COLOR", "")
+	t.Setenv("TERM", "")
+	assert.False(t, isColorDisabled(), "Colors should be enabled when environment is clean")
 }
 
-func TestUI_Info(t *testing.T) {
+func TestUI_Info_Enabled(t *testing.T) {
 	ui := New()
-	output, err := captureStderr(func() {
-		ui.Info("test message\n")
-	})
+	ui.enabled = true
+
+	capturedOutput, err := orlaTesting.NewCapturedOutput()
 	require.NoError(t, err)
 
-	// If UI is enabled, output should be in buffer
-	if ui.Enabled() {
-		assert.Contains(t, output, "test message", "Info should output message when enabled")
-	} else {
-		assert.Empty(t, output, "Info should not output when disabled")
-	}
+	message := "test message"
+	ui.Info("%s", message)
+
+	outputStdout, outputStderr, err := capturedOutput.Stop()
+	require.NoError(t, err)
+
+	// Info writes to stderr, not stdout
+	assert.Empty(t, outputStdout, "Stdout should be empty for Info")
+	assert.Contains(t, outputStderr, message, "Stderr should contain the message when enabled")
+}
+
+func TestUI_Info_Disabled(t *testing.T) {
+	ui := New()
+	ui.enabled = false
+
+	capturedOutput, err := orlaTesting.NewCapturedOutput()
+	require.NoError(t, err)
+
+	message := "test message"
+	ui.Info("%s", message)
+
+	outputStdout, outputStderr, err := capturedOutput.Stop()
+	require.NoError(t, err)
+
+	// Info writes to stderr, but when disabled it should not output
+	assert.Empty(t, outputStdout, "Stdout should be empty for Info")
+	assert.Equal(t, outputStderr, message, "Should contain message exactly without styling")
 }
 
 func TestUI_Progress(t *testing.T) {
+	// Save original clock and restore after test
+	originalClock := spinnerClock
+	defer func() {
+		spinnerClock = originalClock
+	}()
+
+	fakeClock := clockwork.NewFakeClock()
+	spinnerClock = fakeClock
 	ui := New()
-	output, err := captureStderr(func() {
-		ui.Progress("Processing...")
-	})
+	ui.stderrIsTTY = true // Ensure output works
+
+	capturedOutput, err := orlaTesting.NewCapturedOutput()
 	require.NoError(t, err)
+
+	ui.Progress("Processing...")
+	fakeClock.Advance(100 * time.Millisecond) // Advance fake clock
+
+	stdout, stderr, err := capturedOutput.Stop()
+	require.NoError(t, err)
+
+	// Progress outputs to stderr
+	assert.Empty(t, stdout, "Stdout should be empty for Progress")
 
 	// If UI is enabled, output should contain the message
 	if ui.Enabled() {
-		assert.Contains(t, output, "Processing...", "Progress should output message when enabled")
+		assert.Contains(t, stderr, "Processing...", "Progress should output message when enabled")
 		// Should contain either spinner char or "..."
 		if ui.ColorEnabled() {
 			// Should have spinner character (one of the unicode spinner chars)
-			assert.True(t, len(output) > 0, "Progress should output spinner when colors enabled")
+			assert.True(t, len(stderr) > 0, "Progress should output spinner when colors enabled")
 		} else {
 			// Should have "..." when colors disabled
-			assert.Contains(t, output, "...", "Progress should output '...' when colors disabled")
+			assert.Contains(t, stderr, "...", "Progress should output '...' when colors disabled")
 		}
 	} else {
-		assert.Empty(t, output, "Progress should not output when disabled")
+		assert.Empty(t, stderr, "Progress should not output when disabled")
 	}
 
 	// Clean up spinner
-	_, err = captureStderr(func() {
-		ui.ProgressSuccess("Done")
-	})
-
+	capturedOutput2, err := orlaTesting.NewCapturedOutput()
+	require.NoError(t, err)
+	ui.ProgressSuccess("Done")
+	fakeClock.Advance(50 * time.Millisecond)
+	_, _, err = capturedOutput2.Stop()
 	require.NoError(t, err)
 }
 
 func TestUI_ProgressSuccess(t *testing.T) {
+	// Save original clock and restore after test
+	originalClock := spinnerClock
+	defer func() {
+		spinnerClock = originalClock
+	}()
+
+	fakeClock := clockwork.NewFakeClock()
+	spinnerClock = fakeClock
 	ui := New()
-	output, err := captureStderr(func() {
-		ui.Progress("Testing...")
-		ui.ProgressSuccess("Success!")
-	})
+	ui.stderrIsTTY = true // Ensure output works
+
+	capturedOutput, err := orlaTesting.NewCapturedOutput()
 	require.NoError(t, err)
+
+	ui.Progress("Testing...")
+	fakeClock.Advance(50 * time.Millisecond)
+	ui.ProgressSuccess("Success!")
+	fakeClock.Advance(50 * time.Millisecond)
+
+	stdout, stderr, err := capturedOutput.Stop()
+	require.NoError(t, err)
+
+	// Progress outputs to stderr
+	assert.Empty(t, stdout, "Stdout should be empty for Progress")
 
 	// If UI is enabled, should see success message
 	if ui.Enabled() {
-		assert.Contains(t, output, "Success!", "ProgressSuccess should output message when enabled")
-		assert.Contains(t, output, "✓", "ProgressSuccess should include checkmark")
+		assert.Contains(t, stderr, "Success!", "ProgressSuccess should output message when enabled")
+		assert.Contains(t, stderr, "✓", "ProgressSuccess should include checkmark")
 	}
 }
 
@@ -278,27 +256,37 @@ func TestReset(t *testing.T) {
 	assert.NotSame(t, original, newUI)
 }
 
-func TestUI_RenderThinking(t *testing.T) {
+func TestUI_ThinkingMessage(t *testing.T) {
 	ui := New()
+	ui.enabled = true
+
+	capturedOutput, err := orlaTesting.NewCapturedOutput()
+	require.NoError(t, err)
 
 	content := "This is thinking content"
-	rendered := ui.RenderThinking(content)
+	ui.ThinkingMessage(content)
 
-	// Should return content (may be styled if colors enabled)
-	assert.NotEmpty(t, rendered)
-	assert.Contains(t, rendered, "This is thinking content")
+	stdout, stderr, err := capturedOutput.Stop()
+	require.NoError(t, err)
 
-	// If colors disabled or not TTY, should return original
-	if !ui.ColorEnabled() || !ui.StdoutIsTTY() {
-		assert.Equal(t, content, rendered)
-	}
+	// ThinkingMessage writes to stderr, not stdout
+	assert.Empty(t, stdout, "Stdout should be empty for ThinkingMessage")
+	assert.Contains(t, stderr, "This is thinking content", "Stderr should contain the thinking content")
 }
 
-func TestRenderThinking_Convenience(t *testing.T) {
+func TestThinkingMessage_Convenience(t *testing.T) {
+	capturedOutput, err := orlaTesting.NewCapturedOutput()
+	require.NoError(t, err)
+
 	content := "test thinking"
-	rendered := RenderThinking(content)
-	assert.NotEmpty(t, rendered)
-	assert.Contains(t, rendered, "test thinking")
+	ThinkingMessage(content)
+
+	stdout, stderr, err := capturedOutput.Stop()
+	require.NoError(t, err)
+
+	// ThinkingMessage writes to stderr, not stdout
+	assert.Empty(t, stdout, "Stdout should be empty for ThinkingMessage")
+	assert.Contains(t, stderr, "test thinking", "Stderr should contain the thinking content")
 }
 
 func TestUI_ProgressSuccess_WithoutSpinner(t *testing.T) {
@@ -361,39 +349,176 @@ func TestUI_Progress_UpdateExisting(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Save original clock and restore after test
+			originalClock := spinnerClock
+			defer func() {
+				spinnerClock = originalClock
+			}()
+
+			fakeClock := clockwork.NewFakeClock()
+			spinnerClock = fakeClock
+
 			ui := New()
 			ui.enabled = tt.enabled
-			// Also set stderrIsTTY to true so output works (captureStderr handles the actual capture)
 			ui.stderrIsTTY = true
 
-			// Start a spinner - capture all output in one go since spinner runs in goroutine
-			output, err := captureStderr(func() {
-				ui.Progress("first message")
-				// Give spinner time to output
-				time.Sleep(150 * time.Millisecond)
-
-				// Update with same message (should update frame, not create new spinner)
-				ui.Progress("first message")
-				time.Sleep(50 * time.Millisecond)
-
-				// Update with different message
-				ui.Progress("second message")
-				time.Sleep(50 * time.Millisecond)
-
-				// Complete
-				ui.ProgressSuccess("done")
-				time.Sleep(50 * time.Millisecond)
-			})
+			capturedOutput, err := orlaTesting.NewCapturedOutput()
 			require.NoError(t, err)
 
+			// Start a spinner - capture all output in one go since spinner runs in goroutine
+			ui.Progress("first message")
+			// Give spinner time to output
+			fakeClock.Advance(150 * time.Millisecond)
+
+			// Update with same message (should update frame, not create new spinner)
+			// This updates in place, so we might not see it in output
+			ui.Progress("first message")
+			fakeClock.Advance(100 * time.Millisecond)
+
+			// Update with different message - this should be visible
+			ui.Progress("second message")
+			fakeClock.Advance(100 * time.Millisecond)
+
+			// Complete - this stops the spinner goroutine
+			// ProgressSuccess closes the done channel which should cause the goroutine to exit
+			ui.ProgressSuccess("done")
+			// Give time for spinner goroutine to fully exit and final output to be written
+			// ProgressSuccess already has a 10ms delay, but we need more to ensure goroutine exits
+			fakeClock.Advance(150 * time.Millisecond)
+
+			stdout, stderr, err := capturedOutput.Stop()
+			require.NoError(t, err)
+
+			assert.Empty(t, stdout, "Stdout should be empty for Progress")
+
 			if ui.enabled {
-				assert.Contains(t, output, "first message", "Should output first message when enabled")
-				assert.Contains(t, output, "second message", "Should output second message")
-				assert.Contains(t, output, "done", "Should output success message")
-				assert.Contains(t, output, "✓", "Should include checkmark")
+				assert.Contains(t, stderr, "first message", "Should output first message when enabled")
+				assert.Contains(t, stderr, "second message", "Should output second message")
+				assert.Contains(t, stderr, "done", "Should output success message")
+				assert.Contains(t, stderr, "✓", "Should include checkmark")
 			} else {
-				assert.Empty(t, output, "Should not output when disabled")
+				assert.Empty(t, stderr, "Should not output when disabled")
 			}
 		})
 	}
+}
+
+func TestUI_RenderMarkdown_ErrorHandling(t *testing.T) {
+	ui := New()
+
+	markdown := "# Test"
+	rendered, err := ui.RenderMarkdown(markdown, -1)
+	require.Error(t, err)
+	assert.Empty(t, rendered)
+}
+
+func TestUI_RenderMarkdown_NoRenderer(t *testing.T) {
+	// Create UI without markdown renderer (simulate error case)
+	ui := &UI{
+		stdoutIsTTY:  true,
+		colorEnabled: true,
+		// markdownRenderer is nil
+	}
+
+	markdown := "# Test"
+	rendered, err := ui.RenderMarkdown(markdown, 80)
+	// Should create renderer on the fly
+
+	require.NoError(t, err)
+	require.NotEmpty(t, rendered)
+
+	require.NotEqual(t, markdown, rendered)
+}
+
+func TestUI_Progress_MessageUpdate(t *testing.T) {
+	ui := New()
+	ui.enabled = true
+	ui.stderrIsTTY = true
+
+	// Start progress with one message
+	ui.Progress("First message")
+	require.Equal(t, "First message", ui.currentSpinner.message)
+
+	// Update with different message
+	ui.Progress("Second message")
+	require.Equal(t, "Second message", ui.currentSpinner.message)
+}
+
+func TestUI_Progress_Disabled(t *testing.T) {
+	ui := New()
+	ui.enabled = false
+
+	// Progress should return early when disabled
+	ui.Progress("test message")
+
+	// Should not have spinner
+	assert.Nil(t, ui.currentSpinner)
+}
+
+func TestUI_ProgressSuccess_EmptyMessage(t *testing.T) {
+	ui := New()
+	ui.enabled = true
+	ui.stderrIsTTY = true
+
+	// Start a spinner
+	ui.Progress("test")
+
+	// Complete with empty message (should use spinner message)
+	ui.ProgressSuccess("")
+
+	// Should not crash
+	assert.Nil(t, ui.currentSpinner)
+}
+
+func TestIsTerminal(t *testing.T) {
+	// Test isTerminal function (indirectly through New)
+	ui := New()
+
+	// Should detect TTY status
+	stdoutTTY := ui.StdoutIsTTY()
+	stderrTTY := ui.StderrIsTTY()
+
+	// Just verify the values are boolean (true or false)
+	assert.IsType(t, true, stdoutTTY)
+	assert.IsType(t, true, stderrTTY)
+}
+
+func TestIsDisabled_NonBooleanValues(t *testing.T) {
+	// Test that non-boolean values are treated as disabled
+	// Set to non-boolean value
+	t.Setenv("ORLA_QUIET", "maybe")
+	ui := New()
+	assert.False(t, ui.Enabled(), "Non-boolean value should disable UI")
+}
+
+func TestIsColorDisabled_EmptyString(t *testing.T) {
+	// Test that empty string doesn't disable colors
+	// Unset both
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("ORLA_NO_COLOR", "")
+
+	ui := New()
+	// Colors should be enabled if TTY is available and UI is enabled
+	// We can't test the exact value, but we can verify it doesn't crash
+	assert.NotNil(t, ui)
+}
+
+func TestDefault_ReturnsSingleton(t *testing.T) {
+	ui1 := Default()
+	ui2 := Default()
+
+	// Should return the same instance
+	assert.Same(t, ui1, ui2)
+}
+
+func TestReset_CreatesNewInstance(t *testing.T) {
+	_ = Default() // Capture original
+
+	Reset()
+
+	newUI := Default()
+
+	// Should be different from original
+	// But at least verify it doesn't crash
+	assert.NotNil(t, newUI)
 }

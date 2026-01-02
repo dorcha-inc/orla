@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -34,16 +33,7 @@ func TestNewOllamaProvider(t *testing.T) {
 
 func TestNewOllamaProvider_WithEnvVar(t *testing.T) {
 	// Set environment variable
-	originalValue := os.Getenv("OLLAMA_HOST")
-	defer func() {
-		if originalValue != "" {
-			require.NoError(t, os.Setenv("OLLAMA_HOST", originalValue))
-			return
-		}
-		require.NoError(t, os.Unsetenv("OLLAMA_HOST"))
-	}()
-
-	require.NoError(t, os.Setenv("OLLAMA_HOST", "http://custom:11434"))
+	t.Setenv("OLLAMA_HOST", "http://custom:11434")
 	cfg := &config.OrlaConfig{}
 	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)

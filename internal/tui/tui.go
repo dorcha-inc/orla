@@ -36,6 +36,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/jonboulle/clockwork"
 	"go.uber.org/zap"
 	"golang.org/x/term"
 )
@@ -65,14 +66,15 @@ type UI struct {
 
 type spinnerState struct {
 	started time.Time
-	ticker  *time.Ticker
+	ticker  clockwork.Ticker
 	message string
 	done    chan struct{}
 }
 
 var (
 	// defaultUI is the default UI instance
-	defaultUI *UI
+	defaultUI    *UI
+	spinnerClock clockwork.Clock = clockwork.NewRealClock()
 
 	// Style definitions using ansi package
 	successStyle  = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
@@ -185,7 +187,7 @@ func (u *UI) Progress(message string) {
 	}
 
 	// If spinner already exists with same message, just update the frame
-	if u.currentSpinner != nil {
+	if u.currentSpinner != nil && u.currentSpinner.message == message {
 		// Update spinner frame
 		elapsed := time.Since(u.currentSpinner.started)
 		frame := int(elapsed/spinner.Line.FPS) % len(spinner.Line.Frames)
@@ -209,14 +211,14 @@ func (u *UI) Progress(message string) {
 		started: time.Now(),
 		message: message,
 		done:    make(chan struct{}),
-		ticker:  time.NewTicker(100 * time.Millisecond),
+		ticker:  spinnerClock.NewTicker(100 * time.Millisecond),
 	}
 
 	// Start animation goroutine
 	go func() {
 		for {
 			select {
-			case <-u.currentSpinner.ticker.C:
+			case <-u.currentSpinner.ticker.Chan():
 				elapsed := time.Since(u.currentSpinner.started)
 				frame := int(elapsed/spinner.Line.FPS) % len(spinner.Line.Frames)
 				spinnerChar := spinner.Line.Frames[frame]
@@ -282,9 +284,11 @@ func (u *UI) ProgressSuccess(message string) {
 	}
 }
 
-// Info prints an informational message to stderr (only if UI is enabled)
+// Info prints an informational message to stderr
+// Writes to stderr even when not a TTY (e.g., when piping output)
+// Respects ORLA_QUIET environment variable
 func (u *UI) Info(format string, args ...any) {
-	if !u.enabled {
+	if isDisabled() {
 		return
 	}
 	fmt.Fprintf(os.Stderr, format, args...)
@@ -293,6 +297,10 @@ func (u *UI) Info(format string, args ...any) {
 // RenderMarkdown renders markdown content using glamour (perfect for model output!)
 // Returns plain text if not in TTY or if rendering fails
 func (u *UI) RenderMarkdown(content string, width int) (string, error) {
+	if width <= 0 {
+		return "", fmt.Errorf("width must be greater than 0")
+	}
+
 	// If not a TTY or colors disabled, return plain text
 	if !u.stdoutIsTTY || !u.colorEnabled {
 		return content, nil
@@ -314,13 +322,17 @@ func (u *UI) RenderMarkdown(content string, width int) (string, error) {
 	return renderer.Render(content)
 }
 
-// RenderThinking renders thinking trace content with a distinct style
-// Returns styled text if colors are enabled, otherwise returns plain text
-func (u *UI) RenderThinking(content string) string {
-	if !u.colorEnabled || !u.stdoutIsTTY {
-		return content
+// ThinkingMessage renders thinking trace content with a distinct style to stderr
+func (u *UI) ThinkingMessage(content string) {
+	if !u.enabled || !u.colorEnabled || !u.stderrIsTTY {
+		// Plain text output when colors disabled or not a TTY
+		fmt.Fprint(os.Stderr, content)
+		return
 	}
-	return thinkingStyle.Render(content)
+
+	// Styled output when colors are enabled
+	styledContent := thinkingStyle.Render(content)
+	fmt.Fprint(os.Stderr, styledContent)
 }
 
 // Default returns the default UI instance
@@ -355,7 +367,7 @@ func RenderMarkdown(content string, width int) (string, error) {
 	return defaultUI.RenderMarkdown(content, width)
 }
 
-// RenderThinking renders thinking trace content using the default UI
-func RenderThinking(content string) string {
-	return defaultUI.RenderThinking(content)
+// ThinkingMessage renders thinking trace content using the default UI
+func ThinkingMessage(content string) {
+	defaultUI.ThinkingMessage(content)
 }
