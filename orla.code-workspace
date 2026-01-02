@@ -23,6 +23,11 @@
 		"go.coverOnSingleTest": true,
 		"go.coverOnTestPackage": true,
 		"go.toolsManagement.checkForUpdates": "local",
+		"gopls": {
+			"buildFlags": [
+				"-tags=integration"
+			]
+		},
 		"files.associations": {
 			"*.mod": "go.mod",
 			"*.sum": "go.sum"

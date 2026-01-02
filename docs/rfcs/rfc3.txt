@@ -394,21 +394,31 @@ Table of Contents
    4. Clone the tool repository at the specified tag
    5. Read version from tool.yaml manifest
    6. Validate that git tag matches tool.yaml version
-   7. Install to ~/.orla/tools/TOOL-NAME/VERSION/ (using version from tool.yaml)
-   8. Register with Orla runtime
-   9. Optionally run post-install hooks
+   7. Determine installation directory (see 7.2)
+   8. Install to TOOLS_DIR/TOOL-NAME/VERSION/ (using version from tool.yaml)
+   9. Register with Orla runtime
+   10. Optionally run post-install hooks
 
 7.2. Installation Directory
 
-   Tools MUST be installed to:
+   Tools MUST be installed using project-local installation when possible,
+   similar to Python's `uv`/`uvx` behavior:
 
-      ~/.orla/tools/TOOL-NAME/VERSION/
+   - If an `orla.yaml` config file exists in the current working directory
+     (or any parent directory), tools MUST be installed to the `tools_dir`
+     specified in that config (default: `./tools`).
 
-   This structure enables:
+   - If no `orla.yaml` config file is found, tools MUST be installed to the
+     global directory: `~/.orla/tools/TOOL-NAME/VERSION/`
 
+   This enables:
+
+   - Project-local tool management (tools are part of the project)
    - Multiple versions per tool
    - Clean uninstallation
    - Version switching
+   - Isolation between projects (each project can have its own tool versions)
+   - Global tools for ad-hoc usage outside of projects
 
 7.3. Version Resolution
 
@@ -466,7 +476,11 @@ Table of Contents
 
    Orla MUST discover installed tools by scanning:
 
-      ~/.orla/tools/*/VERSION/
+   - Project-local tools: `tools_dir/TOOL-NAME/VERSION/` (from orla.yaml config)
+   - Global tools: `~/.orla/tools/TOOL-NAME/VERSION/` (when no project config exists)
+
+   When both project-local and global tools exist, project-local tools take
+   precedence for tool name resolution.
 
    For each installed tool, Orla MUST:
 
@@ -581,7 +595,8 @@ Table of Contents
    maintaining full backward compatibility with RFC 1:
 
    - RFC 1 (Directory Discovery): Continues to work.  Installed tools
-     are placed in a directory that RFC 1 can discover.
+     are placed in the project's tools_dir (from orla.yaml) or globally,
+     and RFC 1 can discover them alongside directory-scanned tools.
 
    - RFC 3 (Package System): Provides distribution and installation
      mechanism.  Installed tools use RFC 1 simple execution by default,
@@ -589,7 +604,8 @@ Table of Contents
 
    The two RFCs work together:
 
-      RFC 3: Install tool → ~/.orla/tools/fs/0.1.0/
+      RFC 3: Install tool → ./tools/fs/0.1.0/ (if orla.yaml exists)
+                              or ~/.orla/tools/fs/0.1.0/ (global)
       tool.yaml: runtime.mode = "simple" -> Use RFC 1 execution
       tool.yaml: runtime.mode = "capsule" -> Use lifecycle management
 

@@ -176,7 +176,9 @@ func TestCloneToolRepository_InvalidTag(t *testing.T) {
 
 func TestInstallTool_InvalidRegistry(t *testing.T) {
 	// Test with invalid registry URL
-	err := InstallTool("not-a-valid-url", "test-tool", "v1.0.0", &bytes.Buffer{})
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	err := InstallTool("not-a-valid-url", "test-tool", "v1.0.0", toolsDir, &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to fetch registry")
 }
@@ -293,18 +295,9 @@ func TestInstallTool_Success(t *testing.T) {
 		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
 	}()
 
-	// Mock GetInstalledToolsDir
-	installDir := filepath.Join(tmpDir, "tools")
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return installDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
-
 	// Test InstallTool - should log success
-	errInstallTool := InstallTool(exampleRegistryURL, "test-tool", "v1.0.0", &bytes.Buffer{})
+	installDir := filepath.Join(tmpDir, "tools")
+	errInstallTool := InstallTool(exampleRegistryURL, "test-tool", "v1.0.0", installDir, &bytes.Buffer{})
 	require.NoError(t, errInstallTool)
 
 	// Verify logging
@@ -380,8 +373,13 @@ func TestInstallTool_ToolNotFound(t *testing.T) {
 		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
 	}()
 
+	// Create tools directory
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
 	// Test InstallTool with non-existent tool (no suggestion since distance > 2)
-	err = InstallTool(exampleRegistryURL, "xyz-tool", "v1.0.0", &bytes.Buffer{})
+	err = InstallTool(exampleRegistryURL, "xyz-tool", "v1.0.0", toolsDir, &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 	assert.NotContains(t, err.Error(), "Did you mean")
@@ -425,8 +423,8 @@ func TestInstallTool_ToolNotFoundWithSuggestion(t *testing.T) {
 	mockRunner := &registry.MockGitRunner{
 		CloneFunc: func(url, targetPath string) error {
 			// #nosec G301 -- test directory permissions are acceptable for temporary test files
-			if err := os.MkdirAll(targetPath, 0755); err != nil {
-				return err
+			if mkdirErr := os.MkdirAll(targetPath, 0755); mkdirErr != nil {
+				return mkdirErr
 			}
 			// #nosec G306 -- test file permissions are acceptable for temporary test files
 			return os.WriteFile(filepath.Join(targetPath, "registry.yaml"), data, 0644)
@@ -445,8 +443,13 @@ func TestInstallTool_ToolNotFoundWithSuggestion(t *testing.T) {
 		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
 	}()
 
+	// Create tools directory
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
 	// Test InstallTool with typo - should suggest similar tool
-	err = InstallTool(exampleRegistryURL, "fs-tol", "v1.0.0", &bytes.Buffer{})
+	err = InstallTool(exampleRegistryURL, "fs-tol", "v1.0.0", toolsDir, &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Did you mean")
 	assert.Contains(t, err.Error(), "fs-tool")
@@ -514,8 +517,13 @@ func TestInstallTool_VersionNotFound(t *testing.T) {
 		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
 	}()
 
+	// Create tools directory
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
 	// Test InstallTool with non-existent tag
-	err = InstallTool(exampleRegistryURL, "test-tool", "v99.0.0", &bytes.Buffer{})
+	err = InstallTool(exampleRegistryURL, "test-tool", "v99.0.0", toolsDir, &bytes.Buffer{})
 	assert.Error(t, err)
 	// Tag validation passes, but clone will fail since tag doesn't exist
 	assert.True(t, strings.Contains(err.Error(), "failed to clone") || strings.Contains(err.Error(), "not found"))
@@ -612,8 +620,13 @@ func TestInstallTool_LoadManifestError(t *testing.T) {
 		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
 	}()
 
+	// Create tools directory
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
 	// Test InstallTool - should fail when loading manifest (tool.yaml doesn't exist)
-	err = InstallTool(exampleRegistryURL, "test-tool", "v1.0.0", &bytes.Buffer{})
+	err = InstallTool(exampleRegistryURL, "test-tool", "v1.0.0", toolsDir, &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load manifest")
 }
@@ -737,8 +750,13 @@ entrypoint: bin/tool
 		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
 	}()
 
+	// Create tools directory
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
 	// Test InstallTool - should fail when validating manifest (missing description)
-	err = InstallTool(registryURL, "test-tool", "v1.0.0", &bytes.Buffer{})
+	err = InstallTool(registryURL, "test-tool", "v1.0.0", toolsDir, &bytes.Buffer{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "manifest validation failed")
 }
@@ -842,11 +860,17 @@ tools:
 	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com", "GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com")
 	require.NoError(t, cmd.Run())
 
+	// Create tools directory
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(toolsDir, 0755))
+
 	// Test InstallTool with the mock registry
 	// Note: This test requires the registry to be accessible via file:// URL
 	// On some systems, file:// URLs might not work with git clone, so we'll skip if it fails
 	var buf bytes.Buffer
-	err := InstallTool(registryDir, "test-tool", "1.0.0", &buf)
+	err := InstallTool(registryDir, "test-tool", "1.0.0", toolsDir, &buf)
 	if err != nil {
 		// If it fails due to git clone issues with file:// URLs, that's okay for unit tests
 		// This would be better as an integration test
@@ -858,12 +882,10 @@ tools:
 
 	// If successful, verify installation
 	if err == nil {
-		installBaseDir, err := registry.GetInstalledToolsDir()
-		require.NoError(t, err)
-		installDir := filepath.Join(installBaseDir, "test-tool", "1.0.0")
-		_, err = os.Stat(filepath.Join(installDir, "tool.yaml"))
+		expectedInstallDir := filepath.Join(toolsDir, "test-tool", "1.0.0")
+		_, err = os.Stat(filepath.Join(expectedInstallDir, "tool.yaml"))
 		assert.NoError(t, err)
-		_, err = os.Stat(filepath.Join(installDir, "bin", "tool"))
+		_, err = os.Stat(filepath.Join(expectedInstallDir, "bin", "tool"))
 		assert.NoError(t, err)
 	}
 }
@@ -871,13 +893,6 @@ tools:
 func TestListInstalledTools(t *testing.T) {
 	// Create a temporary install directory
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
 
 	// Create tool structure: TOOL-NAME/VERSION/tool.yaml
 	tool1Dir := filepath.Join(tmpDir, "tool1", "1.0.0")
@@ -928,7 +943,7 @@ func TestListInstalledTools(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tool2Dir, ToolManifestFileName), manifestData3, 0644))
 
 	// List installed tools
-	tools, err := ListInstalledTools()
+	tools, err := ListInstalledTools(tmpDir)
 	require.NoError(t, err)
 	assert.Len(t, tools, 3)
 
@@ -950,28 +965,14 @@ func TestListInstalledTools(t *testing.T) {
 
 func TestListInstalledTools_EmptyDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
 
-	tools, err := ListInstalledTools()
+	tools, err := ListInstalledTools(tmpDir)
 	require.NoError(t, err)
 	assert.Empty(t, tools)
 }
 
 func TestUninstallTool(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
 
 	// Create tool directory structure
 	toolDir := filepath.Join(tmpDir, "test-tool", "1.0.0")
@@ -985,7 +986,7 @@ func TestUninstallTool(t *testing.T) {
 	require.NoError(t, err)
 
 	// Uninstall tool
-	err = UninstallTool("test-tool")
+	err = UninstallTool("test-tool", tmpDir)
 	require.NoError(t, err)
 
 	// Verify tool directory is removed
@@ -995,15 +996,8 @@ func TestUninstallTool(t *testing.T) {
 
 func TestUninstallTool_NotInstalled(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
 
-	err := UninstallTool("nonexistent-tool")
+	err := UninstallTool("nonexistent-tool", tmpDir)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not installed")
 }
@@ -1123,17 +1117,8 @@ func TestUpdateTool(t *testing.T) {
 		*registry.GetRegistryCacheDirFunc = originalGetCacheDir
 	}()
 
-	// Mock GetInstalledToolsDir
-	installDir := filepath.Join(tmpDir, "tools")
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return installDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
-
 	// First, install version 1.0.0
+	installDir := filepath.Join(tmpDir, "tools")
 	// Create initial tool installation
 	tool1Dir := filepath.Join(installDir, "test-tool", "1.0.0")
 	// #nosec G301 -- test directory permissions are acceptable for temporary test files
@@ -1156,7 +1141,7 @@ func TestUpdateTool(t *testing.T) {
 
 	// Update tool to latest version
 	var buf bytes.Buffer
-	err = UpdateTool(exampleRegistryURL, "test-tool", &buf)
+	err = UpdateTool(exampleRegistryURL, "test-tool", installDir, &buf)
 	require.NoError(t, err)
 
 	// Verify new version is installed
@@ -1171,16 +1156,12 @@ func TestUpdateTool(t *testing.T) {
 
 func TestUpdateTool_NotInstalled(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return tmpDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
+	installDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(installDir, 0755))
 
 	var buf bytes.Buffer
-	err := UpdateTool(exampleRegistryURL, "nonexistent-tool", &buf)
+	err := UpdateTool(exampleRegistryURL, "nonexistent-tool", installDir, &buf)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not installed")
 }
@@ -1189,14 +1170,6 @@ func TestInstallLocalTool(t *testing.T) {
 	// Set up temporary directories
 	localToolDir := t.TempDir()
 	installDir := t.TempDir()
-
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return installDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
 
 	// Create tool.yaml manifest
 	manifest := &core.ToolManifest{
@@ -1220,7 +1193,7 @@ func TestInstallLocalTool(t *testing.T) {
 
 	// Install local tool
 	var buf bytes.Buffer
-	err = InstallLocalTool(localToolDir, &buf)
+	err = InstallLocalTool(localToolDir, installDir, &buf)
 	require.NoError(t, err)
 
 	// Verify tool was installed
@@ -1242,17 +1215,10 @@ func TestInstallLocalTool(t *testing.T) {
 
 func TestInstallLocalTool_ErrorCases(t *testing.T) {
 	installDir := t.TempDir()
-	originalGetInstalledToolsDir := registry.GetInstalledToolsDirFunc
-	registry.GetInstalledToolsDirFunc = func() (string, error) {
-		return installDir, nil
-	}
-	defer func() {
-		registry.GetInstalledToolsDirFunc = originalGetInstalledToolsDir
-	}()
 
 	// Test: local path doesn't exist
 	var buf bytes.Buffer
-	err := InstallLocalTool("/nonexistent/path", &buf)
+	err := InstallLocalTool("/nonexistent/path", installDir, &buf)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "does not exist")
 
@@ -1260,13 +1226,13 @@ func TestInstallLocalTool_ErrorCases(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "not-a-dir")
 	// #nosec G306 -- test file permissions are acceptable for temporary test files
 	require.NoError(t, os.WriteFile(filePath, []byte("not a directory"), 0644))
-	err = InstallLocalTool(filePath, &buf)
+	err = InstallLocalTool(filePath, installDir, &buf)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "must be a directory")
 
 	// Test: missing tool.yaml
 	toolDir := t.TempDir()
-	err = InstallLocalTool(toolDir, &buf)
+	err = InstallLocalTool(toolDir, installDir, &buf)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load manifest")
 }

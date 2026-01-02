@@ -364,7 +364,8 @@ Table of Contents
    - Simple executables (RFC 1): tools/foo.sh, tools/bar.py, etc.
      No manifest required.  Zero configuration.
 
-   - Tool Packages (RFC 3): ~/.orla/tools/tool-name/VERSION/tool.yaml
+   - Tool Packages (RFC 3): tools_dir/tool-name/VERSION/tool.yaml (project-local)
+                            or ~/.orla/tools/tool-name/VERSION/tool.yaml (global)
      Unified manifest format.  Use runtime.mode: "simple" for RFC 1
      behavior, or runtime.mode: "capsule" for lifecycle management.
 

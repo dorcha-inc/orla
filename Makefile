@@ -6,22 +6,29 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 .PHONY: test
-test: ## Run tests with coverage
+test: ## Run tests (excluding integration tests)
 	@if [ "$${VERBOSE:-0}" = "1" ]; then \
 		go test -v ./...; \
 	else \
 		go test ./...; \
 	fi
 
-.PHONY: e2e-test
-e2e-test: ## Run end-to-end tests for all examples
+.PHONY: test-integration
+test-integration: ## Run only integration tests (requires Ollama)
+	@if [ "$${VERBOSE:-0}" = "1" ]; then \
+		go test -tags=integration -run Integration -v -count=1 ./...; \
+	else \
+		go test -tags=integration -run Integration -count=1 ./...; \
+	fi
+
+.PHONY: test-e2e
+test-e2e: ## Run end-to-end tests for all examples
 	@./scripts/e2e-test.sh
 
 .PHONY: coverage
-coverage: ## Generate coverage report (coverage.html)
-	@# Coverage exclusions are configured in .codecov.yml
-	@# Note: Local HTML report may include excluded paths, but Codecov will filter them
-	go test -coverprofile=coverage.out -covermode=atomic $$(go list ./... | grep -v '/cmd/' | grep -v '/examples/')
+coverage: ## Generate coverage report (coverage.html, excludes integration tests)
+	@# Tests all packages (excluding integration tests); codecov.yml excludes cmd/ and examples/ in CI/CD
+	go test -coverprofile=coverage.out -covermode=atomic ./internal/...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 

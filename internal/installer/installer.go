@@ -16,7 +16,11 @@ import (
 )
 
 // InstallTool installs a tool from the registry
-func InstallTool(registryURL, toolName, versionConstraint string, progressWriter io.Writer) error {
+// toolsDir must be a valid, non-empty directory path
+func InstallTool(registryURL, toolName, versionConstraint string, toolsDir string, progressWriter io.Writer) error {
+	if toolsDir == "" {
+		return fmt.Errorf("tools directory cannot be empty")
+	}
 	// Fetch registry
 	reg, errFetchRegistry := registry.FetchRegistry(registryURL, true)
 	if errFetchRegistry != nil {
@@ -70,12 +74,13 @@ func InstallTool(registryURL, toolName, versionConstraint string, progressWriter
 	}
 
 	// Get install directory using version from tool.yaml (source of truth)
-	installBaseDir, errGetInstallBaseDir := registry.GetInstalledToolsDir()
-	if errGetInstallBaseDir != nil {
-		return fmt.Errorf("failed to get install base directory: %w", errGetInstallBaseDir)
+	// Resolve to absolute path
+	absToolsDir, err := filepath.Abs(toolsDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve tools directory path: %w", err)
 	}
 
-	installDir := filepath.Join(installBaseDir, toolName, manifest.Version)
+	installDir := filepath.Join(absToolsDir, toolName, manifest.Version)
 
 	// Install to target directory
 	if errInstallToDirectory := InstallToDirectory(cloneDir, installDir, progressWriter); errInstallToDirectory != nil {
@@ -120,7 +125,11 @@ func cloneToolRepository(repoURL, tag, targetDir string) error {
 }
 
 // InstallLocalTool installs a tool from a local directory or archive (archive support not yet implemented)
-func InstallLocalTool(localPath string, progressWriter io.Writer) error {
+// toolsDir must be a valid, non-empty directory path
+func InstallLocalTool(localPath string, toolsDir string, progressWriter io.Writer) error {
+	if toolsDir == "" {
+		return fmt.Errorf("tools directory cannot be empty")
+	}
 	// Resolve local path to absolute path
 	absLocalPath, absErr := filepath.Abs(localPath)
 	if absErr != nil {
@@ -150,12 +159,13 @@ func InstallLocalTool(localPath string, progressWriter io.Writer) error {
 	}
 
 	// Get install directory using version from tool.yaml (source of truth)
-	installBaseDir, errGetInstallBaseDir := registry.GetInstalledToolsDir()
-	if errGetInstallBaseDir != nil {
-		return fmt.Errorf("failed to get install base directory: %w", errGetInstallBaseDir)
+	// Resolve to absolute path
+	absToolsDir, err := filepath.Abs(toolsDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve tools directory path: %w", err)
 	}
 
-	installDir := filepath.Join(installBaseDir, manifest.Name, manifest.Version)
+	installDir := filepath.Join(absToolsDir, manifest.Name, manifest.Version)
 
 	// Install to target directory
 	errInstallToDirectory := InstallToDirectory(absLocalPath, installDir, progressWriter)
@@ -194,11 +204,17 @@ type InstalledToolInfo struct {
 
 // ListInstalledTools returns a list of all installed tools with their versions
 // Multiple versions of the same tool will be listed separately
-func ListInstalledTools() ([]InstalledToolInfo, error) {
-	installDir, err := registry.GetInstalledToolsDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get install directory: %w", err)
+// toolsDir must be a valid, non-empty directory path
+func ListInstalledTools(toolsDir string) ([]InstalledToolInfo, error) {
+	if toolsDir == "" {
+		return nil, fmt.Errorf("tools directory cannot be empty")
 	}
+
+	absToolsDir, err := filepath.Abs(toolsDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve tools directory path: %w", err)
+	}
+	installDir := absToolsDir
 
 	var tools []InstalledToolInfo
 
@@ -253,11 +269,17 @@ func ListInstalledTools() ([]InstalledToolInfo, error) {
 }
 
 // UninstallTool removes an installed tool
-func UninstallTool(toolName string) error {
-	installDir, err := registry.GetInstalledToolsDir()
-	if err != nil {
-		return fmt.Errorf("failed to get install directory: %w", err)
+// toolsDir must be a valid, non-empty directory path
+func UninstallTool(toolName string, toolsDir string) error {
+	if toolsDir == "" {
+		return fmt.Errorf("tools directory cannot be empty")
 	}
+
+	absToolsDir, err := filepath.Abs(toolsDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve tools directory path: %w", err)
+	}
+	installDir := absToolsDir
 
 	toolDir := filepath.Join(installDir, toolName)
 	_, errStat := core.FileStat(toolDir, fmt.Sprintf("tool '%s' not installed", toolName), "failed to stat tool directory")
@@ -276,12 +298,18 @@ func UninstallTool(toolName string) error {
 }
 
 // UpdateTool updates a tool to the latest version
-func UpdateTool(registryURL, toolName string, progressWriter io.Writer) error {
-	// Check if tool is installed
-	installDir, errInstallDir := registry.GetInstalledToolsDir()
-	if errInstallDir != nil {
-		return fmt.Errorf("failed to get install directory: %w", errInstallDir)
+// toolsDir must be a valid, non-empty directory path
+func UpdateTool(registryURL, toolName string, toolsDir string, progressWriter io.Writer) error {
+	if toolsDir == "" {
+		return fmt.Errorf("tools directory cannot be empty")
 	}
+
+	// Check if tool is installed
+	absToolsDir, err := filepath.Abs(toolsDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve tools directory path: %w", err)
+	}
+	installDir := absToolsDir
 
 	toolDir := filepath.Join(installDir, toolName)
 	_, errStat := core.FileStat(toolDir, fmt.Sprintf("tool '%s' not installed", toolName), "failed to stat tool directory")
@@ -290,5 +318,5 @@ func UpdateTool(registryURL, toolName string, progressWriter io.Writer) error {
 	}
 
 	// Install latest version (InstallTool handles this)
-	return InstallTool(registryURL, toolName, registry.VersionConstraintLatest, progressWriter)
+	return InstallTool(registryURL, toolName, registry.VersionConstraintLatest, toolsDir, progressWriter)
 }

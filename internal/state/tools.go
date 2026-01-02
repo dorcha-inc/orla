@@ -1,3 +1,4 @@
+// Package state provides tools discovery, registration, and management.
 package state
 
 import (

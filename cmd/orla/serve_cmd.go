@@ -11,9 +11,9 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
+	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/server"
-	"github.com/dorcha-inc/orla/internal/state"
 )
 
 // newServeCmd creates the serve command
@@ -49,7 +49,7 @@ The server can run in HTTP mode (default port 8080) or stdio mode for MCP client
 // runServe runs the server with the given flags
 func runServe(configPath string, useStdio bool, prettyLog bool, portFlag int, toolsDirFlag string) error {
 	// Load configuration (defaults if none provided)
-	cfg, err := loadConfig(configPath)
+	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		fmt.Printf("Failed to load configuration: %v", err)
 		return err
@@ -98,23 +98,8 @@ func runServe(configPath string, useStdio bool, prettyLog bool, portFlag int, to
 	return nil
 }
 
-// loadConfig loads configuration from a file path, or returns defaults if path is empty
-// Per RFC 1 section 6.3: if no config path is specified, check for orla.yaml in current directory
-func loadConfig(configPath string) (*state.OrlaConfig, error) {
-	if configPath == "" {
-		// Check for orla.yaml in current directory (RFC 1 section 6.3)
-		if _, err := os.Stat("orla.yaml"); err == nil {
-			zap.L().Info("Found orla.yaml in current directory, using it")
-			return state.NewOrlaConfigFromPath("orla.yaml")
-		}
-		// No config file found, use defaults
-		return state.NewDefaultOrlaConfig()
-	}
-	return state.NewOrlaConfigFromPath(configPath)
-}
-
 // resolveLogFormat determines the log format based on CLI flag and config
-func resolveLogFormat(cfg *state.OrlaConfig, prettyLog bool) bool {
+func resolveLogFormat(cfg *config.OrlaConfig, prettyLog bool) bool {
 	if !prettyLog && cfg.LogFormat == "pretty" {
 		return true
 	}
@@ -122,7 +107,7 @@ func resolveLogFormat(cfg *state.OrlaConfig, prettyLog bool) bool {
 }
 
 // validateAndApplyPort validates the port flag and applies port logic to config
-func validateAndApplyPort(cfg *state.OrlaConfig, portFlag int, useStdio bool) error {
+func validateAndApplyPort(cfg *config.OrlaConfig, portFlag int, useStdio bool) error {
 	if portFlag < 0 {
 		return fmt.Errorf("port must be a positive integer (or 0 to remain unset), got %d", portFlag)
 	}
@@ -168,7 +153,7 @@ func setupSignalHandling(ctx context.Context, srv *server.OrlaServer) (context.C
 }
 
 // runServer starts the server in either stdio or HTTP mode
-func runServer(ctx context.Context, srv *server.OrlaServer, useStdio bool, cfg *state.OrlaConfig) error {
+func runServer(ctx context.Context, srv *server.OrlaServer, useStdio bool, cfg *config.OrlaConfig) error {
 	if useStdio {
 		zap.L().Info("Starting orla server on stdio")
 		return srv.ServeStdio(ctx)

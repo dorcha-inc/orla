@@ -24,20 +24,19 @@ func init() {
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "orla",
-		Short: "Orla MCP server runtime",
+		Short: "Orla MCP server runtime and agent",
 		Long: `Orla is a runtime for Model Context Protocol (MCP) servers that automatically
-discovers and executes tools from the filesystem.`,
+discovers and executes tools from the filesystem.
+
+Orla supports both MCP server mode (orla serve) and agent mode (orla agent).`,
 		Version: fmt.Sprintf("%s (built: %s)", version, buildDate),
 	}
 
 	// Add subcommands
 	rootCmd.AddCommand(newServeCmd())
-	rootCmd.AddCommand(newInstallCmd())
-	rootCmd.AddCommand(newListCmd())
-	rootCmd.AddCommand(newSearchCmd())
-	rootCmd.AddCommand(newUninstallCmd())
-	rootCmd.AddCommand(newUpdateCmd())
+	rootCmd.AddCommand(newToolCmd()) // Tool management commands (RFC 4)
 	rootCmd.AddCommand(newCacheCmd())
+	rootCmd.AddCommand(newAgentCmd()) // Agent mode (RFC 4)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

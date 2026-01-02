@@ -84,3 +84,10 @@ func LogDeferredError(fn func() error) {
 		zap.L().Error("Deferred error", zap.Error(err), zap.Stack("stack_trace"))
 	}
 }
+
+// LogDeferredError1 takes a function that returns an error, calls it with the given argument, and logs the error if it is not nil
+func LogDeferredError1[T any](fn func(T) error, arg T) {
+	if err := fn(arg); err != nil {
+		zap.L().Error("Deferred error", zap.Error(err), zap.Stack("stack_trace"))
+	}
+}

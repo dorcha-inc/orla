@@ -14,14 +14,14 @@ import (
 	"github.com/puzpuzpuz/xsync/v3"
 	"go.uber.org/zap"
 
+	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/core"
-	"github.com/dorcha-inc/orla/internal/state"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // OrlaServer stores the state and dependencies for the Orla MCP server.
 type OrlaServer struct {
-	config          *state.OrlaConfig
+	config          *config.OrlaConfig
 	configPath      string
 	executor        *core.OrlaToolExecutor
 	orlaMCPserver   *mcp.Server
@@ -32,7 +32,7 @@ type OrlaServer struct {
 }
 
 // NewOrlaServer creates a new OrlaServer instance
-func NewOrlaServer(cfg *state.OrlaConfig, configPath string) *OrlaServer {
+func NewOrlaServer(cfg *config.OrlaConfig, configPath string) *OrlaServer {
 	executor := core.NewOrlaToolExecutor(cfg.Timeout)
 
 	orlaServer := &OrlaServer{
@@ -381,14 +381,8 @@ func (o *OrlaServer) Reload() error {
 		}
 	}()
 
-	var newCfg *state.OrlaConfig
-	var err error
-
-	if o.configPath == "" {
-		newCfg, err = state.NewDefaultOrlaConfig()
-	} else {
-		newCfg, err = state.NewOrlaConfigFromPath(o.configPath)
-	}
+	var newCfg *config.OrlaConfig
+	newCfg, err := config.LoadConfig(o.configPath)
 
 	if err != nil {
 		return fmt.Errorf("failed to reload configuration: %w", err)
