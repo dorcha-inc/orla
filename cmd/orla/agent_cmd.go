@@ -21,10 +21,14 @@ The prompt is provided as a single argument. If the prompt contains spaces,
 quote it in the shell. For example:
   orla agent "list files in the current directory"
   orla agent "generate a Dockerfile for this repo"
-  orla agent hello  # Single word, no quotes needed`,
+  orla agent hello  # Single word, no quotes needed
+
+You can also pipe input to the command:
+  cat file.txt | orla agent "summarize this"
+  orla agent "summarize this" < file.txt`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Execute agent prompt (all logic is in agent package)
+			// Execute agent prompt (all logic is in agent package, including stdin reading)
 			return agent.ExecuteAgentPrompt(args[0], modelFlag)
 		},
 	}

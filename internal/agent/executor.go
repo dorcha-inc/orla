@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -150,12 +151,46 @@ func createStreamHandler(cfg *config.OrlaConfig) StreamHandler {
 	}
 }
 
+// readStdinIfAvailable reads from stdin if it's available (not a TTY)
+// Returns the content and true if stdin was available, or empty string and false if not
+func readStdinIfAvailable() (string, bool, error) {
+	// Check if stdin is a terminal using the tui utility
+	// If it's not a TTY, it means input is being piped or redirected
+	if tui.IsTerminal(os.Stdin) {
+		// Stdin is a TTY, no input available
+		return "", false, nil
+	}
+
+	// Read all from stdin
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to read stdin: %w", err)
+	}
+
+	return string(data), true, nil
+}
+
 // ExecuteAgentPrompt is the main entry point for agent execution
 // It handles the full flow: config loading, executor creation, context/signal handling, and execution
 // prompt: the agent prompt as a single string (should be quoted when called from CLI)
 func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 	if prompt == "" {
 		return fmt.Errorf("prompt is required")
+	}
+
+	// Read stdin if available (piped input)
+	// This makes commands like "summarize this" < file.txt work correctly
+	stdinContent, hasStdin, err := readStdinIfAvailable()
+	if err != nil {
+		return fmt.Errorf("failed to read stdin: %w", err)
+	}
+
+	// If stdin is available, include it in the prompt context
+	if hasStdin && stdinContent != "" {
+		// Enhance the prompt to include the stdin content
+		// Format it clearly so the model understands this is the content to process
+		// Use a separator to make it clear where the content begins
+		prompt = fmt.Sprintf("%s\n\n--- Content from stdin ---\n%s\n--- End of content from stdin ---", prompt, stdinContent)
 	}
 
 	// Load config
@@ -186,6 +221,11 @@ func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 		<-sigChan
 		cancel()
 	}()
+
+	// Set show progress if configured
+	if cfg != nil && cfg.ShowProgress {
+		tui.SetShowProgress(true)
+	}
 
 	// Ensure model is ready
 	tui.Progress("Ensuring model is ready...")

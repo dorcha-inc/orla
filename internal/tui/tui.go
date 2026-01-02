@@ -58,6 +58,8 @@ type UI struct {
 	enabled bool
 	// colorEnabled indicates if colors should be used
 	colorEnabled bool
+	// showProgress forces progress messages to be shown even when UI is disabled
+	showProgress bool
 	// currentSpinner tracks the current spinner state
 	currentSpinner *spinnerState
 	// markdownRenderer for rendering markdown content
@@ -76,9 +78,14 @@ var (
 	defaultUI    *UI
 	spinnerClock clockwork.Clock = clockwork.NewRealClock()
 
+	// stderrRenderer is a renderer that uses stderr for TTY detection
+	// This allows colors to work on stderr even when stdout is piped
+	stderrRenderer = lipgloss.NewRenderer(os.Stderr)
+
 	// Style definitions using ansi package
-	successStyle  = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
-	thinkingStyle = lipgloss.NewStyle().Foreground(colorGray)
+	// Use stderrRenderer for styles that will be written to stderr
+	successStyle  = lipgloss.NewStyle().Renderer(stderrRenderer).Foreground(colorGreen).Bold(true)
+	thinkingStyle = lipgloss.NewStyle().Renderer(stderrRenderer).Foreground(colorGray)
 )
 
 func init() {
@@ -87,20 +94,26 @@ func init() {
 
 // New creates a new UI instance with automatic TTY detection
 func New() *UI {
-	stdoutIsTTY := isTerminal(os.Stdout)
-	stderrIsTTY := isTerminal(os.Stderr)
+	stdoutIsTTY := IsTerminal(os.Stdout)
+	stderrIsTTY := IsTerminal(os.Stderr)
+	stdinIsTTY := IsTerminal(os.Stdin)
 
 	// UI is enabled if stderr is a TTY (we use stderr for progress messages)
-	enabled := stderrIsTTY && !isDisabled()
+	// However, if stdin is piped (not a TTY), suppress UI for clean pipeable output
+	// This follows Unix conventions: piped input usually means script/pipeline usage
+	enabled := stderrIsTTY && stdinIsTTY && !isDisabled()
 
-	// Colors are enabled if enabled AND colors aren't explicitly disabled
-	colorEnabled := enabled && !isColorDisabled()
+	// Colors are enabled if stderr is a TTY and colors aren't explicitly disabled
+	// Colors are independent of UI enabled state (you might want colored output even without progress)
+	colorEnabled := stderrIsTTY && !isColorDisabled()
 
 	ui := &UI{
 		stdoutIsTTY:  stdoutIsTTY,
 		stderrIsTTY:  stderrIsTTY,
 		enabled:      enabled,
 		colorEnabled: colorEnabled,
+		// showProgress overrides the enabled state for progress messages
+		showProgress: false,
 	}
 
 	// Initialize markdown renderer if colors are enabled
@@ -123,8 +136,8 @@ func New() *UI {
 	return ui
 }
 
-// isTerminal checks if a file descriptor is connected to a terminal
-func isTerminal(f *os.File) bool {
+// IsTerminal checks if a file descriptor is connected to a terminal
+func IsTerminal(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
@@ -177,12 +190,18 @@ func (u *UI) StderrIsTTY() bool {
 	return u.stderrIsTTY
 }
 
-// Progress shows a progress message with a spinner (only if UI is enabled)
+// SetShowProgress sets whether progress messages should be shown even when UI is disabled
+// This is useful when show_progress config option is set
+func (u *UI) SetShowProgress(show bool) {
+	u.showProgress = show
+}
+
+// Progress shows a progress message with a spinner
 // Uses charmbracelet's spinner styles, similar to uv/uvx's clean UI
 // The spinner animates automatically in the background
 // Example: "Connecting to tools..."
 func (u *UI) Progress(message string) {
-	if !u.enabled {
+	if !u.enabled && !u.showProgress {
 		return
 	}
 
@@ -197,13 +216,30 @@ func (u *UI) Progress(message string) {
 			spinnerChar = "..."
 		}
 
-		spinnerStyle := lipgloss.NewStyle().Foreground(colorBlue)
+		// Use stderrRenderer for spinner style so colors work even when stdout is piped
+		spinnerStyle := lipgloss.NewStyle().Renderer(stderrRenderer).Foreground(colorBlue)
 		if u.colorEnabled {
 			fmt.Fprintf(os.Stderr, "\r%s %s", spinnerStyle.Render(spinnerChar), message)
 		} else {
 			fmt.Fprintf(os.Stderr, "\r%s %s", spinnerChar, message)
 		}
 		return
+	}
+
+	// If spinner exists with different message, stop it first
+	if u.currentSpinner != nil {
+		// Stop the old spinner
+		if u.currentSpinner.ticker != nil {
+			u.currentSpinner.ticker.Stop()
+		}
+		if u.currentSpinner.done != nil {
+			close(u.currentSpinner.done)
+		}
+		// Clear the spinner line
+		fmt.Fprint(os.Stderr, "\r", ansi.EraseLine(2))
+		u.currentSpinner = nil
+		// Small delay to ensure goroutine has stopped
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	// Initialize new spinner with animation goroutine
@@ -215,25 +251,36 @@ func (u *UI) Progress(message string) {
 	}
 
 	// Start animation goroutine
+	// Capture spinner state in closure to avoid race conditions
+	spinnerState := u.currentSpinner
+
+	var printSpinnerFrame = func() {
+		elapsed := time.Since(spinnerState.started)
+		frame := int(elapsed/spinner.Line.FPS) % len(spinner.Line.Frames)
+		spinnerChar := spinner.Line.Frames[frame]
+
+		if !u.colorEnabled {
+			spinnerChar = "..."
+		}
+
+		// Use stderrRenderer for spinner style so colors work even when stdout is piped
+		spinnerStyle := lipgloss.NewStyle().Renderer(stderrRenderer).Foreground(colorBlue)
+		if u.colorEnabled {
+			fmt.Fprintf(os.Stderr, "\r%s %s", spinnerStyle.Render(spinnerChar), spinnerState.message)
+		} else {
+			fmt.Fprintf(os.Stderr, "\r%s %s", spinnerChar, spinnerState.message)
+		}
+	}
+
+	// Print initial spinner frame immediately (don't wait for first tick)
+	printSpinnerFrame()
+
 	go func() {
 		for {
 			select {
-			case <-u.currentSpinner.ticker.Chan():
-				elapsed := time.Since(u.currentSpinner.started)
-				frame := int(elapsed/spinner.Line.FPS) % len(spinner.Line.Frames)
-				spinnerChar := spinner.Line.Frames[frame]
-
-				if !u.colorEnabled {
-					spinnerChar = "..."
-				}
-
-				spinnerStyle := lipgloss.NewStyle().Foreground(colorBlue)
-				if u.colorEnabled {
-					fmt.Fprintf(os.Stderr, "\r%s %s", spinnerStyle.Render(spinnerChar), u.currentSpinner.message)
-				} else {
-					fmt.Fprintf(os.Stderr, "\r%s %s", spinnerChar, u.currentSpinner.message)
-				}
-			case <-u.currentSpinner.done:
+			case <-spinnerState.ticker.Chan():
+				printSpinnerFrame()
+			case <-spinnerState.done:
 				return
 			}
 		}
@@ -243,7 +290,7 @@ func (u *UI) Progress(message string) {
 // ProgressSuccess stops the spinner and shows success message
 // Uses uv-style checkmark (✓) for success
 func (u *UI) ProgressSuccess(message string) {
-	if !u.enabled {
+	if !u.enabled && !u.showProgress {
 		return
 	}
 
@@ -350,6 +397,12 @@ func Reset() {
 // Info prints an informational message using the default UI
 func Info(format string, args ...any) {
 	defaultUI.Info(format, args...)
+}
+
+// SetShowProgress sets whether progress messages should be shown even when UI is disabled
+// This uses the default UI instance
+func SetShowProgress(show bool) {
+	defaultUI.SetShowProgress(show)
 }
 
 // Progress prints a progress message using the default UI

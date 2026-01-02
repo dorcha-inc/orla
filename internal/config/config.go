@@ -113,6 +113,7 @@ type OrlaConfig struct {
 	DryRun             bool             `yaml:"dry_run,omitempty" mapstructure:"dry_run"`                         // default to non-dry-run mode
 	ShowThinking       bool             `yaml:"show_thinking,omitempty" mapstructure:"show_thinking"`             // show thinking trace output (for thinking-capable models)
 	ShowToolCalls      bool             `yaml:"show_tool_calls,omitempty" mapstructure:"show_tool_calls"`         // show detailed tool call information
+	ShowProgress       bool             `yaml:"show_progress,omitempty" mapstructure:"show_progress"`             // show progress messages even when UI is disabled (e.g., when stdin is piped)
 }
 
 // SetToolsDir updates the tools directory and rebuilds the tools registry.
@@ -257,6 +258,7 @@ func setViperDefaults() {
 	viper.SetDefault("dry_run", false)
 	viper.SetDefault("show_thinking", false)
 	viper.SetDefault("show_tool_calls", false)
+	viper.SetDefault("show_progress", false)
 }
 
 // LoadConfig loads configuration with precedence: project config > user config > defaults
