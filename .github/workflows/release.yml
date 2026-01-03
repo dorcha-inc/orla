@@ -7,7 +7,7 @@ on:
 
 jobs:
   release:
-    name: Build and Release with GoReleaser
+    name: release
     runs-on: ubuntu-latest
     permissions:
       contents: write
