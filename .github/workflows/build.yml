@@ -60,6 +60,14 @@ jobs:
         version: v2.7.2
         args: --timeout=5m
 
+    - name: Install Ollama
+      run: |
+        curl -fsSL https://ollama.ai/install.sh | sh
+        # Start Ollama in background
+        ollama serve &
+        # Wait for Ollama to be ready
+        timeout 30 bash -c 'until curl -s http://localhost:11434/api/tags > /dev/null; do sleep 1; done' || true
+
     - name: Run tests
       run: make test
 
