@@ -201,7 +201,7 @@ func (u *UI) SetShowProgress(show bool) {
 // The spinner animates automatically in the background
 // Example: "Connecting to tools..."
 func (u *UI) Progress(message string) {
-	if !u.enabled && !u.showProgress {
+	if !u.showProgress || !u.enabled {
 		return
 	}
 
@@ -290,7 +290,7 @@ func (u *UI) Progress(message string) {
 // ProgressSuccess stops the spinner and shows success message
 // Uses uv-style checkmark (✓) for success
 func (u *UI) ProgressSuccess(message string) {
-	if !u.enabled && !u.showProgress {
+	if !u.showProgress || !u.enabled {
 		return
 	}
 

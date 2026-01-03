@@ -222,9 +222,9 @@ func ExecuteAgentPrompt(prompt string, modelOverride string) error {
 		cancel()
 	}()
 
-	// Set show progress if configured
-	if cfg != nil && cfg.ShowProgress {
-		tui.SetShowProgress(true)
+	// Set show progress based on config
+	if cfg != nil {
+		tui.SetShowProgress(cfg.ShowProgress)
 	}
 
 	// Ensure model is ready
