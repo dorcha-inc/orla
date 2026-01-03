@@ -151,21 +151,30 @@ func TestOllamaProvider_Chat_Streaming_Integration(t *testing.T) {
 
 	// Read from stream
 	chunks := []string{}
-	timeout := time.After(10 * time.Second)
+	thinkingChunks := []string{}
+	toolCallEvents := []string{}
+
+	timeout := time.After(5 * time.Minute)
 	for {
 		select {
 		case chunk, ok := <-streamCh:
 			if !ok {
 				// Channel closed
-				t.Logf("Stream closed. Received %d chunks total", len(chunks))
+				t.Logf("Stream closed. Received %d content chunks total", len(chunks))
 				goto done
 			}
+			// Handle different event types
 			if contentEvent, ok := chunk.(*ContentEvent); ok {
 				chunks = append(chunks, contentEvent.Content)
+			} else if thinkingEvent, ok := chunk.(*ThinkingEvent); ok {
+				thinkingChunks = append(thinkingChunks, thinkingEvent.Content)
+			} else if toolCallEvent, ok := chunk.(*ToolCallEvent); ok {
+				toolCallEvents = append(toolCallEvents, toolCallEvent.Name)
+			} else {
+				t.Logf("Unexpected event type: %s, value: %+v", chunk.Type(), chunk)
 			}
-			t.Logf("Stream chunk [%d]: %s", len(chunks), chunk)
 		case <-timeout:
-			t.Fatalf("Stream timeout after receiving %d chunks", len(chunks))
+			t.Fatalf("Stream timeout after receiving %d content chunks and %d thinking chunks and %d tool call events", len(chunks), len(thinkingChunks), len(toolCallEvents))
 		}
 	}
 
