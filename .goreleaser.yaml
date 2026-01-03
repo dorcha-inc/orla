@@ -21,38 +21,12 @@ builds:
       - -s -w
       - -X main.version={{.Version}}
       - -X main.buildDate={{.Date}}
-    # Custom binary naming to match install script expectations (orla-linux-amd64, orla-darwin-arm64, etc.)
-    hooks:
-      post:
-        - sh: |
-            OLD_PATH="{{ .ArtifactPath }}"
-            DIR=$(dirname "$OLD_PATH")
-            if [ "$GOOS" = "linux" ]; then
-              NEW_PATH="$DIR/orla-linux-$GOARCH"
-            elif [ "$GOOS" = "darwin" ]; then
-              NEW_PATH="$DIR/orla-darwin-$GOARCH"
-            else
-              NEW_PATH="$OLD_PATH"
-            fi
-            if [ "$OLD_PATH" != "$NEW_PATH" ]; then
-              mv "$OLD_PATH" "$NEW_PATH"
-              echo "Renamed binary: $OLD_PATH -> $NEW_PATH"
-            fi
 
-# Rename binaries to match install script naming and upload directly
+# Upload binaries directly without archiving
+# In v2, archives section with name_template will control the uploaded file names
+# GoReleaser will automatically include all builds and use the name_template for naming
 archives:
-  - id: default
-    builds:
-      - orla
-    # Upload binaries directly without archiving
-    format: binary
-    format_overrides:
-      - goos: linux
-        format: binary
-      - goos: darwin
-        format: binary
-    # Custom file naming to match install script expectations
-    name_template: >-
+  - name_template: >-
       {{- if eq .Os "linux" -}}
         orla-linux-{{ .Arch }}
       {{- else if eq .Os "darwin" -}}
