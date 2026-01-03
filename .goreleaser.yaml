@@ -23,8 +23,7 @@ builds:
       - -X main.buildDate={{.Date}}
 
 # Upload binaries directly without archiving
-# In v2, archives section with name_template will control the uploaded file names
-# GoReleaser will automatically include all builds and use the name_template for naming
+# In v2, we disable archiving by using format: binary
 archives:
   - name_template: >-
       {{- if eq .Os "linux" -}}
@@ -34,6 +33,8 @@ archives:
       {{- else -}}
         orla-{{ .Os }}-{{ .Arch }}
       {{- end -}}
+    formats:
+      - binary
 
 # Sign and notarize macOS binaries using cross-platform method (quill)
 # This works on any OS and handles both signing and notarization
