@@ -1,0 +1,69 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(echo "${{ github.ref }}" | sed 's/^refs\/tags\/v//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get build date
+        id: build_date
+        run: |
+          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "build_date=$BUILD_DATE" >> $GITHUB_OUTPUT
+
+      - name: Build Linux amd64
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_DATE: ${{ steps.build_date.outputs.build_date }}
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p bin
+          go build -ldflags "-X main.version=${VERSION} -X main.buildDate=${BUILD_DATE}" \
+            -o bin/orla-linux-amd64 ./cmd/orla
+
+      - name: Build Linux arm64
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_DATE: ${{ steps.build_date.outputs.build_date }}
+          GOOS: linux
+          GOARCH: arm64
+        run: |
+          mkdir -p bin
+          go build -ldflags "-X main.version=${VERSION} -X main.buildDate=${BUILD_DATE}" \
+            -o bin/orla-linux-arm64 ./cmd/orla
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          files: |
+            bin/orla-linux-amd64
+            bin/orla-linux-arm64
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

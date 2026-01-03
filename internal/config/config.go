@@ -19,7 +19,7 @@ import (
 
 const (
 	DefaultToolsDir     = ".orla/tools"
-	DefaultModel        = "ollama:qwen3:1.7b"
+	DefaultModel        = "ollama:qwen3:0.6b"
 	DefaultMaxToolCalls = 10
 )
 

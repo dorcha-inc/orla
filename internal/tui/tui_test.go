@@ -308,6 +308,7 @@ func TestUI_ProgressSuccess_WithoutSpinner(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ui := New()
 			ui.enabled = tt.enabled
+			ui.showProgress = tt.enabled
 
 			// Set up observer to capture logs
 			core, logs := observer.New(zap.ErrorLevel)
@@ -361,6 +362,7 @@ func TestUI_Progress_UpdateExisting(t *testing.T) {
 			ui := New()
 			ui.enabled = tt.enabled
 			ui.stderrIsTTY = true
+			ui.showProgress = tt.enabled
 
 			capturedOutput, err := orlaTesting.NewCapturedOutput()
 			require.NoError(t, err)
@@ -434,13 +436,16 @@ func TestUI_Progress_MessageUpdate(t *testing.T) {
 	ui := New()
 	ui.enabled = true
 	ui.stderrIsTTY = true
+	ui.showProgress = true
 
 	// Start progress with one message
 	ui.Progress("First message")
+	require.NotNil(t, ui.currentSpinner, "Spinner should be created")
 	require.Equal(t, "First message", ui.currentSpinner.message)
 
 	// Update with different message
 	ui.Progress("Second message")
+	require.NotNil(t, ui.currentSpinner, "Spinner should still exist")
 	require.Equal(t, "Second message", ui.currentSpinner.message)
 }
 

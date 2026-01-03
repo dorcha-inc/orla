@@ -43,11 +43,43 @@ See the RFCs in `docs/rfcs/` for more details on the roadmap.
 - [Roadmap](#roadmap)
 - [Integration Guides](#integration-guides)
 
+## Quickstart
+
+Install orla (you might need `sudo`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh
+```
+
+Side note: if required, this will install go, ollama, and pull in a lightweight model.
+
+Try orla:
+
+```bash
+>>> orla agent "Hello"
+Hello! How can I assist you today? Could you please provide some details or specify what you need help with?
+```
+
+```bash
+>>> orla agent "tell me a story about a cat" > cat.txt 
+>>> cat cat.txt
+Here is a short story about a cat:
+Once upon a time in the heart of a quiet forest, there lived a cat named Luna. With her paws soft and her eyes bright, she found a hidden treasure—a small garden growing in the shadows. As she walked through the trees, she discovered a world of colors and life, and she learned that every creature has its own special place in the world. 🐾
+>>> orla agent "summarize this story in a sentence" < cat.txt
+Once upon a time in a quiet forest, a cat named Luna discovered a hidden garden, learning that every creature has its own special place.
+```
+
 ## Getting Started
 
 ### Installation
 
-Make sure you have Go (1.25+) installed, then install Orla:
+The easiest way to install Orla is using our installation script. It will automatically install Orla, Ollama, and set everything up for you:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh
+```
+
+If you prefer to install manually, make sure you have Go (1.25+) installed, then:
 
 ```bash
 go install github.com/dorcha-inc/orla/cmd/orla@latest
