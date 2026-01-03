@@ -3,7 +3,7 @@
     <img src="share/orla_canva.png" alt="Orla Logo" width="400">
   </a>
   <br>
-  <h3 align="center">A dead-simple unix tool for local AI.</h3>
+  <h3 align="center">A dead-simple unix tool for lightweight agents</h3>
 </div>
 
 <p align="center">
@@ -16,17 +16,22 @@
   <a href="https://discord.gg/bzKYCFewPT"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
-For decades, the command line has been the most powerful and productive environment for developers. Tools like `grep`, `curl`, and `git` are second nature. They are fast, reliable, and composable. However, the ecosystem around AI and AI agents currently feels like using a bloated monolithic piece of proprietary software with over-priced and kafkaesque licensing fees.
+Orla is a unix tool for running lightweight open-source agents. It is easy to add to a script, use with pipes, or build things on top of.
 
-Orla is built on a simple premise: AI should be a (free software) tool you own, not a service you rent. Like the language we wrote it in (Go), it treats simplicity as a first-order priority. Orla is a unix tool designed for the command line that lets you run agents. Orla uses models running on your own machine and automatically discovers the tools you already have, making it powerful and private right out of the box. No setup, no API keys or subscriptions, no data centers.
+All the amazing folks who have taken their time to contribute something cool to orla are listed in [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
-## Features
+## Vision and Roadmap
+
+Simple and usable tools are a key part of the [Unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy). Tools like `grep`, `curl`, and `git` have become second nature and are huge wins for an inclusive and productive ecosystem. They are fast, reliable, and composable. However, the ecosystem around AI and AI agents currently feels like using a bloated monolithic piece of proprietary software with over-priced and kafkaesque licensing fees.
+
+Orla is built on a simple premise: AI should be a (free software) tool you own, not a service you rent. It treats simplicity, reliability, and composability as first-order priorities. Orla uses models running on your own machine and automatically discovers the tools you already have, making it powerful and private right out of the box. It requires no API keys, subscriptions, or power-hungry data centers. To summarize,
 
 1. Orla runs locally. Your data, queries, and tools never leave your machine without your explicit instruction. It's private by default.
 2. Orla brings the power of modern LLMs to your terminal with a dead-simple interface. If you know how to use `grep`, you know how to use Orla.
 3. Orla is free and open-source software. No subscriptions, no vendor lock-in. You are not the product.
 
-All the amazing folks who have taken their time to contribute something cool to orla are listed in [CONTRIBUTORS.md](CONTRIBUTORS.md).
+See the RFCs in `docs/rfcs/` for more details on the roadmap.
+
 
 ## Quick links
 
@@ -268,10 +273,6 @@ All contributors are recognized in our [CONTRIBUTORS.md](CONTRIBUTORS.md) file.
 ## Supporting Orla
 
 If Orla becomes a tool you love, please consider [sponsoring the project](https://github.com/sponsors/jadidbourbaki). Your support helps us dedicate more time to maintenance and building the future of local AI.
-
-## Roadmap
-
-See the RFCs in `docs/rfcs/` for the full vision and roadmap.
 
 ## Integration guides
 
