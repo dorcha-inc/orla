@@ -22,10 +22,13 @@ builds:
       - -X main.version={{.Version}}
       - -X main.buildDate={{.Date}}
 
-# Upload binaries directly without archiving
-# In v2, we disable archiving by using format: binary
+# Create archives for Homebrew formula (brews needs archives to reference)
+# The install script will still be used, but brews needs archives for the formula
 archives:
-  - name_template: >-
+  - id: default
+    builds:
+      - orla
+    name_template: >-
       {{- if eq .Os "linux" -}}
         orla-linux-{{ .Arch }}
       {{- else if eq .Os "darwin" -}}
@@ -34,7 +37,7 @@ archives:
         orla-{{ .Os }}-{{ .Arch }}
       {{- end -}}
     formats:
-      - binary
+      - tar.gz
 
 # Sign and notarize macOS binaries using cross-platform method (quill)
 # This works on any OS and handles both signing and notarization
@@ -76,6 +79,41 @@ release:
     ---
     
     Full Changelog: https://github.com/dorcha-inc/orla/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Homebrew cask configuration
+homebrew_casks:
+  - name: orla
+    # Use the same repository - the cask will be in the Casks/ directory
+    repository:
+      owner: dorcha-inc
+      name: orla
+      # Use GITHUB_TOKEN (default GitHub Actions token) since we're pushing to the same repo
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    
+    # The commit author
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    
+    # The homepage for the project
+    homepage: "https://github.com/dorcha-inc/orla"
+    
+    # A description for the project
+    description: "A dead-simple unix tool for lightweight agents"
+
+    # The license of the project
+    license: "MIT"
+    
+    # Binary name (the executable inside the archive)
+    binaries:
+      - orla
+    
+    # Use hooks to run the install script for post-install setup (Ollama + model)
+    # Homebrew installs the binary, then we run the install script with --homebrew flag
+    hooks:
+      post:
+        install: |
+          system "/bin/sh", "-c", "curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew"
 
 # Generate checksums
 checksum:

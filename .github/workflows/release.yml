@@ -73,6 +73,23 @@ jobs:
           # run orla agent to print the prompt
           orla agent "cats are cool"
 
+      - name: Test uninstall script
+        run: |
+          # Test the uninstall script
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/uninstall.sh | sh
+          
+          # Verify orla is no longer in PATH
+          if command -v orla >/dev/null 2>&1; then
+            echo "ERROR: orla is still in PATH after uninstall" && exit 1
+          fi
+          
+          # Verify orla binary is removed from common locations
+          if [ -f /usr/local/bin/orla ] || [ -f "$HOME/.local/bin/orla" ]; then
+            echo "ERROR: orla binary still exists after uninstall" && exit 1
+          fi
+          
+          echo "Uninstall script test passed"
+
   test-install-macos:
     name: Test Install Script (macOS)
     runs-on: macos-latest
@@ -112,3 +129,148 @@ jobs:
 
           # run orla agent to print the prompt
           orla agent "cats are cool"
+
+      - name: Test uninstall script
+        run: |
+          # Test the uninstall script
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/uninstall.sh | sh
+          
+          # Verify orla is no longer in PATH
+          if command -v orla >/dev/null 2>&1; then
+            echo "ERROR: orla is still in PATH after uninstall" && exit 1
+          fi
+          
+          # Verify orla binary is removed from common locations
+          if [ -f /usr/local/bin/orla ] || [ -f "$HOME/.local/bin/orla" ]; then
+            echo "ERROR: orla binary still exists after uninstall" && exit 1
+          fi
+          
+          echo "Uninstall script test passed"
+
+  test-homebrew-macos:
+    name: Test Homebrew Installation (macOS)
+    runs-on: macos-latest
+    needs: release
+    timeout-minutes: 20
+    steps:
+      - name: Wait for release propagation
+        run: sleep 15
+
+      - name: Remove Homebrew Go and Ollama if present
+        run: |
+          # Remove Go and Ollama to test fresh install
+          brew uninstall --ignore-dependencies go ollama 2>/dev/null || true
+          # Also remove from PATH if installed elsewhere
+          sudo rm -f /usr/local/bin/go /usr/local/bin/ollama 2>/dev/null || true
+
+      - name: Tap the repository
+        run: |
+          brew tap dorcha-inc/orla
+
+      - name: Test Homebrew installation
+        run: |
+          # Install via Homebrew
+          brew install --cask dorcha-inc/orla/orla
+          
+          # Verify orla is installed and in PATH
+          which orla || (echo "orla not found in PATH" && exit 1)
+          
+          # Verify orla version command works
+          ORLA_VERSION=$(orla --version | head -n1)
+          echo "Installed orla version: $ORLA_VERSION"
+          
+          # Verify orla help command works
+          orla --help > /dev/null || (echo "orla --help failed" && exit 1)
+          
+          # Verify Ollama is running (Homebrew services)
+          brew services list | grep -q "ollama.*started" || (echo "Ollama service is not running" && exit 1)
+
+          # Test orla agent
+          orla agent "hello world" || (echo "orla agent failed" && exit 1)
+
+          # run orla agent to print the prompt
+          orla agent "cats are cool"
+
+      - name: Test Homebrew uninstallation
+        run: |
+          # Uninstall via Homebrew
+          brew uninstall --cask orla
+          
+          # Verify orla is no longer in PATH
+          if command -v orla >/dev/null 2>&1; then
+            echo "ERROR: orla is still in PATH after Homebrew uninstall" && exit 1
+          fi
+          
+          # Verify orla binary is removed
+          if [ -f /usr/local/bin/orla ] || [ -f "$(brew --prefix)/bin/orla" ]; then
+            echo "ERROR: orla binary still exists after Homebrew uninstall" && exit 1
+          fi
+          
+          echo "Homebrew uninstall test passed"
+
+  test-homebrew-linux:
+    name: Test Homebrew Installation (Linux)
+    runs-on: ubuntu-latest
+    needs: release
+    timeout-minutes: 20
+    steps:
+      - name: Wait for release propagation
+        run: sleep 15
+
+      - name: Install Homebrew on Linux
+        run: |
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          echo "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" >> $GITHUB_ENV
+
+      - name: Remove Ollama if present
+        run: |
+          brew uninstall --ignore-dependencies ollama 2>/dev/null || true
+
+      - name: Tap the repository
+        run: |
+          brew tap dorcha-inc/orla
+
+      - name: Test Homebrew installation
+        run: |
+          # Install via Homebrew
+          brew install --cask dorcha-inc/orla/orla
+          
+          # Verify orla is installed and in PATH
+          which orla || (echo "orla not found in PATH" && exit 1)
+          
+          # Verify orla version command works
+          ORLA_VERSION=$(orla --version | head -n1)
+          echo "Installed orla version: $ORLA_VERSION"
+          
+          # Verify orla help command works
+          orla --help > /dev/null || (echo "orla --help failed" && exit 1)
+          
+          # Verify Ollama is running
+          if command -v systemctl >/dev/null 2>&1; then
+            systemctl is-active ollama || (echo "Ollama service is not active" && exit 1)
+          else
+            pgrep -f ollama || (echo "Ollama process not found" && exit 1)
+          fi
+
+          # Test orla agent
+          orla agent "hello world" || (echo "orla agent failed" && exit 1)
+
+          # run orla agent to print the prompt
+          orla agent "cats are cool"
+
+      - name: Test Homebrew uninstallation
+        run: |
+          # Uninstall via Homebrew
+          brew uninstall --cask orla
+          
+          # Verify orla is no longer in PATH
+          if command -v orla >/dev/null 2>&1; then
+            echo "ERROR: orla is still in PATH after Homebrew uninstall" && exit 1
+          fi
+          
+          # Verify orla binary is removed
+          if [ -f /usr/local/bin/orla ] || [ -f "$HOME/.local/bin/orla" ] || [ -f "/home/linuxbrew/.linuxbrew/bin/orla" ]; then
+            echo "ERROR: orla binary still exists after Homebrew uninstall" && exit 1
+          fi
+          
+          echo "Homebrew uninstall test passed"

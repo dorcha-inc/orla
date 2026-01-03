@@ -8,7 +8,7 @@ This document lists the maintainers of the orla project. Maintainers are respons
 
 ## getting in touch
 
-Please file a [github issue](https://github.com/dorcha-inc/orla/issues] or [join our Discord community](https://discord.gg/bzKYCFewPT). 
+Please file a [github issue](https://github.com/dorcha-inc/orla/issues) or [join our Discord community](https://discord.gg/bzKYCFewPT). 
 Please see [SECURITY.md](SECURITY.md) for reporting security vulnerabilities
 
 ## becoming a maintainer

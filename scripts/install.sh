@@ -2,8 +2,22 @@
 # Thank you so much for using Orla!
 # This script installs Orla on Linux and macOS.
 # It does not support Windows yet :-(
+# Usage:
+#   ./install.sh
+#   Homebrew mode:
+#   ./install.sh --homebrew
+#   This mode is useful if you want to use Orla with Homebrew's version of Ollama. It will not install
+#   Orla's binary, but will install Ollama and set everything up for you. The Orla binary will be installed
+#   by Homebrew directly.
 
 set -eu
+
+# Check for --homebrew flag
+HOMEBREW_INSTALL=0
+if [ "${1:-}" = "--homebrew" ]; then
+    HOMEBREW_INSTALL=1
+    export HOMEBREW_INSTALL=1
+fi
 
 status() { echo "STATUS: $*" >&2; }
 
@@ -53,9 +67,9 @@ get_download_url() {
     ARCH="$3"
 
     if [ "$PLATFORM" = "darwin" ]; then
-        BINARY_NAME="orla-darwin-${ARCH}"
+        BINARY_NAME="orla-darwin-${ARCH}.tar.gz"
     else
-        BINARY_NAME="orla-linux-${ARCH}"
+        BINARY_NAME="orla-linux-${ARCH}.tar.gz"
     fi
 
     status "fetching download url for orla release $LOCAL_LATEST_RELEASE for $PLATFORM $ARCH from github"
@@ -75,12 +89,33 @@ get_install_dir() {
 install_orla() {
     DOWNLOAD_URL="$1"
     INSTALL_DIR="$2"
-    if curl -fsSL "$DOWNLOAD_URL" -o "$INSTALL_DIR/orla"; then
-        chmod +x "$INSTALL_DIR/orla"
-        success "orla installed successfully :-)"
-    else
-        error "failed to download orla binary from github releases :-("
+    PLATFORM="$3"
+
+    # Download the archive
+    TEMP_FILE=$(mktemp)
+    if ! curl -fsSL "$DOWNLOAD_URL" -o "$TEMP_FILE"; then
+        error "failed to download orla from github releases :-("
     fi
+
+    # Extract the binary from the tar.gz archive
+    if ! tar -xzf "$TEMP_FILE" -C "$INSTALL_DIR" orla 2>/dev/null; then
+        error "failed to extract orla binary from archive"
+    fi
+
+    # Verify the extracted binary exists
+    if [ ! -f "$INSTALL_DIR/orla" ]; then
+        error "orla binary not found after extraction"
+    fi
+
+    chmod +x "$INSTALL_DIR/orla"
+
+    # Verify it's executable
+    if [ ! -x "$INSTALL_DIR/orla" ]; then
+        error "failed to make orla executable"
+    fi
+
+    rm -f "$TEMP_FILE"
+    success "orla installed successfully :-)"
 }
 
 install_ollama() {
@@ -280,6 +315,20 @@ install_on_linux() {
     status "linux detected"
     status "installing orla on linux..."
 
+    # install ollama
+    install_ollama_on_linux
+
+    # start ollama service
+    run_ollama_service_on_linux
+
+    if [ "$HOMEBREW_INSTALL" = "1" ]; then
+        status "homebrew mode: skipping binary installation (orla should already be installed)"
+        if ! available orla; then
+            error "orla is not installed. homebrew should have installed it."
+        fi
+        return 0
+    fi
+
     # Detect architecture
     ARCH=$(detect_architecture)
     status "architecture detected: $ARCH"
@@ -292,13 +341,7 @@ install_on_linux() {
     ORLA_INSTALL_DIR=$(get_install_dir)
 
     # download and install orla binary to the install directory
-    install_orla "$DOWNLOAD_URL" "$ORLA_INSTALL_DIR"
-
-    # install ollama
-    install_ollama_on_linux
-
-    # start ollama service
-    run_ollama_service_on_linux
+    install_orla "$DOWNLOAD_URL" "$ORLA_INSTALL_DIR" "linux"
 
     # add orla to path
     add_orla_to_path "$ORLA_INSTALL_DIR"
@@ -374,6 +417,20 @@ install_on_macos() {
     status "macos detected"
     status "installing orla on macos..."
 
+    # install ollama
+    install_ollama_on_macos
+
+    # start ollama service
+    run_ollama_service_on_macos
+
+    if [ "$HOMEBREW_INSTALL" = "1" ]; then
+        status "homebrew mode: skipping binary installation (orla should already be installed)"
+        if ! available orla; then
+            error "orla is not installed. homebrew should have installed it."
+        fi
+        return 0
+    fi
+
     # Detect architecture
     ARCH=$(detect_architecture)
     status "architecture detected: $ARCH"
@@ -389,13 +446,7 @@ install_on_macos() {
     fi
 
     # download and install orla binary to the install directory
-    install_orla "$DOWNLOAD_URL" "$ORLA_INSTALL_DIR"
-
-    # install ollama
-    install_ollama_on_macos
-
-    # start ollama service
-    run_ollama_service_on_macos
+    install_orla "$DOWNLOAD_URL" "$ORLA_INSTALL_DIR" "darwin"
 
     # add orla to path (already in /usr/local/bin which is typically in PATH)
     # But check and add to shell config if needed
