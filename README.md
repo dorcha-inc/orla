@@ -22,11 +22,15 @@
 
 Orla is a unix tool for running lightweight open-source agents. It is easy to add to a script, use with pipes, or build things on top of.
 
-All the amazing folks who have taken their time to contribute something cool to orla are listed in [CONTRIBUTORS.md](CONTRIBUTORS.md).
-
 ## Quickstart
 
-Install orla (you might need `sudo`):
+Install via Homebrew on MacOS or Linux:
+
+```bash
+brew install --cask dorcha-inc/orla/orla
+```
+
+or install orla via a helper script (you might need `sudo`):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh
@@ -56,49 +60,58 @@ Orla is built on a simple premise: AI should be a (free software) tool you own, 
 See the RFCs in `docs/rfcs/` for more details on the roadmap.
 
 
-## Quick links
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+## Navigation
 
 - [Getting Started](#getting-started)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Command Line Options](#command-line-options)
+  - [Installation](#installation)
+  - [Usage](#usage)
+    - [Use `orla agent` on a terminal directly](#use-orla-agent-on-a-terminal-directly)
+    - [Use `orla serve` to integrate with other MCP clients](#use-orla-serve-to-integrate-with-other-mcp-clients)
+    - [Installing Tools from the Registry](#installing-tools-from-the-registry)
+    - [Creating Custom Tools](#creating-custom-tools)
+- [Configuring Orla](#configuring-orla)
+  - [Configuration Options](#configuration-options)
+    - [MCP Server options](#mcp-server-options)
+    - [Orla Agent options](#orla-agent-options)
+  - [Example Configuration](#example-configuration)
+- [Developer's Guide](#developers-guide)
+  - [Building](#building)
+  - [Git hooks](#git-hooks)
+  - [Testing](#testing)
 - [Community + Contributions](#community--contributions)
-- [Roadmap](#roadmap)
-- [Integration Guides](#integration-guides)
+  - [Supporting Orla](#supporting-orla)
+  - [Integration guides](#integration-guides)
+- [Miscellaneous](#miscellaneous)
+  - [Uninstalling Orla](#uninstalling-orla)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 ## Getting Started
 
 ### Installation
 
-The easiest way to install Orla is using our installation script. It will automatically install Orla, Ollama, and set everything up for you:
+The easiest and recommended way to install Orla on macOS and Linux is using [Homebrew](https://brew.sh/):
+
+```bash
+brew install --cask dorcha-inc/orla/orla
+```
+
+Alternatively, you can use our installation script. It will automatically install Orla, Ollama, and set everything up for you:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh
 ```
 
-If you prefer to install manually, make sure you have Go (1.25+) installed, then:
+To remove orla, see [uninstalling orla](#uninstalling-orla).
 
-```bash
-go install github.com/dorcha-inc/orla/cmd/orla@latest
-```
 
-Or build it locally by cloning this repository and running:
-
-```bash
-make build
-```
-
-Or install locally:
-
-```bash
-make install
-```
-
-## Usage
+### Usage
 
 Orla supports two modes of operation: `agent` for direct terminal interaction, and `serve` for integration with MCP clients.
 
-### Use `orla agent` on a terminal directly
+#### Use `orla agent` on a terminal directly
 
 The simplest way to use Orla is through `agent`. Just ask Orla to do something, and it will use local models to reason and execute commands:
 
@@ -133,7 +146,7 @@ You can also override the model:
 orla agent "List all files in the current directory" --model ollama:ministral-3:3b
 ```
 
-### Use `orla serve` to integrate with other MCP clients
+#### Use `orla serve` to integrate with other MCP clients
 
 For integration with external MCP clients (like Claude Desktop), run Orla as a server:
 
@@ -157,7 +170,7 @@ You can hot reload Orla to refresh tools and configuration without restarting:
 kill -HUP $(pgrep orla)
 ```
 
-### Installing Tools from the Registry
+#### Installing Tools from the Registry
 
 The easiest way to get started is to install tools from the [Orla Tool Registry](https://github.com/dorcha-inc/orla-registry):
 
@@ -180,7 +193,7 @@ orla search $search_term
 
 Installed tools are automatically placed in the default tools directory and will be discovered by Orla when you start the server or use agent mode.
 
-### Creating Custom Tools
+#### Creating Custom Tools
 
 You can also create your own tools. Any executable can be a tool:
 
@@ -195,7 +208,7 @@ chmod +x tools/hello.sh
 
 Orla will automatically discover and make these tools available.
 
-## Configuration
+## Configuring Orla
 
 Orla works out of the box with zero configuration, but you can customize it with a YAML config file. Configuration follows a precedence order:
 
@@ -259,7 +272,29 @@ export ORLA_MODEL=ollama:qwen3:1.7b
 export ORLA_SHOW_TOOL_CALLS=true
 ```
 
-## Git hooks
+## Developer's Guide
+
+### Building
+
+If you prefer to install manually, make sure you have Go (1.25+) installed, then:
+
+```bash
+go install github.com/dorcha-inc/orla/cmd/orla@latest
+```
+
+Or build it locally by cloning this repository and running:
+
+```bash
+make build
+```
+
+and then install locally:
+
+```bash
+make install
+```
+
+### Git hooks
 
 orla includes pre-commit hooks for secret detection, linting, and testing. to enable them, run this once:
 
@@ -269,7 +304,7 @@ git config core.hooksPath .githooks
 
 this configures git to automatically use hooks from `.githooks/` - no setup script needed!
 
-## Testing
+### Testing
 
 orla comes with extensive tests which can be run using
 
@@ -297,14 +332,34 @@ Orla is built for the community. Contributions are not just welcome—they are e
 2. Join us on [Discord](https://discord.gg/bzKYCFewPT).
 3. Check out our [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
 
-All contributors are recognized in our [CONTRIBUTORS.md](CONTRIBUTORS.md) file.
+All the amazing folks who have taken their time to contribute something cool to orla are listed in [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
-## Supporting Orla
+### Supporting Orla
 
 If Orla becomes a tool you love, please consider [sponsoring the project](https://github.com/sponsors/jadidbourbaki). Your support helps us dedicate more time to maintenance and building the future of local AI.
 
-## Integration guides
+### Integration guides
 
 - [Claude Desktop Integration](docs/integrations/claude-desktop.md)
 - [MCP Client for Ollama Integration](docs/integrations/mcp-client-ollama.md)
 - [Goose AI Agent Integration](docs/integrations/goose.md)
+
+## Miscellaneous
+
+### Uninstalling Orla
+
+If installed via Homebrew:
+
+```bash
+brew uninstall --cask orla
+```
+
+If installed via install script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/uninstall.sh | sh
+```
+
+Note: The uninstall script only removes Orla. Ollama and models are left intact. To remove Ollama:
+- If installed via Homebrew: `brew uninstall ollama`
+- Otherwise: Visit https://ollama.ai or check your system's package manager
