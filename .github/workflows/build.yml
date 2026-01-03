@@ -60,11 +60,41 @@ jobs:
         version: v2.7.2
         args: --timeout=5m
 
+    - name: Install Ollama
+      run: |
+        curl -fsSL https://ollama.ai/install.sh | sh
+        # Start Ollama in background
+        ollama serve &
+        # Wait for Ollama to be ready
+        timeout 30 bash -c 'until curl -s http://localhost:11434/api/tags > /dev/null; do sleep 1; done' || true
+        # pull the test model
+        ollama pull qwen3:0.6b
+        # wait for the model to be ready
+        timeout 30 bash -c 'until ollama list | grep -q qwen3:0.6b; do sleep 1; done' || true
+
     - name: Run tests
       run: make test
 
+    - name: Run integration tests
+      run: make test-integration
+
     - name: Run e2e tests
-      run: make e2e-test
+      run: make test-e2e
+
+    - name: Run tests with coverage
+      run: |
+        go test -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/cmd/' | grep -v '/examples/')
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+        slug: dorcha-inc/orla
+        verbose: true
 
     - name: Get version
       id: version

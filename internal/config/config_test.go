@@ -70,6 +70,9 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	orlaHome, err := registry.GetOrlaHomeDir()
 	require.NoError(t, err)
 	expectedToolsDir := filepath.Join(orlaHome, "tools")
+	// Ensure the directory exists for EvalSymlinks to work
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	require.NoError(t, os.MkdirAll(expectedToolsDir, 0755))
 	// Use EvalSymlinks to handle any symlink differences
 	expectedAbs, evalSymlinksErr := filepath.EvalSymlinks(expectedToolsDir)
 	require.NoError(t, evalSymlinksErr)
