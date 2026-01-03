@@ -38,7 +38,7 @@ check_curl() {
 check_curl
 
 get_latest_release() {
-    status "fetching latest orla release for linux $ARCH from github"
+    status "fetching latest orla release from github"
     LATEST_RELEASE=$(curl -fsSL https://api.github.com/repos/dorcha-inc/orla/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
     if [ -z "$LATEST_RELEASE" ]; then
         error "failed to determine latest orla release version from github"
@@ -49,8 +49,16 @@ get_latest_release() {
 
 get_download_url() {
     LOCAL_LATEST_RELEASE="$1"
-    BINARY_NAME="orla-linux-${ARCH}"
-    status "fetching download url for orla release $LOCAL_LATEST_RELEASE for linux $ARCH from github"
+    PLATFORM="$2"
+    ARCH="$3"
+
+    if [ "$PLATFORM" = "darwin" ]; then
+        BINARY_NAME="orla-darwin-${ARCH}"
+    else
+        BINARY_NAME="orla-linux-${ARCH}"
+    fi
+
+    status "fetching download url for orla release $LOCAL_LATEST_RELEASE for $PLATFORM $ARCH from github"
     DOWNLOAD_URL="https://github.com/dorcha-inc/orla/releases/download/${LOCAL_LATEST_RELEASE}/${BINARY_NAME}"
     status "download url: $DOWNLOAD_URL"
     echo "$DOWNLOAD_URL"
@@ -253,21 +261,32 @@ check_default_model() {
     success "model '$DEFAULT_MODEL' is available :-)"
 }
 
+detect_architecture() {
+    MACHINE=$(uname -m)
+    case "$MACHINE" in
+    x86_64 | amd64)
+        echo "amd64"
+        ;;
+    aarch64 | arm64)
+        echo "arm64"
+        ;;
+    *)
+        error "Unsupported architecture: $MACHINE"
+        ;;
+    esac
+}
+
 install_on_linux() {
     status "linux detected"
     status "installing orla on linux..."
 
     # Detect architecture
-    ARCH="amd64"
-    if [ "$(uname -m)" = "aarch64" ] || [ "$(uname -m)" = "arm64" ]; then
-        ARCH="arm64"
-    fi
-
+    ARCH=$(detect_architecture)
     status "architecture detected: $ARCH"
 
     # get latest orla release version, fail if not found
     LATEST_RELEASE=$(get_latest_release)
-    DOWNLOAD_URL=$(get_download_url "$LATEST_RELEASE")
+    DOWNLOAD_URL=$(get_download_url "$LATEST_RELEASE" "linux" "$ARCH")
 
     # get the install directory
     ORLA_INSTALL_DIR=$(get_install_dir)
@@ -352,17 +371,25 @@ build_and_install_orla() {
 }
 
 install_on_macos() {
-    # For macOS, build locally (code signing is not supported yet)
     status "macos detected"
     status "installing orla on macos..."
 
-    # Check for Go and install if missing
-    if ! available go; then
-        status "go is not installed. installing go..."
-        install_go
+    # Detect architecture
+    ARCH=$(detect_architecture)
+    status "architecture detected: $ARCH"
+
+    # get latest orla release version, fail if not found
+    LATEST_RELEASE=$(get_latest_release)
+    DOWNLOAD_URL=$(get_download_url "$LATEST_RELEASE" "darwin" "$ARCH")
+
+    # get the install directory (use /usr/local/bin for macOS too)
+    ORLA_INSTALL_DIR="/usr/local/bin"
+    if [ ! -w "$ORLA_INSTALL_DIR" ]; then
+        error "cannot write to install directory: $ORLA_INSTALL_DIR, please run with sudo or as root"
     fi
 
-    build_and_install_orla
+    # download and install orla binary to the install directory
+    install_orla "$DOWNLOAD_URL" "$ORLA_INSTALL_DIR"
 
     # install ollama
     install_ollama_on_macos
@@ -370,8 +397,14 @@ install_on_macos() {
     # start ollama service
     run_ollama_service_on_macos
 
-    # add orla to path
-    add_orla_to_path_macos
+    # add orla to path (already in /usr/local/bin which is typically in PATH)
+    # But check and add to shell config if needed
+    if ! available orla; then
+        # /usr/local/bin might not be in PATH, add it
+        add_orla_to_path_macos
+    else
+        success "orla is already in PATH :-)"
+    fi
 }
 
 # installing orla

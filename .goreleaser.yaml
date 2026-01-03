@@ -1,0 +1,111 @@
+# GoReleaser configuration for Orla
+# See https://goreleaser.com for documentation
+
+project_name: orla
+
+builds:
+  - id: orla
+    main: ./cmd/orla
+    binary: orla
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.buildDate={{.Date}}
+    # Custom binary naming to match install script expectations (orla-linux-amd64, orla-darwin-arm64, etc.)
+    hooks:
+      post:
+        - sh: |
+            OLD_PATH="{{ .ArtifactPath }}"
+            DIR=$(dirname "$OLD_PATH")
+            if [ "$GOOS" = "linux" ]; then
+              NEW_PATH="$DIR/orla-linux-$GOARCH"
+            elif [ "$GOOS" = "darwin" ]; then
+              NEW_PATH="$DIR/orla-darwin-$GOARCH"
+            else
+              NEW_PATH="$OLD_PATH"
+            fi
+            if [ "$OLD_PATH" != "$NEW_PATH" ]; then
+              mv "$OLD_PATH" "$NEW_PATH"
+              echo "Renamed binary: $OLD_PATH -> $NEW_PATH"
+            fi
+
+# Rename binaries to match install script naming and upload directly
+archives:
+  - id: default
+    builds:
+      - orla
+    # Upload binaries directly without archiving
+    format: binary
+    format_overrides:
+      - goos: linux
+        format: binary
+      - goos: darwin
+        format: binary
+    # Custom file naming to match install script expectations
+    name_template: >-
+      {{- if eq .Os "linux" -}}
+        orla-linux-{{ .Arch }}
+      {{- else if eq .Os "darwin" -}}
+        orla-darwin-{{ .Arch }}
+      {{- else -}}
+        orla-{{ .Os }}-{{ .Arch }}
+      {{- end -}}
+
+# Sign and notarize macOS binaries using cross-platform method (quill)
+# This works on any OS and handles both signing and notarization
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids:
+        - orla
+      # Sign the binaries before notarization
+      sign:
+        # The base64 encoded .p12 certificate
+        certificate: '{{ .Env.MACOS_SIGN_P12 }}'
+        # Password to unlock the certificate
+        password: '{{ .Env.MACOS_SIGN_PASSWORD }}'
+        # Developer ID Application identity (auto-detected from certificate)
+      # Notarize using App Store Connect API
+      notarize:
+        # Whether to wait for notarization to complete
+        wait: true
+        # Timeout for notarization
+        timeout: 20m
+        # App Store Connect API credentials
+        key: '{{ .Env.MACOS_NOTARY_KEY }}'
+        key_id: '{{ .Env.MACOS_NOTARY_KEY_ID }}'
+        issuer_id: '{{ .Env.MACOS_NOTARY_ISSUER_ID }}'
+
+# Publish to GitHub releases
+release:
+  github:
+    owner: dorcha-inc
+    name: orla
+  draft: false
+  mode: replace
+  header: |
+    ## Orla {{ .Tag }}
+    
+    Release {{ .Tag }} of Orla.
+  footer: |
+    ---
+    
+    Full Changelog: https://github.com/dorcha-inc/orla/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Generate checksums
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+# Changelog configuration
+changelog:
+  sort: asc
+
