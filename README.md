@@ -16,9 +16,32 @@
   <a href="https://discord.gg/bzKYCFewPT"><img src="https://img.shields.io/badge/Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
+<p align="center">
+  <img src="share/main.gif" alt="Orla Demo" width="800">
+</p>
+
 Orla is a unix tool for running lightweight open-source agents. It is easy to add to a script, use with pipes, or build things on top of.
 
 All the amazing folks who have taken their time to contribute something cool to orla are listed in [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
+## Quickstart
+
+Install orla (you might need `sudo`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh
+```
+
+Try orla:
+
+```bash
+>>> orla agent "Hello"
+Hello! How can I assist you today? Could you please provide some details or specify what you need help with?
+```
+
+All done!
+
+Side note: if required, this will install go, ollama, and pull in a lightweight open-source model.
 
 ## Vision and Roadmap
 
@@ -42,32 +65,6 @@ See the RFCs in `docs/rfcs/` for more details on the roadmap.
 - [Community + Contributions](#community--contributions)
 - [Roadmap](#roadmap)
 - [Integration Guides](#integration-guides)
-
-## Quickstart
-
-Install orla (you might need `sudo`):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh
-```
-
-Side note: if required, this will install go, ollama, and pull in a lightweight model.
-
-Try orla:
-
-```bash
->>> orla agent "Hello"
-Hello! How can I assist you today? Could you please provide some details or specify what you need help with?
-```
-
-```bash
->>> orla agent "tell me a story about a cat" > cat.txt 
->>> cat cat.txt
-Here is a short story about a cat:
-Once upon a time in the heart of a quiet forest, there lived a cat named Luna. With her paws soft and her eyes bright, she found a hidden treasure—a small garden growing in the shadows. As she walked through the trees, she discovered a world of colors and life, and she learned that every creature has its own special place in the world. 🐾
->>> orla agent "summarize this story in a sentence" < cat.txt
-Once upon a time in a quiet forest, a cat named Luna discovered a hidden garden, learning that every creature has its own special place.
-```
 
 ## Getting Started
 
