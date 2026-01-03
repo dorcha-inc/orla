@@ -55,7 +55,7 @@ Orla is built on a simple premise: AI should be a (free software) tool you own, 
 
 1. Orla runs locally. Your data, queries, and tools never leave your machine without your explicit instruction. It's private by default.
 2. Orla brings the power of modern LLMs to your terminal with a dead-simple interface. If you know how to use `grep`, you know how to use Orla.
-3. Orla is free and open-source software. No subscriptions, no vendor lock-in. You are not the product.
+3. Orla is free and open-source software. No subscriptions, no vendor lock-in.
 
 See the RFCs in `docs/rfcs/` for more details on the roadmap.
 
