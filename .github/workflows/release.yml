@@ -38,7 +38,7 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
   test-install-linux:
-    name: Test Install Script (Linux)
+    name: test-install-linux
     runs-on: ubuntu-latest
     needs: release
     timeout-minutes: 15
@@ -46,10 +46,12 @@ jobs:
       - name: Wait for release propagation
         run: sleep 10
 
-      - name: Test install script
+      - name: test-install-script
         run: |
           # Test the install script using the actual release
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | sh
+          # Use sudo since the script installs to /usr/local/bin
+          # Pass GITHUB_TOKEN to help with API rate limits
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
           
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
@@ -74,10 +76,11 @@ jobs:
           # run orla agent to print the prompt
           orla agent "cats are cool"
 
-      - name: Test uninstall script
+      - name: test-uninstall-script
         run: |
           # Test the uninstall script
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/uninstall.sh | sh
+          # Use sudo since the script removes from /usr/local/bin
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/uninstall.sh | sudo sh
           
           # Verify orla is no longer in PATH
           if command -v orla >/dev/null 2>&1; then
@@ -92,7 +95,7 @@ jobs:
           echo "Uninstall script test passed"
 
   test-install-macos:
-    name: Test Install Script (macOS)
+    name: test-install-macos
     runs-on: macos-latest
     needs: release
     timeout-minutes: 20
@@ -107,10 +110,12 @@ jobs:
           # Also remove from PATH if installed elsewhere
           sudo rm -f /usr/local/bin/go /usr/local/bin/ollama 2>/dev/null || true
 
-      - name: Test install script
+      - name: test-install-script
         run: |
           # Test the install script using the actual release
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | sh
+          # Use sudo since the script installs to /usr/local/bin
+          # Pass GITHUB_TOKEN to help with API rate limits
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
           
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
@@ -131,10 +136,11 @@ jobs:
           # run orla agent to print the prompt
           orla agent "cats are cool"
 
-      - name: Test uninstall script
+      - name: test-uninstall-script
         run: |
           # Test the uninstall script
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/uninstall.sh | sh
+          # Use sudo since the script removes from /usr/local/bin
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/uninstall.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
           
           # Verify orla is no longer in PATH
           if command -v orla >/dev/null 2>&1; then
@@ -149,7 +155,7 @@ jobs:
           echo "Uninstall script test passed"
 
   test-homebrew-macos:
-    name: Test Homebrew Installation (macOS)
+    name: test-homebrew-macos
     runs-on: macos-latest
     needs: release
     timeout-minutes: 20
@@ -168,7 +174,7 @@ jobs:
         run: |
           brew tap dorcha-inc/orla
 
-      - name: Test Homebrew installation
+      - name: test-homebrew-installation
         run: |
           # Install via Homebrew
           brew install --cask dorcha-inc/orla/orla
@@ -192,7 +198,7 @@ jobs:
           # run orla agent to print the prompt
           orla agent "cats are cool"
 
-      - name: Test Homebrew uninstallation
+      - name: test-homebrew-uninstallation
         run: |
           # Uninstall via Homebrew
           brew uninstall --cask orla
@@ -210,7 +216,7 @@ jobs:
           echo "Homebrew uninstall test passed"
 
   test-homebrew-linux:
-    name: Test Homebrew Installation (Linux)
+    name: test-homebrew-linux
     runs-on: ubuntu-latest
     needs: release
     timeout-minutes: 20
@@ -218,10 +224,8 @@ jobs:
       - name: Wait for release propagation
         run: sleep 15
 
-      - name: Install Homebrew on Linux
-        run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          echo "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" >> $GITHUB_ENV
+      - name: Set up Homebrew
+        uses: homebrew/actions/setup-homebrew@master
 
       - name: Remove Ollama if present
         run: |
@@ -231,7 +235,7 @@ jobs:
         run: |
           brew tap dorcha-inc/orla
 
-      - name: Test Homebrew installation
+      - name: test-homebrew-installation
         run: |
           # Install via Homebrew
           brew install --cask dorcha-inc/orla/orla
@@ -259,7 +263,7 @@ jobs:
           # run orla agent to print the prompt
           orla agent "cats are cool"
 
-      - name: Test Homebrew uninstallation
+      - name: test-homebrew-uninstallation
         run: |
           # Uninstall via Homebrew
           brew uninstall --cask orla
