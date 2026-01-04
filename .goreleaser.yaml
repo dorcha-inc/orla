@@ -109,10 +109,11 @@ homebrew_casks:
     
     # Use hooks to run the install script for post-install setup (Ollama + model)
     # Homebrew installs the binary, then we run the install script with --homebrew flag
+    # Note: We need to set PATH because post-install hooks run in a clean environment
     hooks:
       post:
         install: |
-          system "/bin/sh", "-c", "curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew"
+          system "/bin/sh", "-c", "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\" && curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew"
 
 # Generate checksums
 checksum:

@@ -53,7 +53,11 @@ check_curl
 
 get_latest_release() {
     status "fetching latest orla release from github"
-    LATEST_RELEASE=$(curl -fsSL https://api.github.com/repos/dorcha-inc/orla/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        LATEST_RELEASE=$(curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/repos/dorcha-inc/orla/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+    else
+        LATEST_RELEASE=$(curl -fsSL https://api.github.com/repos/dorcha-inc/orla/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+    fi
     if [ -z "$LATEST_RELEASE" ]; then
         error "failed to determine latest orla release version from github"
     fi
