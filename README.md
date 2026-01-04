@@ -231,7 +231,7 @@ If you create an `orla.yaml` file in your project directory, it will override th
 
 #### Orla Agent options
 
-- `model`: Model identifier (e.g., `"ollama:ministral-3:3b"`, `"ollama:qwen3:1.7b"`) (default: `"ollama:qwen3:1.7b"`)
+- `model`: Model identifier (e.g., `"ollama:ministral-3:3b"`, `"ollama:qwen3:0.6b"`) (default: `"ollama:qwen3:0.6b"`)
 - `max_tool_calls`: Maximum tool calls per prompt (default: `10`)
 - `streaming`: Enable streaming responses (default: `true`)
 - `output_format`: Output format - `"auto"`, `"rich"`, or `"plain"` (default: `"auto"`)
