@@ -287,10 +287,20 @@ check_default_model() {
 
     # Wait for Ollama API to be ready before checking/pulling models
     status "waiting for ollama API to be ready..."
-    timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 1; done' || {
+    max_attempts=60
+    attempt=0
+    while [ $attempt -lt $max_attempts ]; do
+        if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+
+    if [ $attempt -eq $max_attempts ]; then
         warning "ollama API is not ready yet. model will need to be pulled manually later."
         return 0
-    }
+    fi
 
     if ollama list 2>/dev/null | grep -q "^$DEFAULT_MODEL"; then
         success "model '$DEFAULT_MODEL' is available :-)"
