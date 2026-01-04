@@ -113,9 +113,9 @@ jobs:
       - name: test-install-script
         run: |
           # Test the install script using the actual release
-          # Use sudo since the script installs to /usr/local/bin
+          # On macOS, run without sudo (Homebrew won't run as root, and /usr/local/bin is typically writable)
           # Pass GITHUB_TOKEN to help with API rate limits
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
           
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
@@ -170,6 +170,9 @@ jobs:
           # Also remove from PATH if installed elsewhere
           sudo rm -f /usr/local/bin/go /usr/local/bin/ollama 2>/dev/null || true
 
+      - name: Set up Homebrew
+        uses: homebrew/actions/setup-homebrew@master
+
       - name: Tap the repository
         run: |
           brew tap dorcha-inc/orla
@@ -177,6 +180,7 @@ jobs:
       - name: test-homebrew-installation
         run: |
           # Install via Homebrew
+          # The post-install hook will run and needs brew in PATH
           brew install --cask dorcha-inc/orla/orla
           
           # Verify orla is installed and in PATH

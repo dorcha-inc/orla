@@ -9,37 +9,44 @@ success() { echo "SUCCESS: $*" >&2; }
 warning() { echo "WARNING: $*" >&2; }
 available() { command -v "$1" >/dev/null 2>&1; }
 
-keep_removing_orla_if_in_path() {
-    ORLA_PATH=""
-    if available orla; then
-        ORLA_PATH=$(command -v orla)
-    fi
-
-    rm -f "$ORLA_PATH"
-    success "removed $ORLA_PATH"
-
-    if available orla; then
-        warning "orla is still in the PATH, removing it again..."
-        keep_removing_orla_if_in_path
-    fi
-}
-
 # Remove orla binary
 remove_orla_binary() {
     status "removing orla binary..."
 
-    keep_removing_orla_if_in_path
-
-    # check common install locations
-    ORLA_PATHS=""
-    # if the path exists, add it to the list
-    for path in /usr/local/bin/orla /usr/bin/orla "$HOME/.local/bin/orla" "$HOME/bin/orla"; do
-        if [ -f "$path" ]; then ORLA_PATHS="$ORLA_PATHS $path"; fi
+    # Get the path where orla is currently found (if any) and try removing it up to 3 times
+    # This handles cases where there are multiple copies of orla in PATH
+    MAX_ATTEMPTS=3
+    ATTEMPT=1
+    while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+        ORLA_PATH=""
+        if available orla; then
+            ORLA_PATH=$(command -v orla)
+            # Remove it if it exists and is a file (not a symlink to a non-existent file)
+            if [ -n "$ORLA_PATH" ] && [ -f "$ORLA_PATH" ]; then
+                rm -f "$ORLA_PATH"
+                success "removed $ORLA_PATH (attempt $ATTEMPT)"
+            fi
+            # If orla is still available after removal, try again
+            if available orla && [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                warning "orla is still in PATH, trying again (attempt $((ATTEMPT + 1))/$MAX_ATTEMPTS)..."
+                ATTEMPT=$((ATTEMPT + 1))
+                # Small delay to allow filesystem to update
+                sleep 0.1
+            else
+                break
+            fi
+        else
+            # orla is not in PATH, we're done
+            break
+        fi
     done
 
-    for path in $ORLA_PATHS; do
-        rm -f "$path"
-        success "removed $path"
+    # Remove from all common install locations
+    for path in /usr/local/bin/orla /usr/bin/orla "$HOME/.local/bin/orla" "$HOME/bin/orla"; do
+        if [ -f "$path" ]; then
+            rm -f "$path"
+            success "removed $path"
+        fi
     done
 }
 
