@@ -285,6 +285,13 @@ check_default_model() {
         error "ollama is not installed somehow (even though we verified it earlier) please start a github issue at https://github.com/dorcha-inc/orla/issues"
     fi
 
+    # Wait for Ollama API to be ready before checking/pulling models
+    status "waiting for ollama API to be ready..."
+    timeout 60 bash -c 'until curl -s http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 1; done' || {
+        warning "ollama API is not ready yet. model will need to be pulled manually later."
+        return 0
+    }
+
     if ollama list 2>/dev/null | grep -q "^$DEFAULT_MODEL"; then
         success "model '$DEFAULT_MODEL' is available :-)"
         return 0

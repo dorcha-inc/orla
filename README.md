@@ -1,9 +1,8 @@
 <div align="center">
   <a href="https://github.com/dorcha-inc/orla">
-    <img src="share/orla_canva.png" alt="Orla Logo" width="400">
+    <img src="share/orla_banner.png" alt="Orla Logo" width="800">
   </a>
   <br>
-  <h3 align="center">A dead-simple unix tool for lightweight agents</h3>
 </div>
 
 <p align="center">
