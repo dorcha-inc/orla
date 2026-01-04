@@ -113,7 +113,7 @@ homebrew_casks:
     hooks:
       post:
         install: |
-          system "/bin/sh", "-c", "export PATH=\"/opt/homebrew/bin:/usr/local/bin:$PATH\" && curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew"
+          system "/bin/sh", "-c", "export PATH=\"/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" && curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew"
 
 # Generate checksums
 checksum:

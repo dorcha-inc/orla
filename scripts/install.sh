@@ -149,7 +149,12 @@ install_ollama_on_macos() {
 install_ollama_on_linux() {
     status "linux detected"
     status "checking for ollama..."
-    install_ollama "curl"
+    # If in homebrew mode and brew is available, use homebrew; otherwise use curl
+    if [ "$HOMEBREW_INSTALL" = "1" ] && available brew; then
+        install_ollama "brew"
+    else
+        install_ollama "curl"
+    fi
 }
 
 run_ollama_service() {
@@ -344,6 +349,10 @@ install_on_linux() {
 
     if [ "$HOMEBREW_INSTALL" = "1" ]; then
         status "homebrew mode: skipping binary installation (orla should already be installed)"
+        # Add common homebrew paths to PATH for checking
+        export PATH="/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+        # Wait a moment for homebrew to finish installing
+        sleep 2
         if ! available orla; then
             error "orla is not installed. homebrew should have installed it."
         fi
