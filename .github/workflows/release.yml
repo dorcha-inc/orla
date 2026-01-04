@@ -254,12 +254,29 @@ jobs:
           # Verify orla help command works
           orla --help > /dev/null || (echo "orla --help failed" && exit 1)
           
-          # Verify Ollama is running
-          if command -v systemctl >/dev/null 2>&1; then
-            systemctl is-active ollama || (echo "Ollama service is not active" && exit 1)
-          else
-            pgrep -f ollama || (echo "Ollama process not found" && exit 1)
+          # Verify Ollama API is accessible (works regardless of installation method)
+          echo "Waiting for Ollama API to be ready..."
+          max_attempts=60
+          attempt=0
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+              echo "Ollama API is ready"
+              break
+            fi
+            sleep 1
+            attempt=$((attempt + 1))
+          done
+
+          if [ $attempt -eq $max_attempts ]; then
+            echo "ERROR: Ollama API not ready after 60 seconds" && exit 1
           fi
+
+          # Verify the default model is available (install script should have pulled it)
+          echo "Verifying default model qwen3:0.6b is available..."
+          if ! ollama list 2>/dev/null | grep -q "^qwen3:0.6b"; then
+            echo "ERROR: Model qwen3:0.6b is not available. Install script should have pulled it." && exit 1
+          fi
+          echo "Model qwen3:0.6b is available"
 
           # Test orla agent
           orla agent "hello world" || (echo "orla agent failed" && exit 1)
