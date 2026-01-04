@@ -189,7 +189,12 @@ run_ollama_service_on_macos() {
 }
 
 run_ollama_service_on_linux() {
-    run_ollama_service "systemctl"
+    # If in homebrew mode and brew is available, use homebrew services; otherwise use systemctl
+    if [ "$HOMEBREW_INSTALL" = "1" ] && available brew; then
+        run_ollama_service "brew"
+    else
+        run_ollama_service "systemctl"
+    fi
 }
 
 get_shell_config() {
