@@ -83,12 +83,11 @@ release:
 # Homebrew cask configuration
 homebrew_casks:
   - name: orla
-    # Use the same repository - the cask will be in the Casks/ directory
+    # Use a separate tap repository following Homebrew conventions
     repository:
       owner: dorcha-inc
-      name: orla
-      # Use GITHUB_TOKEN (default GitHub Actions token) since we're pushing to the same repo
-      token: "{{ .Env.GITHUB_TOKEN }}"
+      name: homebrew-orla
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     
     # The commit author
     commit_author:
