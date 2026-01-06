@@ -73,7 +73,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }} # Same token works for test tap
-          TEST_MODE: "true" # This makes it a draft release and uses test tap (see .goreleaser.yaml)
+          TEST_MODE: "true" # This uses test tap (see .goreleaser.yaml)
 
       - name: Note about test release
         if: github.event_name == 'workflow_dispatch'
