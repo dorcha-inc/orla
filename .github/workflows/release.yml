@@ -300,3 +300,223 @@ jobs:
           fi
           
           echo "Homebrew uninstall test passed"
+
+  test-install-skip-ollama-linux:
+    name: test-install-skip-ollama-linux
+    runs-on: ubuntu-latest
+    needs: release
+    timeout-minutes: 10
+    steps:
+      - name: Wait for release propagation
+        run: sleep 10
+
+      - name: Remove Ollama if present
+        run: |
+          # Remove Ollama to test skip-ollama path
+          sudo systemctl stop ollama 2>/dev/null || true
+          sudo systemctl disable ollama 2>/dev/null || true
+          sudo rm -f /usr/local/bin/ollama 2>/dev/null || true
+          brew uninstall --ignore-dependencies ollama 2>/dev/null || true
+
+      - name: test-install-script-skip-ollama
+        run: |
+          # Test the install script with --skip-ollama flag
+          # Use sudo since the script installs to /usr/local/bin
+          # Pass GITHUB_TOKEN to help with API rate limits
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh -s -- --skip-ollama
+          
+          # Verify orla is installed and in PATH
+          which orla || (echo "orla not found in PATH" && exit 1)
+          
+          # Verify orla version command works
+          ORLA_VERSION=$(orla --version | head -n1)
+          echo "Installed orla version: $ORLA_VERSION"
+          
+          # Verify orla help command works
+          orla --help > /dev/null || (echo "orla --help failed" && exit 1)
+          
+          # Verify Ollama is NOT installed/running (this is what we're testing)
+          if command -v ollama >/dev/null 2>&1; then
+            echo "ERROR: Ollama should not be installed when --skip-ollama is used" && exit 1
+          fi
+          
+          if systemctl is-active ollama 2>/dev/null || pgrep -f ollama >/dev/null 2>&1; then
+            echo "ERROR: Ollama should not be running when --skip-ollama is used" && exit 1
+          fi
+          
+          echo "Skip Ollama installation test passed - Orla installed, Ollama skipped"
+
+      - name: Test with OLLAMA_HOST environment variable
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- env
+
+      - name: Test with llm_backend configuration
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- config
+
+  test-homebrew-skip-ollama-linux:
+    name: test-homebrew-skip-ollama-linux
+    runs-on: ubuntu-latest
+    needs: release
+    timeout-minutes: 15
+    steps:
+      - name: Wait for release propagation
+        run: sleep 15
+
+      - name: Set up Homebrew
+        uses: homebrew/actions/setup-homebrew@master
+
+      - name: Remove Ollama if present
+        run: |
+          brew uninstall --ignore-dependencies ollama 2>/dev/null || true
+
+      - name: Tap the repository
+        run: |
+          brew tap dorcha-inc/orla
+
+      - name: test-homebrew-installation-skip-ollama
+        run: |
+          # Install via Homebrew with ORLA_SKIP_OLLAMA=1
+          ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+          
+          # Verify orla is installed and in PATH
+          which orla || (echo "orla not found in PATH" && exit 1)
+          
+          # Verify orla version command works
+          ORLA_VERSION=$(orla --version | head -n1)
+          echo "Installed orla version: $ORLA_VERSION"
+          
+          # Verify orla help command works
+          orla --help > /dev/null || (echo "orla --help failed" && exit 1)
+          
+          # Verify Ollama is NOT installed (this is what we're testing)
+          if command -v ollama >/dev/null 2>&1; then
+            echo "ERROR: Ollama should not be installed when ORLA_SKIP_OLLAMA=1 is set" && exit 1
+          fi
+          
+          echo "Homebrew skip Ollama installation test passed - Orla installed, Ollama skipped"
+
+      - name: Test with OLLAMA_HOST environment variable
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- env
+
+      - name: Test with llm_backend configuration
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- config
+
+  test-install-skip-ollama-macos:
+    name: test-install-skip-ollama-macos
+    runs-on: macos-latest
+    needs: release
+    timeout-minutes: 15
+    steps:
+      - name: Wait for release propagation
+        run: sleep 10
+
+      - name: Remove Homebrew Ollama if present
+        run: |
+          # Remove Ollama to test skip-ollama path
+          brew uninstall --ignore-dependencies ollama 2>/dev/null || true
+          sudo rm -f /usr/local/bin/ollama 2>/dev/null || true
+          # Stop any running Ollama services
+          brew services stop ollama 2>/dev/null || true
+
+      - name: test-install-script-skip-ollama
+        run: |
+          # Test the install script with --skip-ollama flag
+          # On macOS, run without sudo (Homebrew won't run as root, and /usr/local/bin is typically writable)
+          # Pass GITHUB_TOKEN to help with API rate limits
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh -s -- --skip-ollama
+          
+          # Verify orla is installed and in PATH
+          which orla || (echo "orla not found in PATH" && exit 1)
+          
+          # Verify orla version command works
+          ORLA_VERSION=$(orla --version | head -n1)
+          echo "Installed orla version: $ORLA_VERSION"
+          
+          # Verify orla help command works
+          orla --help > /dev/null || (echo "orla --help failed" && exit 1)
+          
+          # Verify Ollama is NOT installed/running (this is what we're testing)
+          if command -v ollama >/dev/null 2>&1; then
+            echo "ERROR: Ollama should not be installed when --skip-ollama is used" && exit 1
+          fi
+          
+          if brew services list 2>/dev/null | grep -q "ollama.*started"; then
+            echo "ERROR: Ollama should not be running when --skip-ollama is used" && exit 1
+          fi
+          
+          if pgrep -f ollama >/dev/null 2>&1; then
+            echo "ERROR: Ollama process should not be running when --skip-ollama is used" && exit 1
+          fi
+          
+          echo "Skip Ollama installation test passed - Orla installed, Ollama skipped"
+
+      - name: Test with OLLAMA_HOST environment variable
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- env
+
+      - name: Test with llm_backend configuration
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- config
+
+  test-homebrew-skip-ollama-macos:
+    name: test-homebrew-skip-ollama-macos
+    runs-on: macos-latest
+    needs: release
+    timeout-minutes: 20
+    steps:
+      - name: Wait for release propagation
+        run: sleep 15
+
+      - name: Remove Homebrew Go and Ollama if present
+        run: |
+          # Remove Go and Ollama to test fresh install
+          brew uninstall --ignore-dependencies go ollama 2>/dev/null || true
+          # Also remove from PATH if installed elsewhere
+          sudo rm -f /usr/local/bin/go /usr/local/bin/ollama 2>/dev/null || true
+          # Stop any running Ollama services
+          brew services stop ollama 2>/dev/null || true
+
+      - name: Set up Homebrew
+        uses: homebrew/actions/setup-homebrew@master
+
+      - name: Tap the repository
+        run: |
+          brew tap dorcha-inc/orla
+
+      - name: test-homebrew-installation-skip-ollama
+        run: |
+          # Install via Homebrew with ORLA_SKIP_OLLAMA=1
+          # The post-install hook will run and needs brew in PATH
+          ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+          
+          # Verify orla is installed and in PATH
+          which orla || (echo "orla not found in PATH" && exit 1)
+          
+          # Verify orla version command works
+          ORLA_VERSION=$(orla --version | head -n1)
+          echo "Installed orla version: $ORLA_VERSION"
+          
+          # Verify orla help command works
+          orla --help > /dev/null || (echo "orla --help failed" && exit 1)
+          
+          # Verify Ollama is NOT installed (this is what we're testing)
+          if command -v ollama >/dev/null 2>&1; then
+            echo "ERROR: Ollama should not be installed when ORLA_SKIP_OLLAMA=1 is set" && exit 1
+          fi
+          
+          if brew services list 2>/dev/null | grep -q "ollama.*started"; then
+            echo "ERROR: Ollama service should not be running when ORLA_SKIP_OLLAMA=1 is set" && exit 1
+          fi
+          
+          echo "Homebrew skip Ollama installation test passed - Orla installed, Ollama skipped"
+
+      - name: Test with OLLAMA_HOST environment variable
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- env
+
+      - name: Test with llm_backend configuration
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- config

@@ -6,18 +6,33 @@
 #   ./install.sh
 #   Homebrew mode:
 #   ./install.sh --homebrew
+#   Skip Ollama installation (for users with remote Ollama servers):
+#   ./install.sh --skip-ollama
+#   ./install.sh --homebrew --skip-ollama
+#   For Homebrew users, you can also set ORLA_SKIP_OLLAMA=1 before installing:
+#   ORLA_SKIP_OLLAMA=1 brew install dorcha-inc/orla/orla
 #   This mode is useful if you want to use Orla with Homebrew's version of Ollama. It will not install
 #   Orla's binary, but will install Ollama and set everything up for you. The Orla binary will be installed
 #   by Homebrew directly.
 
 set -eu
 
-# Check for --homebrew flag
+# Check for flags
 HOMEBREW_INSTALL=0
-if [ "${1:-}" = "--homebrew" ]; then
-    HOMEBREW_INSTALL=1
-    export HOMEBREW_INSTALL=1
-fi
+SKIP_OLLAMA=0
+
+for arg in "$@"; do
+    case "$arg" in
+    --homebrew)
+        HOMEBREW_INSTALL=1
+        export HOMEBREW_INSTALL=1
+        ;;
+    --skip-ollama)
+        SKIP_OLLAMA=1
+        export SKIP_OLLAMA=1
+        ;;
+    esac
+done
 
 status() { echo "STATUS: $*" >&2; }
 
@@ -346,11 +361,14 @@ install_on_linux() {
     status "linux detected"
     status "installing orla on linux..."
 
-    # install ollama
-    install_ollama_on_linux
-
-    # start ollama service
-    run_ollama_service_on_linux
+    # install ollama (skip if --skip-ollama flag is set or OLLAMA_HOST is configured)
+    if [ "$SKIP_OLLAMA" = "0" ]; then
+        install_ollama_on_linux
+        # start ollama service
+        run_ollama_service_on_linux
+    else
+        status "skipping ollama installation"
+    fi
 
     if [ "$HOMEBREW_INSTALL" = "1" ]; then
         status "homebrew mode: skipping binary installation (orla should already be installed)"
@@ -452,11 +470,14 @@ install_on_macos() {
     status "macos detected"
     status "installing orla on macos..."
 
-    # install ollama
-    install_ollama_on_macos
-
-    # start ollama service
-    run_ollama_service_on_macos
+    # install ollama (skip if --skip-ollama flag is set or OLLAMA_HOST is configured)
+    if [ "$SKIP_OLLAMA" = "0" ]; then
+        install_ollama_on_macos
+        # start ollama service
+        run_ollama_service_on_macos
+    else
+        status "skipping Ollama installation (using remote Ollama server)"
+    fi
 
     if [ "$HOMEBREW_INSTALL" = "1" ]; then
         status "homebrew mode: skipping binary installation (orla should already be installed)"
@@ -499,13 +520,31 @@ Linux) install_on_linux ;;
 Darwin) install_on_macos ;;
 esac
 
-# check for default model
-check_default_model
+# check for default model (skip if --skip-ollama flag is set)
+if [ "$SKIP_OLLAMA" = "0" ]; then
+    check_default_model
+else
+    status "skipping model check as we skipped ollama installation"
+    warning "you can pull the default model manually with: ollama pull qwen3:0.6b"
+fi
 
 echo ""
-success "Installation complete!"
+if [ "$SKIP_OLLAMA" = "1" ]; then
+    echo "orla is installed, local ollama installation was skipped."
+    echo "to configure a remote ollama server, set OLLAMA_HOST (or ORLA_OLLAMA_HOST) or use llm_backend in your orla.yaml:"
+    echo "  > export OLLAMA_HOST=http://your-ollama-server:11434"
+    echo "  Or add to your orla.yaml:"
+    echo "  > llm_backend:"
+    echo "  >   endpoint: http://your-ollama-server:11434"
+    echo "  >   type: ollama"
+else
+    echo "orla and ollama are installed, a default model (qwen3:0.6b) has been pulled."
+fi
+
 echo ""
-echo "Try it out:"
+success "installation complete!"
+echo ""
+echo "try it out:"
 echo "  orla agent \"hello world\""
 echo ""
 echo "For more information, visit: https://github.com/dorcha-inc/orla"

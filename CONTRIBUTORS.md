@@ -19,6 +19,8 @@ Or, if you prefer, open an issue and we'll add you!
 ## contributors
 
 - hayder, @jadidbourbaki, [homepage](https://jadidbourbaki.github.io/jadidbourbaki/), maintainer
+- truetype74, @truetype74, [github](https://github.com/truetype74), wrote a very well-reasoned design doc for remove ollama and OpenAI-compatible API support ([#22](https://github.com/dorcha-inc/orla/issues/22))
+- kth8, @kth8, [github](https://github.com/kth8), great feature request for OpenAI-compatible API support ([#22](https://github.com/dorcha-inc/orla/issues/22))
 
 <!-- Add contributors here as they make contributions -->
 <!-- Format: - name, github username, website/link, contribution description -->

@@ -105,6 +105,7 @@ type OrlaConfig struct {
 	LogFile       string               `yaml:"log_file,omitempty" mapstructure:"log_file"`             // optional log file path
 
 	// Agent mode configuration (RFC 4)
+	LLMBackend         *core.LLMBackend `yaml:"llm_backend,omitempty" mapstructure:"llm_backend"`                 // LLM backend configuration (endpoint, type, api_key)
 	Model              string           `yaml:"model,omitempty" mapstructure:"model"`                             // model identifier (e.g., "ollama:ministral-3:8b", "openai:gpt-4")
 	MaxToolCalls       int              `yaml:"max_tool_calls,omitempty" mapstructure:"max_tool_calls"`           // maximum tool calls per prompt
 	Streaming          bool             `yaml:"streaming,omitempty" mapstructure:"streaming"`                     // enable streaming responses

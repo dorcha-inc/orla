@@ -68,3 +68,25 @@ type ToolManifest struct {
 	Path         string         `yaml:"path,omitempty"`        // Absolute path to entrypoint
 	Interpreter  string         `yaml:"interpreter,omitempty"` // Interpreter parsed from shebang
 }
+
+// LLMInferenceAPIType represents the type of LLM inference API
+type LLMInferenceAPIType string
+
+const (
+	// LLMInferenceAPITypeOllama represents the Ollama API (RFC 4)
+	LLMInferenceAPITypeOllama LLMInferenceAPIType = "ollama"
+	// LLMInferenceAPITypeOpenAI represents any inference server that has an
+	// OpenAI-compatible API.
+	LLMInferenceAPITypeOpenAI LLMInferenceAPIType = "openai"
+)
+
+// LLMBackend represents an LLM inference server. This allows configuring
+// remote Ollama servers, OpenAI-compatible APIs, and other LLM inference servers.
+type LLMBackend struct {
+	// Endpoint is the URL of the LLM inference server
+	Endpoint string `yaml:"endpoint,omitempty" mapstructure:"endpoint"`
+	// Type is the type of the LLM inference API
+	Type LLMInferenceAPIType `yaml:"type,omitempty" mapstructure:"type"`
+	// APIKey is the API key for the LLM inference API
+	APIKey string `yaml:"api_key,omitempty" mapstructure:"api_key"`
+}

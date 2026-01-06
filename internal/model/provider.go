@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/dorcha-inc/orla/internal/config"
+	"github.com/dorcha-inc/orla/internal/core"
 )
 
 // ParseModelIdentifier parses a model identifier string (e.g., "ollama:llama3")
@@ -28,10 +29,15 @@ func NewProvider(cfg *config.OrlaConfig) (Provider, error) {
 		return nil, err
 	}
 
+	supportedProviders := map[core.LLMInferenceAPIType]struct{}{
+		core.LLMInferenceAPITypeOllama: {},
+		core.LLMInferenceAPITypeOpenAI: {},
+	}
+
 	switch providerName {
-	case "ollama":
+	case string(core.LLMInferenceAPITypeOllama):
 		return NewOllamaProvider(modelName, cfg)
 	default:
-		return nil, fmt.Errorf("unknown model provider: %s (supported: ollama)", providerName)
+		return nil, fmt.Errorf("unknown model provider: %s: supported providers are %s", providerName, core.JoinMapKeys(supportedProviders))
 	}
 }

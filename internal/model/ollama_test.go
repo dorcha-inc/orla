@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dorcha-inc/orla/internal/config"
+	"github.com/dorcha-inc/orla/internal/core"
 	orlaTesting "github.com/dorcha-inc/orla/internal/testing"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -55,9 +56,9 @@ func TestOllamaProvider_EnsureReady_NotRunning(t *testing.T) {
 	ctx := context.Background()
 	err := provider.EnsureReady(ctx)
 	require.Error(t, err)
-	// The error should indicate Ollama is not running with instructions to start it
-	assert.Contains(t, err.Error(), "ollama is not running")
-	assert.Contains(t, err.Error(), "brew services start ollama")
+	// The error should indicate Ollama server is not responding
+	assert.Contains(t, err.Error(), "ollama server at")
+	assert.Contains(t, err.Error(), "is not responding")
 }
 
 // Test helper functions
@@ -139,7 +140,7 @@ func TestOllamaProvider_SetTimeout(t *testing.T) {
 	assert.NotEqual(t, originalTimeout, provider.client.Timeout)
 }
 
-func TestOllamaProvider_EnsureReady_NotInstalled(t *testing.T) {
+func TestOllamaProvider_EnsureReady_NotResponding(t *testing.T) {
 	// Create a provider with a custom baseURL that won't exist
 	cfg := &config.OrlaConfig{}
 	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
@@ -151,8 +152,8 @@ func TestOllamaProvider_EnsureReady_NotInstalled(t *testing.T) {
 	ctx := context.Background()
 	err = provider.EnsureReady(ctx)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ollama is not running")
-	assert.Contains(t, err.Error(), "brew services start ollama")
+	assert.Contains(t, err.Error(), "ollama server at")
+	assert.Contains(t, err.Error(), "is not responding")
 }
 
 func TestOllamaProvider_waitForReady_Timeout(t *testing.T) {
@@ -346,7 +347,7 @@ func TestConvertToolsToOllamaFormat_InvalidSchema(t *testing.T) {
 }
 
 func TestOllamaProvider_EnsureReady_IsRunningError(t *testing.T) {
-	// Test EnsureReady when isRunning returns a non-ErrOllamaNotInstalled error
+	// Test EnsureReady when isRunning returns an error
 	cfg := &config.OrlaConfig{}
 	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
 	require.NoError(t, err)
@@ -356,10 +357,10 @@ func TestOllamaProvider_EnsureReady_IsRunningError(t *testing.T) {
 
 	ctx := context.Background()
 	err = provider.EnsureReady(ctx)
-	// Should return error about Ollama not running
+	// Should return error about Ollama server not responding
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ollama is not running")
-	assert.Contains(t, err.Error(), "brew services start ollama")
+	assert.Contains(t, err.Error(), "ollama server at")
+	assert.Contains(t, err.Error(), "is not responding")
 }
 
 func TestOllamaProvider_Chat_EnsureReadyFails(t *testing.T) {
@@ -380,7 +381,8 @@ func TestOllamaProvider_Chat_EnsureReadyFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Nil(t, streamCh)
-	assert.Contains(t, err.Error(), "ollama is not running")
+	assert.Contains(t, err.Error(), "ollama server at")
+	assert.Contains(t, err.Error(), "is not responding")
 }
 
 func TestOllamaProvider_Chat_HTTPError(t *testing.T) {
@@ -958,4 +960,141 @@ func TestHandleStreamResponse_AccumulationAndEvents(t *testing.T) {
 	require.Len(t, resp.ToolCalls, 1)
 	assert.Equal(t, "do_it", resp.ToolCalls[0].McpCallToolParams.Name)
 	assert.Equal(t, 1, toolCallEvents)
+}
+
+// Tests for getOllamaEndpoint with llm_backend configuration
+func TestGetOllamaEndpoint_WithLLMBackendConfig(t *testing.T) {
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint: "http://remote-ollama:11434",
+			Type:     core.LLMInferenceAPITypeOllama,
+		},
+	}
+
+	endpoint, err := getOllamaEndpoint(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "http://remote-ollama:11434", endpoint)
+}
+
+func TestGetOllamaEndpoint_WithLLMBackendConfig_MissingEndpoint(t *testing.T) {
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Type: core.LLMInferenceAPITypeOllama,
+			// Endpoint is missing
+		},
+	}
+
+	_, err := getOllamaEndpoint(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "llm_backend.endpoint is required")
+}
+
+func TestGetOllamaEndpoint_WithLLMBackendConfig_MissingType(t *testing.T) {
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint: "http://remote-ollama:11434",
+			// Type is missing
+		},
+	}
+
+	_, err := getOllamaEndpoint(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "llm_backend.type is required")
+}
+
+func TestGetOllamaEndpoint_WithLLMBackendConfig_WrongType(t *testing.T) {
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint: "http://remote-ollama:11434",
+			Type:     core.LLMInferenceAPITypeOpenAI, // Wrong type
+		},
+	}
+
+	_, err := getOllamaEndpoint(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "[BUG]")
+	assert.Contains(t, err.Error(), "llm_backend.type must be")
+}
+
+func TestGetOllamaEndpoint_WithOLLAMA_HOST(t *testing.T) {
+	t.Setenv("OLLAMA_HOST", "http://env-ollama:11434")
+	cfg := &config.OrlaConfig{}
+
+	endpoint, err := getOllamaEndpoint(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "http://env-ollama:11434", endpoint)
+}
+
+func TestGetOllamaEndpoint_WithORLA_OLLAMA_HOST(t *testing.T) {
+	t.Setenv("ORLA_OLLAMA_HOST", "http://env-ollama:11434")
+	cfg := &config.OrlaConfig{}
+
+	endpoint, err := getOllamaEndpoint(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "http://env-ollama:11434", endpoint)
+}
+
+func TestGetOllamaEndpoint_WithOLLAMA_HOST_PrecedenceOverLLMBackendConfig(t *testing.T) {
+	t.Setenv("OLLAMA_HOST", "http://env-ollama:11434")
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint: "http://config-ollama:11434",
+			Type:     core.LLMInferenceAPITypeOllama,
+		},
+	}
+
+	endpoint, err := getOllamaEndpoint(cfg)
+	require.NoError(t, err)
+	// Config should take precedence over env var
+	assert.Equal(t, "http://config-ollama:11434", endpoint)
+}
+
+func TestGetOllamaEndpoint_WithORLA_OLLAMA_HOST_PrecedenceOverEnvVar(t *testing.T) {
+	t.Setenv("ORLA_OLLAMA_HOST", "http://config-ollama:11434")
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint: "http://config-ollama:11434",
+			Type:     core.LLMInferenceAPITypeOllama,
+		},
+	}
+
+	endpoint, err := getOllamaEndpoint(cfg)
+	require.NoError(t, err)
+	// Config should take precedence over env var
+	assert.Equal(t, "http://config-ollama:11434", endpoint)
+}
+
+func TestGetOllamaEndpoint_Default(t *testing.T) {
+	cfg := &config.OrlaConfig{}
+
+	endpoint, err := getOllamaEndpoint(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, defaultOllamaHost, endpoint)
+}
+
+func TestNewOllamaProvider_WithLLMBackendConfig(t *testing.T) {
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint: "http://remote-ollama:11434",
+			Type:     core.LLMInferenceAPITypeOllama,
+		},
+	}
+
+	provider, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
+	require.NoError(t, err)
+	assert.NotNil(t, provider)
+	assert.Equal(t, "http://remote-ollama:11434", provider.baseURL)
+}
+
+func TestNewOllamaProvider_WithLLMBackendConfig_Invalid(t *testing.T) {
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint: "http://remote-ollama:11434",
+			// Type is missing
+		},
+	}
+
+	_, err := NewOllamaProvider(orlaTesting.GetTestModelName(), cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get Ollama endpoint")
 }

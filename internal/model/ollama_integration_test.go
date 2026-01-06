@@ -10,10 +10,13 @@ import (
 	"time"
 
 	"github.com/dorcha-inc/orla/internal/config"
+	"github.com/dorcha-inc/orla/internal/core"
 	orlaTesting "github.com/dorcha-inc/orla/internal/testing"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	tcollama "github.com/testcontainers/testcontainers-go/modules/ollama"
 )
 
 func prettyPrint(t *testing.T, prefix string, v any) {
@@ -35,7 +38,7 @@ func ensureOllamaAvailable(t *testing.T) *OllamaProvider {
 
 	// Ensure Ollama is ready (must be running)
 	err = provider.EnsureReady(ctx)
-	require.NoError(t, err, "Failed to ensure Ollama is ready. Please start Ollama: brew services start ollama (macOS) or systemctl --user start ollama (Linux)")
+	require.NoError(t, err, "Failed to ensure Ollama is ready. Please ensure Ollama is running and accessible at the configured endpoint")
 
 	// Verify the model is available by attempting a simple request
 	// This will fail if the model doesn't exist, giving us a clear error
@@ -186,4 +189,64 @@ done:
 	// The channel close provides synchronization, so response.Content should be available now
 	assert.NotNil(t, response)
 	assert.Equal(t, strings.Join(chunks, ""), response.Content, "Response content should match streamed chunks")
+}
+
+// TestOllamaProvider_RemoteEndpoint_Integration tests connecting to a remote Ollama instance
+// using llm_backend configuration. This test uses testcontainers to spin up an Ollama container
+// to simulate a remote endpoint.
+//
+// Note: This test requires Docker to be running. It will fail if Docker is not available.
+func TestOllamaProvider_RemoteEndpoint_Integration(t *testing.T) {
+	ctx := context.Background()
+
+	// Start Ollama container using testcontainers
+	// Testcontainers will handle Docker availability and provide clear error messages
+	ollamaContainer, runErr := tcollama.Run(ctx, "ollama/ollama:latest")
+	require.NoError(t, runErr, "Failed to start ollama container")
+
+	defer func() {
+		terminateErr := testcontainers.TerminateContainer(ollamaContainer)
+		if terminateErr != nil {
+			t.Logf("failed to terminate container: %v", terminateErr)
+		}
+	}()
+
+	// Get the connection string (includes host and port)
+	connectionStr, getConnectionStringErr := ollamaContainer.ConnectionString(ctx)
+	require.NoError(t, getConnectionStringErr, "Failed to get Ollama connection string")
+
+	// Pull the test model in the container
+	modelName := orlaTesting.GetTestModelName()
+	_, _, pullErr := ollamaContainer.Exec(ctx, []string{"ollama", "pull", modelName})
+	require.NoError(t, pullErr, "Failed to pull model in container")
+
+	// Test with llm_backend configuration pointing to the container
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint: connectionStr,
+			Type:     core.LLMInferenceAPITypeOllama,
+		},
+	}
+
+	provider, createProviderErr := NewOllamaProvider(modelName, cfg)
+	require.NoError(t, createProviderErr, "Failed to create Ollama provider with remote endpoint")
+
+	testCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Ensure the remote Ollama is ready
+	ensureErr := provider.EnsureReady(testCtx)
+	require.NoError(t, ensureErr, "Failed to ensure remote Ollama is ready")
+
+	// Test a simple chat request
+	messages := []Message{
+		{Role: MessageRoleUser, Content: "Say hello"},
+	}
+
+	response, streamCh, chatErr := provider.Chat(testCtx, messages, nil, false)
+	require.NoError(t, chatErr)
+	assert.NotNil(t, response)
+	assert.Nil(t, streamCh) // stream=false
+	assert.NotEmpty(t, response.Content)
+	t.Logf("Remote Ollama response: %s", response.Content)
 }

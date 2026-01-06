@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os/exec"
 	"time"
 
 	"go.uber.org/zap"
@@ -41,9 +40,9 @@ type OllamaProvider struct {
 
 // NewOllamaProvider creates a new Ollama provider
 func NewOllamaProvider(modelName string, cfg *config.OrlaConfig) (*OllamaProvider, error) {
-	baseURL := defaultOllamaHost
-	if envURL := core.GetEnv("OLLAMA_HOST"); envURL != "" {
-		baseURL = envURL
+	baseURL, err := getOllamaEndpoint(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Ollama endpoint: %w", err)
 	}
 
 	return &OllamaProvider{
@@ -52,6 +51,41 @@ func NewOllamaProvider(modelName string, cfg *config.OrlaConfig) (*OllamaProvide
 		client:    &http.Client{Timeout: defaultOllamaTimeout},
 		cfg:       cfg,
 	}, nil
+}
+
+// getOllamaEndpoint determines the Ollama endpoint URL with the following precedence:
+// 1. llm_backend.endpoint config (if llm_backend.type is "ollama")
+// 2. OLLAMA_HOST environment variable
+// 3. defaultOllamaHost (http://localhost:11434)
+func getOllamaEndpoint(cfg *config.OrlaConfig) (string, error) {
+	// Check llm_backend config first
+	if cfg != nil && cfg.LLMBackend != nil {
+		// Confirm that the endpoint is set and is not empty. We enforce that the endpoint should be set for any
+		// LLM inference server.
+		if cfg.LLMBackend.Endpoint == "" {
+			return "", fmt.Errorf("llm_backend.endpoint is required if llm_backend is set")
+		}
+
+		// Confirm that the type is set and is not empty. We enforce that the type should be set for any
+		// LLM inference server.
+		if cfg.LLMBackend.Type == "" {
+			return "", fmt.Errorf("llm_backend.type is required if llm_backend is set")
+		}
+
+		if cfg.LLMBackend.Type != core.LLMInferenceAPITypeOllama {
+			return "", fmt.Errorf("[BUG] llm_backend.type must be %s, got '%s': we should not be using this function for non-ollama inference servers", core.LLMInferenceAPITypeOllama, cfg.LLMBackend.Type)
+		}
+
+		return cfg.LLMBackend.Endpoint, nil
+	}
+
+	// If the OLLAMA_HOST environment variable is set, use it.
+	if envURL := core.GetEnv("OLLAMA_HOST"); envURL != "" {
+		return envURL, nil
+	}
+
+	// Default to localhost
+	return defaultOllamaHost, nil
 }
 
 // SetTimeout sets the timeout for the Ollama provider
@@ -65,24 +99,19 @@ func (p *OllamaProvider) Name() string {
 }
 
 // EnsureReady ensures Ollama is running and ready
-// It checks if Ollama is running via HTTP health check.
-// If Ollama is not running, it returns an error with instructions to start it manually.
+// It checks if Ollama is accessible via HTTP health check.
 func (p *OllamaProvider) EnsureReady(ctx context.Context) error {
 	running, err := p.isRunning()
 	if err != nil {
-		if errors.Is(err, ErrOllamaNotInstalled) {
-			return fmt.Errorf("ollama is not installed. Please install Ollama: https://ollama.ai")
-		}
-		return fmt.Errorf("failed to check if Ollama is running: %w", err)
+		return fmt.Errorf("failed to check if ollama is running: %w", err)
 	}
 
-	if running {
-		zap.L().Debug("Ollama is already running")
-		return nil
+	if !running {
+		return fmt.Errorf("ollama server at %s is not responding, please ensure the server is running and accessible", p.baseURL)
 	}
 
-	// Ollama is not running - provide helpful error message
-	return fmt.Errorf("ollama is not running. Please start Ollama manually:\n  - macOS: brew services start ollama\n  - Linux: systemctl --user start ollama\n  - Or run: ollama serve")
+	zap.L().Debug("ollama is accessible", zap.String("endpoint", p.baseURL))
+	return nil
 }
 
 // Chat sends a chat request to Ollama
@@ -196,16 +225,8 @@ func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*
 	return response, nil, nil
 }
 
-var ErrOllamaNotInstalled = errors.New("ollama is not installed")
-
-// isRunning checks if Ollama is running
+// isRunning checks if the Ollama HTTP endpoint is responding
 func (p *OllamaProvider) isRunning() (bool, error) {
-	// First check if ollama command exists
-	_, lookPathErr := exec.LookPath("ollama")
-	if lookPathErr != nil {
-		return false, ErrOllamaNotInstalled
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 

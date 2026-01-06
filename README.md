@@ -44,7 +44,19 @@ Hello! How can I assist you today? Could you please provide some details or spec
 
 All done!
 
-Side note: if required, this will install go, ollama, and pull in a lightweight open-source model.
+Side note: if required, this will install go, ollama, and pull in a lightweight open-source model. To skip that, you can use:
+
+```bash
+ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+```
+
+or via the install script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --skip-ollama
+```
+
+
 
 ## Vision and Roadmap
 
@@ -103,8 +115,36 @@ Alternatively, you can use our installation script. It will automatically instal
 curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh
 ```
 
-To remove orla, see [uninstalling orla](#uninstalling-orla).
+#### Installing without local Ollama
 
+If you already have a remote Ollama server or prefer to manage Ollama separately, you can skip the local Ollama installation:
+
+Using homebrew:
+
+```bash
+ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+```
+
+Using the install script:
+```bash
+curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --skip-ollama
+```
+
+After installation, configure Orla to use your remote Ollama server by setting either the `OLLAMA_HOST` or the `ORLA_OLLAMA_HOST` environment variable, or using the `llm_backend` configuration in your `orla.yaml`:
+
+```bash
+export ORLA_OLLAMA_HOST=http://your-ollama-server:11434
+```
+
+Or add to your `orla.yaml`:
+
+```yaml
+llm_backend:
+  endpoint: http://your-ollama-server:11434
+  type: ollama
+```
+
+To remove orla, see [uninstalling orla](#uninstalling-orla).
 
 ### Usage
 
