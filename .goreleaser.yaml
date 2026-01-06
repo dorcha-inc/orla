@@ -73,8 +73,9 @@ release:
     name: orla
   # Create draft release when TEST_MODE=true (for manual workflow testing)
   # Draft releases are not visible to users and won't be picked up by brew install
-  # Note: Template evaluates to boolean at runtime - this is a false positive from YAML schema validator
-  draft: '{{ if eq .Env.TEST_MODE "true" }}true{{ else }}false{{ end }}'
+  # Note: This is set dynamically by the workflow via sed before running GoReleaser
+  # Default to false (production releases are not drafts)
+  draft: false
   mode: replace
   header: |
     ## Orla {{ .Tag }}
