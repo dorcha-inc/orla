@@ -1,5 +1,7 @@
 # GoReleaser configuration for Orla
 # See https://goreleaser.com for documentation
+# Note: This file uses GoReleaser templates that evaluate at runtime.
+# The YAML schema validator may show false positives for template fields.
 
 version: 2
 
@@ -49,9 +51,9 @@ notarize:
       # Sign the binaries before notarization
       sign:
         # The base64 encoded .p12 certificate
-        certificate: '{{ .Env.MACOS_SIGN_P12 }}'
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
         # Password to unlock the certificate
-        password: '{{ .Env.MACOS_SIGN_PASSWORD }}'
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
         # Developer ID Application identity (auto-detected from certificate)
       # Notarize using App Store Connect API
       notarize:
@@ -60,53 +62,56 @@ notarize:
         # Timeout for notarization
         timeout: 20m
         # App Store Connect API credentials
-        key: '{{ .Env.MACOS_NOTARY_KEY }}'
-        key_id: '{{ .Env.MACOS_NOTARY_KEY_ID }}'
-        issuer_id: '{{ .Env.MACOS_NOTARY_ISSUER_ID }}'
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
 
 # Publish to GitHub releases
 release:
   github:
     owner: dorcha-inc
     name: orla
-  draft: false
+  # Create draft release when TEST_MODE=true (for manual workflow testing)
+  # Draft releases are not visible to users and won't be picked up by brew install
+  # Note: Template evaluates to boolean at runtime - this is a false positive from YAML schema validator
+  draft: '{{ if eq .Env.TEST_MODE "true" }}true{{ else }}false{{ end }}'
   mode: replace
   header: |
     ## Orla {{ .Tag }}
-    
+
     Release {{ .Tag }} of Orla.
   footer: |
     ---
-    
+
     Full Changelog: https://github.com/dorcha-inc/orla/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 # Homebrew cask configuration
 homebrew_casks:
   - name: orla
-    # Use a separate tap repository following Homebrew conventions
+    # Use test tap when TEST_MODE=true, otherwise use production tap
     repository:
       owner: dorcha-inc
-      name: homebrew-orla
+      name: '{{ if eq .Env.TEST_MODE "true" }}homebrew-orla-test{{ else }}homebrew-orla{{ end }}'
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    
+
     # The commit author
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
-    
+
     # The homepage for the project
     homepage: "https://github.com/dorcha-inc/orla"
-    
+
     # A description for the project
     description: "A dead-simple unix tool for lightweight agents"
 
     # The license of the project
     license: "MIT"
-    
+
     # Binary name (the executable inside the archive)
     binaries:
       - orla
-    
+
     # Use hooks to run the install script for post-install setup (Ollama + model)
     # Homebrew installs the binary, then we run the install script with --homebrew flag
     # Note: We need to set PATH because post-install hooks run in a clean environment
@@ -119,10 +124,9 @@ homebrew_casks:
 
 # Generate checksums
 checksum:
-  name_template: 'checksums.txt'
+  name_template: "checksums.txt"
   algorithm: sha256
 
 # Changelog configuration
 changelog:
   sort: asc
-

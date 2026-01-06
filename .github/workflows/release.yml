@@ -3,7 +3,8 @@ name: release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
+  workflow_dispatch: # Allow manual triggering for testing (uses test Homebrew tap)
 
 jobs:
   release:
@@ -28,7 +29,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
 
-      - name: Run GoReleaser
+      - name: Run GoReleaser (Production Release)
+        # Only create actual release when triggered by tag push
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
@@ -36,6 +39,41 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Create test tag for manual testing
+        if: github.event_name == 'workflow_dispatch'
+        id: create-test-tag
+        run: |
+          # Create a test tag from current branch for draft release
+          # Format: v0.0.0-test-YYYYMMDD-HHMMSS
+          TEST_TAG="v0.0.0-test-$(date +%Y%m%d-%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TEST_TAG" -m "Test release for workflow testing - will be deleted"
+          git push origin "$TEST_TAG"
+          echo "tag=$TEST_TAG" >> $GITHUB_OUTPUT
+          echo "Created test tag: $TEST_TAG"
+
+      - name: Run GoReleaser (Draft Release for Testing)
+        # Create draft release when manually triggered for testing
+        # Uses test Homebrew tap (homebrew-orla-test) instead of production tap
+        if: github.event_name == 'workflow_dispatch'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }} # Same token works for test tap
+          TEST_MODE: "true" # This makes it a draft release and uses test tap (see .goreleaser.yaml)
+
+      - name: Note about test release
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "TEST MODE: Created draft release for testing"
+          echo "Draft release tag: ${{ steps.create-test-tag.outputs.tag }}"
+          echo "Homebrew tap updated: dorcha-inc/homebrew-orla-test (test tap, not production)"
+          echo "Cleanup will happen automatically after all tests complete"
 
   test-install-linux:
     name: test-install-linux
@@ -52,17 +90,17 @@ jobs:
           # Use sudo since the script installs to /usr/local/bin
           # Pass GITHUB_TOKEN to help with API rate limits
           curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
-          
+
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
-          
+
           # Verify orla version command works and matches the release
           ORLA_VERSION=$(orla --version | head -n1)
           echo "Installed orla version: $ORLA_VERSION"
-          
+
           # Verify orla help command works
           orla --help > /dev/null || (echo "orla --help failed" && exit 1)
-          
+
           # Verify Ollama is running
           if command -v systemctl >/dev/null 2>&1; then
             systemctl is-active ollama || (echo "Ollama service is not active" && exit 1)
@@ -81,17 +119,17 @@ jobs:
           # Test the uninstall script
           # Use sudo since the script removes from /usr/local/bin
           curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/uninstall.sh | sudo sh
-          
+
           # Verify orla is no longer in PATH
           if command -v orla >/dev/null 2>&1; then
             echo "ERROR: orla is still in PATH after uninstall" && exit 1
           fi
-          
+
           # Verify orla binary is removed from common locations
           if [ -f /usr/local/bin/orla ] || [ -f "$HOME/.local/bin/orla" ]; then
             echo "ERROR: orla binary still exists after uninstall" && exit 1
           fi
-          
+
           echo "Uninstall script test passed"
 
   test-install-macos:
@@ -116,17 +154,17 @@ jobs:
           # On macOS, run without sudo (Homebrew won't run as root, and /usr/local/bin is typically writable)
           # Pass GITHUB_TOKEN to help with API rate limits
           curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
-          
+
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
-          
+
           # Verify orla version command works
           ORLA_VERSION=$(orla --version | head -n1)
           echo "Installed orla version: $ORLA_VERSION"
-          
+
           # Verify orla help command works
           orla --help > /dev/null || (echo "orla --help failed" && exit 1)
-          
+
           # Verify Ollama is running (Homebrew services)
           brew services list | grep -q "ollama.*started" || (echo "Ollama service is not running" && exit 1)
 
@@ -141,17 +179,17 @@ jobs:
           # Test the uninstall script
           # Use sudo since the script removes from /usr/local/bin
           curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/uninstall.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh
-          
+
           # Verify orla is no longer in PATH
           if command -v orla >/dev/null 2>&1; then
             echo "ERROR: orla is still in PATH after uninstall" && exit 1
           fi
-          
+
           # Verify orla binary is removed from common locations
           if [ -f /usr/local/bin/orla ] || [ -f "$HOME/.local/bin/orla" ]; then
             echo "ERROR: orla binary still exists after uninstall" && exit 1
           fi
-          
+
           echo "Uninstall script test passed"
 
   test-homebrew-macos:
@@ -175,24 +213,36 @@ jobs:
 
       - name: Tap the repository
         run: |
-          brew tap dorcha-inc/orla
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Use test tap for manual testing
+            brew tap dorcha-inc/orla-test
+          else
+            # Use production tap for real releases
+            brew tap dorcha-inc/orla
+          fi
 
       - name: test-homebrew-installation
         run: |
           # Install via Homebrew
           # The post-install hook will run and needs brew in PATH
-          brew install --cask dorcha-inc/orla/orla
-          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Install from test tap
+            brew install --cask dorcha-inc/orla-test/orla
+          else
+            # Install from production tap
+            brew install --cask dorcha-inc/orla/orla
+          fi
+
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
-          
+
           # Verify orla version command works
           ORLA_VERSION=$(orla --version | head -n1)
           echo "Installed orla version: $ORLA_VERSION"
-          
+
           # Verify orla help command works
           orla --help > /dev/null || (echo "orla --help failed" && exit 1)
-          
+
           # Verify Ollama is running (Homebrew services)
           brew services list | grep -q "ollama.*started" || (echo "Ollama service is not running" && exit 1)
 
@@ -206,17 +256,17 @@ jobs:
         run: |
           # Uninstall via Homebrew
           brew uninstall --cask orla
-          
+
           # Verify orla is no longer in PATH
           if command -v orla >/dev/null 2>&1; then
             echo "ERROR: orla is still in PATH after Homebrew uninstall" && exit 1
           fi
-          
+
           # Verify orla binary is removed
           if [ -f /usr/local/bin/orla ] || [ -f "$(brew --prefix)/bin/orla" ]; then
             echo "ERROR: orla binary still exists after Homebrew uninstall" && exit 1
           fi
-          
+
           echo "Homebrew uninstall test passed"
 
   test-homebrew-linux:
@@ -237,23 +287,31 @@ jobs:
 
       - name: Tap the repository
         run: |
-          brew tap dorcha-inc/orla
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            brew tap dorcha-inc/orla-test
+          else
+            brew tap dorcha-inc/orla
+          fi
 
       - name: test-homebrew-installation
         run: |
           # Install via Homebrew
-          brew install --cask dorcha-inc/orla/orla
-          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            brew install --cask dorcha-inc/orla-test/orla
+          else
+            brew install --cask dorcha-inc/orla/orla
+          fi
+
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
-          
+
           # Verify orla version command works
           ORLA_VERSION=$(orla --version | head -n1)
           echo "Installed orla version: $ORLA_VERSION"
-          
+
           # Verify orla help command works
           orla --help > /dev/null || (echo "orla --help failed" && exit 1)
-          
+
           # Verify Ollama API is accessible (works regardless of installation method)
           echo "Waiting for Ollama API to be ready..."
           max_attempts=60
@@ -288,17 +346,17 @@ jobs:
         run: |
           # Uninstall via Homebrew
           brew uninstall --cask orla
-          
+
           # Verify orla is no longer in PATH
           if command -v orla >/dev/null 2>&1; then
             echo "ERROR: orla is still in PATH after Homebrew uninstall" && exit 1
           fi
-          
+
           # Verify orla binary is removed
           if [ -f /usr/local/bin/orla ] || [ -f "$HOME/.local/bin/orla" ] || [ -f "/home/linuxbrew/.linuxbrew/bin/orla" ]; then
             echo "ERROR: orla binary still exists after Homebrew uninstall" && exit 1
           fi
-          
+
           echo "Homebrew uninstall test passed"
 
   test-install-skip-ollama-linux:
@@ -324,35 +382,35 @@ jobs:
           # Use sudo since the script installs to /usr/local/bin
           # Pass GITHUB_TOKEN to help with API rate limits
           curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | sudo -E env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh -s -- --skip-ollama
-          
+
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
-          
+
           # Verify orla version command works
           ORLA_VERSION=$(orla --version | head -n1)
           echo "Installed orla version: $ORLA_VERSION"
-          
+
           # Verify orla help command works
           orla --help > /dev/null || (echo "orla --help failed" && exit 1)
-          
+
           # Verify Ollama is NOT installed/running (this is what we're testing)
           if command -v ollama >/dev/null 2>&1; then
             echo "ERROR: Ollama should not be installed when --skip-ollama is used" && exit 1
           fi
-          
+
           if systemctl is-active ollama 2>/dev/null || pgrep -f ollama >/dev/null 2>&1; then
             echo "ERROR: Ollama should not be running when --skip-ollama is used" && exit 1
           fi
-          
+
           echo "Skip Ollama installation test passed - Orla installed, Ollama skipped"
 
       - name: Test with OLLAMA_HOST environment variable
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- env
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
 
       - name: Test with llm_backend configuration
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- config
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- config
 
   test-homebrew-skip-ollama-linux:
     name: test-homebrew-skip-ollama-linux
@@ -372,37 +430,45 @@ jobs:
 
       - name: Tap the repository
         run: |
-          brew tap dorcha-inc/orla
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            brew tap dorcha-inc/orla-test
+          else
+            brew tap dorcha-inc/orla
+          fi
 
       - name: test-homebrew-installation-skip-ollama
         run: |
           # Install via Homebrew with ORLA_SKIP_OLLAMA=1
-          ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
-          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla-test/orla
+          else
+            ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+          fi
+
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
-          
+
           # Verify orla version command works
           ORLA_VERSION=$(orla --version | head -n1)
           echo "Installed orla version: $ORLA_VERSION"
-          
+
           # Verify orla help command works
           orla --help > /dev/null || (echo "orla --help failed" && exit 1)
-          
+
           # Verify Ollama is NOT installed (this is what we're testing)
           if command -v ollama >/dev/null 2>&1; then
             echo "ERROR: Ollama should not be installed when ORLA_SKIP_OLLAMA=1 is set" && exit 1
           fi
-          
+
           echo "Homebrew skip Ollama installation test passed - Orla installed, Ollama skipped"
 
       - name: Test with OLLAMA_HOST environment variable
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- env
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
 
       - name: Test with llm_backend configuration
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- config
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- config
 
   test-install-skip-ollama-macos:
     name: test-install-skip-ollama-macos
@@ -427,39 +493,39 @@ jobs:
           # On macOS, run without sudo (Homebrew won't run as root, and /usr/local/bin is typically writable)
           # Pass GITHUB_TOKEN to help with API rate limits
           curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/install.sh | env GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" sh -s -- --skip-ollama
-          
+
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
-          
+
           # Verify orla version command works
           ORLA_VERSION=$(orla --version | head -n1)
           echo "Installed orla version: $ORLA_VERSION"
-          
+
           # Verify orla help command works
           orla --help > /dev/null || (echo "orla --help failed" && exit 1)
-          
+
           # Verify Ollama is NOT installed/running (this is what we're testing)
           if command -v ollama >/dev/null 2>&1; then
             echo "ERROR: Ollama should not be installed when --skip-ollama is used" && exit 1
           fi
-          
+
           if brew services list 2>/dev/null | grep -q "ollama.*started"; then
             echo "ERROR: Ollama should not be running when --skip-ollama is used" && exit 1
           fi
-          
+
           if pgrep -f ollama >/dev/null 2>&1; then
             echo "ERROR: Ollama process should not be running when --skip-ollama is used" && exit 1
           fi
-          
+
           echo "Skip Ollama installation test passed - Orla installed, Ollama skipped"
 
       - name: Test with OLLAMA_HOST environment variable
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- env
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
 
       - name: Test with llm_backend configuration
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- config
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- config
 
   test-homebrew-skip-ollama-macos:
     name: test-homebrew-skip-ollama-macos
@@ -484,39 +550,118 @@ jobs:
 
       - name: Tap the repository
         run: |
-          brew tap dorcha-inc/orla
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            brew tap dorcha-inc/orla-test
+          else
+            brew tap dorcha-inc/orla
+          fi
 
       - name: test-homebrew-installation-skip-ollama
         run: |
           # Install via Homebrew with ORLA_SKIP_OLLAMA=1
           # The post-install hook will run and needs brew in PATH
-          ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
-          
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla-test/orla
+          else
+            ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+          fi
+
           # Verify orla is installed and in PATH
           which orla || (echo "orla not found in PATH" && exit 1)
-          
+
           # Verify orla version command works
           ORLA_VERSION=$(orla --version | head -n1)
           echo "Installed orla version: $ORLA_VERSION"
-          
+
           # Verify orla help command works
           orla --help > /dev/null || (echo "orla --help failed" && exit 1)
-          
+
           # Verify Ollama is NOT installed (this is what we're testing)
           if command -v ollama >/dev/null 2>&1; then
             echo "ERROR: Ollama should not be installed when ORLA_SKIP_OLLAMA=1 is set" && exit 1
           fi
-          
+
           if brew services list 2>/dev/null | grep -q "ollama.*started"; then
             echo "ERROR: Ollama service should not be running when ORLA_SKIP_OLLAMA=1 is set" && exit 1
           fi
-          
+
           echo "Homebrew skip Ollama installation test passed - Orla installed, Ollama skipped"
 
       - name: Test with OLLAMA_HOST environment variable
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- env
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
 
       - name: Test with llm_backend configuration
         run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref }}/scripts/test-remote-ollama.sh | sh -s -- config
+          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- config
+
+  cleanup-test-release:
+    name: cleanup-test-release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    needs:
+      - release
+      - test-install-linux
+      - test-install-macos
+      - test-homebrew-macos
+      - test-homebrew-linux
+      - test-install-skip-ollama-linux
+      - test-homebrew-skip-ollama-linux
+      - test-install-skip-ollama-macos
+      - test-homebrew-skip-ollama-macos
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get test tag
+        id: get-tag
+        run: |
+          # Get the test tag that was created
+          # We'll get it from the latest tag matching the test pattern
+          TEST_TAG=$(git tag -l "v0.0.0-test-*" --sort=-creatordate | head -n1)
+          if [ -z "$TEST_TAG" ]; then
+            echo "ERROR: Could not find test tag" >&2
+            exit 1
+          fi
+          echo "tag=$TEST_TAG" >> $GITHUB_OUTPUT
+          echo "Found test tag: $TEST_TAG"
+
+      - name: Delete draft release
+        run: |
+          TEST_TAG="${{ steps.get-tag.outputs.tag }}"
+          echo "Deleting draft release for tag: $TEST_TAG"
+
+          # Get the release ID for the draft release
+          RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/dorcha-inc/orla/releases/tags/${TEST_TAG}" | \
+            jq -r '.id // empty')
+
+          if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
+            echo "Warning: Could not find draft release for tag $TEST_TAG, it may have already been deleted"
+          else
+            # Delete the release
+            curl -X DELETE \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/dorcha-inc/orla/releases/${RELEASE_ID}"
+            echo "Deleted draft release (ID: $RELEASE_ID)"
+          fi
+
+      - name: Delete test tag
+        run: |
+          TEST_TAG="${{ steps.get-tag.outputs.tag }}"
+          echo "Deleting test tag: $TEST_TAG"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git push origin --delete "$TEST_TAG" || echo "Warning: Tag may have already been deleted"
+          echo "Deleted test tag: $TEST_TAG"
+
+      - name: Cleanup summary
+        run: |
+          echo "Cleanup complete!"
+          echo "  - Draft release deleted"
+          echo "  - Test tag deleted"
+          echo "  - Test Homebrew tap (homebrew-orla-test) still contains the test cask"
