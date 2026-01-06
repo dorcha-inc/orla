@@ -56,13 +56,16 @@ jobs:
 
       - name: Configure GoReleaser for test mode
         # Create a temporary config with draft: true for test releases
-        # This avoids modifying the original file and keeping git state clean
+        # Store it in /tmp to avoid git detecting it as an untracked file
         if: github.event_name == 'workflow_dispatch'
+        id: configure-test
         run: |
-          # Copy the config file and modify the copy
-          cp .goreleaser.yaml .goreleaser.test.yaml
-          sed -i 's/^  draft: false/  draft: true/' .goreleaser.test.yaml
-          echo "Created .goreleaser.test.yaml with draft: true for test release"
+          # Copy the config file to /tmp and modify it
+          TEST_CONFIG="/tmp/.goreleaser.test.yaml"
+          cp .goreleaser.yaml "$TEST_CONFIG"
+          sed -i 's/^  draft: false/  draft: true/' "$TEST_CONFIG"
+          echo "config_path=$TEST_CONFIG" >> $GITHUB_OUTPUT
+          echo "Created $TEST_CONFIG with draft: true for test release"
 
       - name: Run GoReleaser (Draft Release for Testing)
         # Create draft release when manually triggered for testing
@@ -71,7 +74,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean --config .goreleaser.test.yaml
+          args: release --clean --config ${{ steps.configure-test.outputs.config_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }} # Same token works for test tap

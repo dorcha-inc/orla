@@ -39,3 +39,6 @@ bin/
 .git/hooks/pre-commit
 
 .DS_Store
+
+# Temporary GoReleaser config for test releases
+.goreleaser.test.yaml
