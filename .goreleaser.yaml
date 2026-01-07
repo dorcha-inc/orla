@@ -90,7 +90,7 @@ homebrew_casks:
     # Use test tap when TEST_MODE=true, otherwise use production tap
     repository:
       owner: dorcha-inc
-      name: '{{ if and (hasKey .Env "TEST_MODE") (eq .Env.TEST_MODE "true") }}homebrew-orla-test{{ else }}homebrew-orla{{ end }}'
+      name: '{{ $testMode := index .Env "TEST_MODE" }}{{ if and $testMode (eq $testMode "true") }}homebrew-orla-test{{ else }}homebrew-orla{{ end }}'
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
 
     # The commit author
