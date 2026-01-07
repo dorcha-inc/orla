@@ -9,8 +9,8 @@
 #   Skip Ollama installation (for users with remote Ollama servers):
 #   ./install.sh --skip-ollama
 #   ./install.sh --homebrew --skip-ollama
-#   For Homebrew users, you can also set ORLA_SKIP_OLLAMA=1 before installing:
-#   ORLA_SKIP_OLLAMA=1 brew install dorcha-inc/orla/orla
+#   For Homebrew users, you can also set HOMEBREW_ORLA_SKIP_OLLAMA=1 before installing:
+#   HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install dorcha-inc/orla/orla
 #   This mode is useful if you want to use Orla with Homebrew's version of Ollama. It will not install
 #   Orla's binary, but will install Ollama and set everything up for you. The Orla binary will be installed
 #   by Homebrew directly.

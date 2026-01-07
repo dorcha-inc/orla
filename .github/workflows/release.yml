@@ -440,11 +440,12 @@ jobs:
 
       - name: test-homebrew-installation-skip-ollama
         run: |
-          # Install via Homebrew with ORLA_SKIP_OLLAMA=1
+          # Install via Homebrew with HOMEBREW_ORLA_SKIP_OLLAMA=1
+          # Homebrew only passes through env vars prefixed with HOMEBREW_
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla-test/orla
+            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla-test/orla
           else
-            ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
           fi
 
           # Verify orla is installed and in PATH
@@ -459,7 +460,7 @@ jobs:
 
           # Verify Ollama is NOT installed (this is what we're testing)
           if command -v ollama >/dev/null 2>&1; then
-            echo "ERROR: Ollama should not be installed when ORLA_SKIP_OLLAMA=1 is set" && exit 1
+            echo "ERROR: Ollama should not be installed when HOMEBREW_ORLA_SKIP_OLLAMA=1 is set" && exit 1
           fi
 
           echo "Homebrew skip Ollama installation test passed - Orla installed, Ollama skipped"
@@ -521,6 +522,16 @@ jobs:
 
           echo "Skip Ollama installation test passed - Orla installed, Ollama skipped"
 
+      - name: Set up Docker (Colima)
+        run: |
+          # Install Colima for Docker on macOS (lightweight, CI-friendly)
+          brew install colima docker docker-compose
+          # Start Colima
+          colima start
+          # Verify Docker is working
+          docker --version
+          docker info
+
       - name: Test with OLLAMA_HOST environment variable
         run: |
           curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
@@ -560,12 +571,12 @@ jobs:
 
       - name: test-homebrew-installation-skip-ollama
         run: |
-          # Install via Homebrew with ORLA_SKIP_OLLAMA=1
-          # The post-install hook will run and needs brew in PATH
+          # Install via Homebrew with HOMEBREW_ORLA_SKIP_OLLAMA=1
+          # Homebrew only passes through env vars prefixed with HOMEBREW_
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla-test/orla
+            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla-test/orla
           else
-            ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+            HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
           fi
 
           # Verify orla is installed and in PATH
@@ -580,11 +591,11 @@ jobs:
 
           # Verify Ollama is NOT installed (this is what we're testing)
           if command -v ollama >/dev/null 2>&1; then
-            echo "ERROR: Ollama should not be installed when ORLA_SKIP_OLLAMA=1 is set" && exit 1
+            echo "ERROR: Ollama should not be installed when HOMEBREW_ORLA_SKIP_OLLAMA=1 is set" && exit 1
           fi
 
           if brew services list 2>/dev/null | grep -q "ollama.*started"; then
-            echo "ERROR: Ollama service should not be running when ORLA_SKIP_OLLAMA=1 is set" && exit 1
+            echo "ERROR: Ollama service should not be running when HOMEBREW_ORLA_SKIP_OLLAMA=1 is set" && exit 1
           fi
 
           echo "Homebrew skip Ollama installation test passed - Orla installed, Ollama skipped"

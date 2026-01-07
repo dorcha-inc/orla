@@ -114,12 +114,18 @@ homebrew_casks:
     # Use hooks to run the install script for post-install setup (Ollama + model)
     # Homebrew installs the binary, then we run the install script with --homebrew flag
     # Note: We need to set PATH because post-install hooks run in a clean environment
-    # Users can set ORLA_SKIP_OLLAMA=1 before installing to skip Ollama installation:
-    #   ORLA_SKIP_OLLAMA=1 brew install dorcha-inc/orla/orla
+    # Users can set HOMEBREW_ORLA_SKIP_OLLAMA=1 before installing to skip Ollama installation:
+    #   HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install dorcha-inc/orla/orla
+    # Note: Homebrew only passes through env vars prefixed with HOMEBREW_
     hooks:
       post:
         install: |
-          system "/bin/sh", "-c", "export PATH=\"/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" && if [ \"$ORLA_SKIP_OLLAMA\" = \"1\" ]; then curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew --skip-ollama; else curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew; fi"
+          skip_ollama = ENV["HOMEBREW_ORLA_SKIP_OLLAMA"] == "1"
+          if skip_ollama
+            system "/bin/sh", "-c", "export PATH=\"/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" && curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew --skip-ollama"
+          else
+            system "/bin/sh", "-c", "export PATH=\"/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" && curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/main/scripts/install.sh | sh -s -- --homebrew"
+          end
 
 # Generate checksums
 checksum:

@@ -47,7 +47,7 @@ All done!
 Side note: if required, this will install go, ollama, and pull in a lightweight open-source model. To skip that, you can use:
 
 ```bash
-ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
 ```
 
 or via the install script:
@@ -122,7 +122,7 @@ If you already have a remote Ollama server or prefer to manage Ollama separately
 Using homebrew:
 
 ```bash
-ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
+HOMEBREW_ORLA_SKIP_OLLAMA=1 brew install --cask dorcha-inc/orla/orla
 ```
 
 Using the install script:
