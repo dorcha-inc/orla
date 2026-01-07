@@ -44,7 +44,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         id: create-test-tag
         run: |
-          # Create a test tag from current branch for draft release
+          # Create a test tag from current branch for pre-release
           # Format: v0.0.0-test-YYYYMMDD-HHMMSS
           TEST_TAG="v0.0.0-test-$(date +%Y%m%d-%H%M%S)"
           git config user.name "github-actions[bot]"
@@ -54,27 +54,16 @@ jobs:
           echo "tag=$TEST_TAG" >> $GITHUB_OUTPUT
           echo "Created test tag: $TEST_TAG"
 
-      - name: Configure GoReleaser for test mode
-        # Create a temporary config with draft: true for test releases
-        # Store it in /tmp to avoid git detecting it as an untracked file
-        if: github.event_name == 'workflow_dispatch'
-        id: configure-test
-        run: |
-          # Copy the config file to /tmp and modify it
-          TEST_CONFIG="/tmp/.goreleaser.test.yaml"
-          cp .goreleaser.yaml "$TEST_CONFIG"
-          sed -i 's/^  draft: false/  draft: true/' "$TEST_CONFIG"
-          echo "config_path=$TEST_CONFIG" >> $GITHUB_OUTPUT
-          echo "Created $TEST_CONFIG with draft: true for test release"
-
-      - name: Run GoReleaser (Draft Release for Testing)
-        # Create draft release when manually triggered for testing
+      - name: Run GoReleaser (Pre-Release for Testing)
+        # Create pre-release when manually triggered for testing
+        # Pre-releases are publicly accessible (needed for Homebrew) but marked as pre-releases
         # Uses test Homebrew tap (homebrew-orla-test) instead of production tap
+        # The prerelease field in .goreleaser.yaml uses TEST_MODE env var to determine if it's a pre-release
         if: github.event_name == 'workflow_dispatch'
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: release --clean --config ${{ steps.configure-test.outputs.config_path }}
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }} # Same token works for test tap
@@ -83,8 +72,8 @@ jobs:
       - name: Note about test release
         if: github.event_name == 'workflow_dispatch'
         run: |
-          echo "TEST MODE: Created draft release for testing"
-          echo "Draft release tag: ${{ steps.create-test-tag.outputs.tag }}"
+          echo "TEST MODE: Created pre-release for testing"
+          echo "Pre-release tag: ${{ steps.create-test-tag.outputs.tag }}"
           echo "Homebrew tap updated: dorcha-inc/homebrew-orla-test (test tap, not production)"
           echo "Cleanup will happen automatically after all tests complete"
 
@@ -643,24 +632,24 @@ jobs:
           echo "tag=$TEST_TAG" >> $GITHUB_OUTPUT
           echo "Found test tag: $TEST_TAG"
 
-      - name: Delete draft release
+      - name: Delete pre-release
         run: |
           TEST_TAG="${{ steps.get-tag.outputs.tag }}"
-          echo "Deleting draft release for tag: $TEST_TAG"
+          echo "Deleting pre-release for tag: $TEST_TAG"
 
-          # Get the release ID for the draft release
+          # Get the release ID for the pre-release
           RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/dorcha-inc/orla/releases/tags/${TEST_TAG}" | \
             jq -r '.id // empty')
 
           if [ -z "$RELEASE_ID" ] || [ "$RELEASE_ID" = "null" ]; then
-            echo "Warning: Could not find draft release for tag $TEST_TAG, it may have already been deleted"
+            echo "Warning: Could not find pre-release for tag $TEST_TAG, it may have already been deleted"
           else
             # Delete the release
             curl -X DELETE \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               "https://api.github.com/repos/dorcha-inc/orla/releases/${RELEASE_ID}"
-            echo "Deleted draft release (ID: $RELEASE_ID)"
+            echo "Deleted pre-release (ID: $RELEASE_ID)"
           fi
 
       - name: Delete test tag
@@ -675,6 +664,6 @@ jobs:
       - name: Cleanup summary
         run: |
           echo "Cleanup complete!"
-          echo "  - Draft release deleted"
+          echo "  - Pre-release deleted"
           echo "  - Test tag deleted"
           echo "  - Test Homebrew tap (homebrew-orla-test) still contains the test cask"

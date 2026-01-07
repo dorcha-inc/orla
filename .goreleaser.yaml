@@ -71,11 +71,9 @@ release:
   github:
     owner: dorcha-inc
     name: orla
-  # Create draft release when TEST_MODE=true (for manual workflow testing)
-  # Draft releases are not visible to users and won't be picked up by brew install
-  # Note: This is set dynamically by the workflow via sed before running GoReleaser
-  # Default to false (production releases are not drafts)
-  draft: false
+  # Mark as pre-release when TEST_MODE=true (for manual test releases)
+  # Otherwise, mark as regular release (for tag-based production releases)
+  prerelease: '{{ if eq .Env.TEST_MODE "true" }}true{{ else }}false{{ end }}'
   mode: replace
   header: |
     ## Orla {{ .Tag }}
