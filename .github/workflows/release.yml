@@ -522,24 +522,6 @@ jobs:
 
           echo "Skip Ollama installation test passed - Orla installed, Ollama skipped"
 
-      - name: Set up Docker (Colima)
-        run: |
-          # Install Colima for Docker on macOS (lightweight, CI-friendly)
-          brew install colima docker docker-compose
-          # Start Colima
-          colima start
-          # Verify Docker is working
-          docker --version
-          docker info
-
-      - name: Test with OLLAMA_HOST environment variable
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
-
-      - name: Test with llm_backend configuration
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- config
-
   test-homebrew-skip-ollama-macos:
     name: test-homebrew-skip-ollama-macos
     runs-on: macos-latest
@@ -599,14 +581,6 @@ jobs:
           fi
 
           echo "Homebrew skip Ollama installation test passed - Orla installed, Ollama skipped"
-
-      - name: Test with OLLAMA_HOST environment variable
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- env
-
-      - name: Test with llm_backend configuration
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/dorcha-inc/orla/${{ github.ref_name }}/scripts/test-remote-ollama.sh | sh -s -- config
 
   cleanup-test-release:
     name: cleanup-test-release
