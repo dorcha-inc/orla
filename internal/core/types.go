@@ -87,6 +87,8 @@ type LLMBackend struct {
 	Endpoint string `yaml:"endpoint,omitempty" mapstructure:"endpoint"`
 	// Type is the type of the LLM inference API
 	Type LLMInferenceAPIType `yaml:"type,omitempty" mapstructure:"type"`
-	// APIKey is the API key for the LLM inference API
-	APIKey string `yaml:"api_key,omitempty" mapstructure:"api_key"`
+	// APIKeyEnvVar is the *ENVIRONMENT VARIABLE*  storing the API key for the LLM inference API
+	// Orla *does not* allow you to store the API key in the config file. You must use an environment variable.
+	// This is to prevent the API key from being accidentally logged or leaked.
+	APIKeyEnvVar string `yaml:"api_key_env_var,omitempty" mapstructure:"api_key_env_var"`
 }

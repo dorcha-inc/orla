@@ -11,6 +11,9 @@
 		},
 		{
 			"path": "../orla-tool-fs"
+		},
+		{
+			"path": "../orla-paper"
 		}
 	],
 	"settings": {

@@ -157,13 +157,17 @@ func (l *Loop) Execute(ctx context.Context, prompt string, messages []model.Mess
 
 		// Add tool results as tool messages (one per tool call)
 		// Each tool result becomes a separate message with role "tool"
-		// Ollama matches tool results to tool calls by tool_name
+		// Note(jadidbourbaki): Ollama and OpenAI have different ways of matching tool results to tool calls.
+		// Ollama matches tool results to tool calls by tool_name, while OpenAI matches tool results to tool calls by tool_call_id.
+		// We include both in the message to support both providers.
 		for _, result := range toolResults {
-			// Find the corresponding tool call to get the tool name
+			// Find the corresponding tool call to get the tool name and ID
 			var toolName string
+			var toolCallID string
 			for _, toolCall := range response.ToolCalls {
 				if toolCall.ID == result.ID {
 					toolName = toolCall.McpCallToolParams.Name
+					toolCallID = toolCall.ID
 					break
 				}
 			}
@@ -180,9 +184,10 @@ func (l *Loop) Execute(ctx context.Context, prompt string, messages []model.Mess
 			resultContent := formatToolResult(result)
 
 			conversation = append(conversation, model.Message{
-				Role:     model.MessageRoleTool,
-				ToolName: toolName,
-				Content:  resultContent,
+				Role:       model.MessageRoleTool,
+				ToolName:   toolName,
+				ToolCallID: toolCallID,
+				Content:    resultContent,
 			})
 		}
 

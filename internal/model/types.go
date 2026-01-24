@@ -23,9 +23,10 @@ func (r MessageRole) String() string {
 
 // Message represents a chat message in a conversation
 type Message struct {
-	Role     MessageRole `json:"role"`                // "user", "assistant", "system", or "tool"
-	Content  string      `json:"content"`             // Message content
-	ToolName string      `json:"tool_name,omitempty"` // Tool name (required when role is "tool")
+	Role       MessageRole `json:"role"`                   // "user", "assistant", "system", or "tool"
+	Content    string      `json:"content"`                // Message content
+	ToolName   string      `json:"tool_name,omitempty"`    // Tool name, this is required when role is "tool" for Ollama)
+	ToolCallID string      `json:"tool_call_id,omitempty"` // Tool call ID, this is required when role is "tool" for OpenAI API
 }
 
 // ToolCallWithID represents a tool invocation request from the model.
