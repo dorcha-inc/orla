@@ -214,9 +214,17 @@ func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, t
 
 	// Evaluate cache policy
 	isFinalTask := taskIndex == len(execution.Tasks)-1
-	// For now, use a simple token estimate based on content length
-	// TODO(jadidbourbaki): Use actual tokenizer for more accurate token counting
-	turnSize := len(taskPrompt) + len(response.Content)
+
+	// Use maxTokens if available
+	var turnSize int
+	if maxTokens != nil && *maxTokens > 0 {
+		turnSize = *maxTokens
+	} else {
+		// Fallback to character-based estimate if maxTokens not available
+		// Rough approximation: ~4 characters per token
+		turnSize = (len(taskPrompt) + len(response.Content)) / 4
+	}
+
 	shouldFlush, err := l.cacheManager.ShouldFlush(ctx, serverName, turnSize, 0.0, isFinalTask)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate cache policy: %w", err)
