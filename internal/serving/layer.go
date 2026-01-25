@@ -225,7 +225,7 @@ func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, t
 		turnSize = (len(taskPrompt) + len(response.Content)) / 4
 	}
 
-	shouldFlush, err := l.cacheManager.ShouldFlush(ctx, serverName, turnSize, 0.0, isFinalTask)
+	shouldFlush, err := l.cacheManager.ShouldFlush(ctx, serverName, turnSize, 0.0, isFinalTask, execution.WorkflowName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate cache policy: %w", err)
 	}
