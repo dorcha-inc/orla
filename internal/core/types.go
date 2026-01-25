@@ -78,6 +78,9 @@ const (
 	// LLMInferenceAPITypeOpenAI represents any inference server that has an
 	// OpenAI-compatible API.
 	LLMInferenceAPITypeOpenAI LLMInferenceAPIType = "openai"
+	// LLMInferenceAPITypeSGLang represents SGLang, which provides an Ollama-compatible
+	// API for inference and a separate /flush_cache endpoint for cache control.
+	LLMInferenceAPITypeSGLang LLMInferenceAPIType = "sglang"
 )
 
 // LLMBackend represents an LLM inference server. This allows configuring

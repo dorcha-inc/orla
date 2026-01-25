@@ -77,6 +77,11 @@ func getOpenAICompatibleEndpoint(cfg *config.OrlaConfig) (string, string, error)
 	return cfg.LLMBackend.Endpoint, apiKey, nil
 }
 
+// Name returns the provider name
+func (p *OpenAIProvider) Name() string {
+	return "openai"
+}
+
 // EnsureReady is a no-op for the OpenAI-compatible provider.
 func (p *OpenAIProvider) EnsureReady(ctx context.Context) error {
 	return nil

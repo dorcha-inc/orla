@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.8.0
 	github.com/deckarep/golang-set/v2 v2.8.0
 	github.com/go-playground/validator/v10 v10.29.0
+	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/modelcontextprotocol/go-sdk v1.1.0
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
@@ -63,7 +64,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/google/jsonschema-go v0.3.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect

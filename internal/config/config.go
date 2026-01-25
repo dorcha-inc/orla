@@ -115,6 +115,9 @@ type OrlaConfig struct {
 	ShowThinking       bool             `yaml:"show_thinking,omitempty" mapstructure:"show_thinking"`             // show thinking trace output (for thinking-capable models)
 	ShowToolCalls      bool             `yaml:"show_tool_calls,omitempty" mapstructure:"show_tool_calls"`         // show detailed tool call information
 	ShowProgress       bool             `yaml:"show_progress,omitempty" mapstructure:"show_progress"`             // show progress messages even when UI is disabled (e.g., when stdin is piped)
+
+	// Agentic Serving Layer configuration (RFC 5)
+	AgenticServing *AgenticServingConfig `yaml:"agentic_serving,omitempty" mapstructure:"agentic_serving"`
 }
 
 // SetToolsDir updates the tools directory and rebuilds the tools registry.
@@ -407,6 +410,13 @@ func validateConfig(cfg *OrlaConfig) error {
 
 	if !IsValidOutputFormat(cfg.OutputFormat) {
 		return fmt.Errorf("output_format must be one of: %s, got '%s'", core.JoinMapKeys(ValidOutputFormats()), cfg.OutputFormat)
+	}
+
+	// Validate agentic serving configuration if present
+	if cfg.AgenticServing != nil {
+		if err := validateAgenticServingConfig(cfg.AgenticServing); err != nil {
+			return fmt.Errorf("agentic_serving validation failed: %w", err)
+		}
 	}
 
 	return nil

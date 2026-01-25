@@ -37,6 +37,7 @@ Orla supports both MCP server mode (orla serve) and agent mode (orla agent).`,
 	rootCmd.AddCommand(newToolCmd()) // Tool management commands (RFC 4)
 	rootCmd.AddCommand(newCacheCmd())
 	rootCmd.AddCommand(newAgentCmd()) // Agent mode (RFC 4)
+	rootCmd.AddCommand(newDaemonCmd()) // Agentic Serving Layer daemon (RFC 5)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

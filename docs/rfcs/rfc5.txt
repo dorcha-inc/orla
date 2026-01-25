@@ -1,0 +1,542 @@
+Orla Agentic AI Working Group                                  Orla Project
+Request for Comments: 5                                        January 2026
+Category: Standards Track
+
+
+                    RFC 5: Agentic Serving Layer Configuration
+
+Status of This Memo
+
+   This document specifies the Agentic Serving Layer configuration for
+   the Orla project.  This memo provides information for the Orla
+   community.  It does not specify an Internet standard of any kind.
+   Distribution of this memo is unlimited.
+
+Abstract
+
+   This document specifies the configuration interface for Orla's
+   Agentic Serving Layer, which provides agent-granularity control over
+   LLM inference backends and KV cache management.  The Agentic Serving
+   Layer sits above inference backends (Ollama, SGLang, vLLM) and
+   exposes a declarative configuration model with three top-level
+   entities: LLM Server Configurations, Agent Profiles, and Workflows.
+   This RFC defines the configuration schema and operational model for
+   the Agentic Serving Layer.
+
+   This RFC extends RFC 4 (Orla Agent Mode) by introducing the
+   distinction between the agent (the execution loop) and the agentic
+   serving layer (the control plane that manages inference resources).
+
+Table of Contents
+
+   1. Introduction
+   2. Architecture Overview
+   3. Terminology
+   4. Configuration Model
+   5. Operational Model
+   6. Relationship to RFC 4
+   7. Future Work
+   8. References
+
+1. Introduction
+
+   RFC 4 introduced Agent Mode, where `orla agent` executes agent loops
+   that interact with LLM models and invoke tools.  However, RFC 4
+   treats the model provider as a simple abstraction without addressing
+   the systems challenges that arise in agentic workloads:
+
+   - Cross-request semantics: Agent steps share prefixes, exchange
+     intermediate artifacts, and impose higher-level correctness
+     constraints
+   - Infrastructure-aware coordination: Model cascades, guardrails, and
+     heterogeneous backend selection
+   - State and cache management: KV cache reuse vs flushing policies
+     across agent turns
+   - End-to-end objectives: Optimization goals that span multiple
+     requests
+
+   RFC 5 introduces the Agentic Serving Layer, which addresses these
+   challenges through a declarative configuration model with three
+   top-level entities: LLM Server Configurations, Agent Profiles, and
+   Workflows.
+
+1.1. Motivation
+
+   Current LLM serving systems (SGLang, vLLM, Ollama) optimize at the
+   request level: they schedule prefill/decode, manage continuous
+   batching, and optimize KV cache within individual requests.  These
+   optimizations are necessary but insufficient for agentic workloads,
+   where:
+
+   - Multiple agent steps form a logical unit of work
+   - Steps share context and intermediate results
+   - Cache management decisions affect end-to-end performance
+   - Backend selection varies by workload (routing vs synthesis)
+   - Policies span multiple requests (cache reuse, context sharing)
+
+   The Agentic Serving Layer elevates optimization from "maximize
+   tokens/sec" to "minimize end-to-end agent completion time and cost
+   under load," subject to correctness constraints.
+
+2. Architecture Overview
+
+2.1. Layer Separation
+
+   Orla's agentic architecture consists of three layers:
+
+   1. Agent Layer (`orla agent`): Executes agent loops that consume
+      context, generate outputs, invoke tools, and incorporate results.
+      Each agent instance maintains its own conversation state and tool
+      call history.
+
+   2. Agentic Serving Layer (`orla daemon` or embedded): Manages
+      inference backends, KV cache policies, and multi-agent
+      coordination.  Provides a declarative configuration interface for
+      agent-granularity inference configuration.
+
+   3. LLM Serving Layer: Inference backends (Ollama, SGLang, vLLM)
+      that execute individual generation requests with high-performance
+      primitives (decoding, batching, caching).
+
+2.2. Operational Modes
+
+   The Agentic Serving Layer can operate in two modes:
+
+   Embedded Mode (default for single-agent use):
+   - The serving layer runs in-process with `orla agent`
+   - Suitable for single-user, single-agent scenarios
+   - Simpler deployment, no separate daemon required
+
+   Daemon Mode (`orla daemon`):
+   - The serving layer runs as a separate daemon process
+   - Multiple `orla agent` instances connect to the daemon
+   - Enables multi-agent coordination, shared cache management, and
+     centralized backend selection
+   - Required for multi-agent experiments (e.g., story-finishing game)
+
+   The choice between embedded and daemon mode is transparent to the
+   agent layer: both expose the same configuration interface.
+
+2.3. Backend Abstraction
+
+   The Agentic Serving Layer abstracts over multiple inference backends:
+
+   - Ollama: Local-first, simple HTTP API, supports tool calling
+   - SGLang: High-performance inference, Ollama-compatible API
+   - vLLM: OpenAI-compatible API, continuous batching
+   - OpenAI/Anthropic: Cloud providers via their native APIs
+
+3. Terminology
+
+   Agent: An execution loop that processes user prompts, generates
+   tool calls, and synthesizes responses.  Implemented by `orla agent`.
+
+   Agentic Serving Layer: The control plane that manages inference
+   backends, KV cache policies, and multi-agent coordination.  Can run
+   embedded in `orla agent` or as a separate daemon (`orla daemon`).
+
+   LLM Server Configuration: Defines an inference backend, model,
+   context sharing policy, and KV cache management policy.
+
+   Agent Profile: Defines agent characteristics including which LLM
+   Server Configuration to use, tool access, and agent-specific
+   policies.
+
+   Workflow: Defines a sequence of single-turn agent tasks.  Each task
+   references an Agent Profile and specifies the LLM Server
+   Configuration to use for that task.
+
+   Backend: An LLM inference server (Ollama, SGLang, vLLM, etc.)
+   that executes generation requests.
+
+   KV Cache: Key-value cache maintained by inference backends to
+   avoid recomputing attention over conversation prefixes.
+
+4. Configuration Model
+
+4.1. Top-Level Structure
+
+   The Agentic Serving Layer configuration extends `orla.yaml` with an
+   `agentic_serving` section containing three top-level entities:
+
+      agentic_serving:
+        # Operational mode
+        mode: embedded  # or "daemon"
+        
+        # Daemon configuration (only when mode=daemon)
+        daemon:
+          listen_address: "localhost:8081"
+        
+        # LLM Server Configurations
+        llm_servers: [...]
+        
+        # Agent Profiles
+        agent_profiles: [...]
+        
+        # Workflows
+        workflows: [...]
+
+4.2. LLM Server Configuration
+
+   LLM Server Configurations define inference backends with their
+   models, context sharing policies, and KV cache management:
+
+      agentic_serving:
+        llm_servers:
+          - name: "local_ollama_small"
+            backend:
+              type: "ollama"
+              endpoint: "http://localhost:11434"
+            model: "ollama:qwen3:0.6b"
+            context:
+              shared: false  # Each agent gets isolated context
+            cache:
+              policy: "preserve_on_small_turns"
+              small_turn_threshold: 100  # tokens
+              flush_under_pressure: true
+              memory_pressure_threshold: 0.85
+          
+          - name: "sglang_shared"
+            backend:
+              type: "ollama"  # SGLang via Ollama-compatible API
+              endpoint: "http://gpu-server:30001"
+            model: "ollama:llama3:8b"
+            context:
+              shared: true  # Agents share context (for multi-agent experiments)
+              sync_interval: 100  # tokens
+            cache:
+              policy: "flush_under_pressure"
+              memory_pressure_threshold: 0.85
+              flush_after_final: true
+          
+          - name: "vllm_datacenter"
+            backend:
+              type: "openai"
+              endpoint: "http://vllm-cluster:8000"
+            model: "openai:gpt-4"
+            context:
+              shared: false
+            cache:
+              policy: "aggressive_flush"  # Always flush to free memory
+
+   LLM Server Configurations encapsulate:
+   - Backend connection (type, endpoint)
+   - Model selection
+   - Context sharing policy (for multi-agent coordination)
+   - KV cache management policy
+
+4.3. Agent Profiles
+
+   Agent Profiles define agent characteristics and reference an LLM
+   Server Configuration:
+
+      agentic_serving:
+        agent_profiles:
+          - name: "router_agent"
+            llm_server: "local_ollama_small"
+            inference:
+              temperature: 0.1
+              top_p: 0.9
+              max_tokens: 50
+            tools:
+              allowed: ["fs", "grep"]  # Optional: restrict tool access
+          
+          - name: "synthesis_agent"
+            llm_server: "sglang_shared"
+            inference:
+              temperature: 0.7
+              top_p: 0.95
+              max_tokens: 2000
+            tools:
+              allowed: []  # All tools available
+          
+          - name: "story_agent_a"
+            llm_server: "sglang_shared"
+            inference:
+              temperature: 0.8
+              top_p: 0.9
+              max_tokens: 500
+          
+          - name: "story_agent_b"
+            llm_server: "sglang_shared"
+            inference:
+              temperature: 0.8
+              top_p: 0.9
+              max_tokens: 500
+
+   Agent Profiles specify:
+   - Which LLM Server Configuration to use
+   - Inference parameters (temperature, top_p, max_tokens)
+   - Tool access restrictions (optional)
+
+4.4. Workflows
+
+   Workflows define sequences of single-turn agent tasks.  Each task
+   references an Agent Profile and can optionally override the LLM
+   Server Configuration:
+
+      agentic_serving:
+        workflows:
+          - name: "story_finishing_game"
+            tasks:
+              - agent_profile: "story_agent_a"
+                llm_server: "sglang_shared"  # Optional override
+                turn: 1
+              
+              - agent_profile: "story_agent_b"
+                llm_server: "sglang_shared"
+                turn: 2
+              
+              # Repeat pattern for alternating turns
+              - agent_profile: "story_agent_a"
+                turn: 3
+              
+              - agent_profile: "story_agent_b"
+                turn: 4
+          
+          - name: "routing_then_synthesis"
+            tasks:
+              - agent_profile: "router_agent"
+                # Uses llm_server from router_agent profile
+              
+              - agent_profile: "synthesis_agent"
+                # Uses llm_server from synthesis_agent profile
+
+   Workflows enable:
+   - Multi-agent coordination (alternating turns, shared context)
+   - Model cascades (small model for routing, large for synthesis)
+   - Cross-request semantics (sequence of related agent tasks)
+
+   When a workflow task specifies an `llm_server` override, it uses
+   that configuration instead of the one from the agent profile.  This
+   allows fine-grained control per task while maintaining reusable agent
+   profiles.
+
+4.5. KV Cache Policies
+
+   KV cache policies are defined in LLM Server Configurations:
+
+   - `preserve_on_small_turns`: Preserve cache when context delta is
+     small (amortizes prefill cost)
+   - `flush_under_pressure`: Flush cache when memory pressure exceeds
+     threshold (frees memory for other agents)
+   - `aggressive_flush`: Always flush cache after each request (maximizes
+     memory availability)
+   - `flush_after_final`: Flush cache after final iteration (cleanup)
+
+   Cache policies balance:
+   - Performance: Preserving cache reduces prefill cost
+   - Memory: Flushing cache frees memory for other agents
+   - Multi-agent: When `context.shared: true`, agents share the same KV
+     cache instance (since they process the same shared context).  When
+     `context.shared: false`, each agent has its own isolated KV cache.
+
+4.6. Context Sharing
+
+   Context sharing is configured in LLM Server Configurations and
+   determines whether multiple agents using the same LLM server share
+   their conversation context:
+
+   - `shared: true`: Agents using this LLM server share a common
+     conversation context.  When one agent adds to the context, other
+     agents see it.  Required for multi-agent experiments like
+     story-finishing where agents collaborate on shared content.
+   - `shared: false`: Each agent maintains its own isolated conversation
+     context.  Agents cannot see each other's messages.  This is the
+     default for single-agent use or when agents should operate
+     independently.
+   - `sync_interval`: When shared=true, how often to synchronize context
+     across agents (in tokens).  Smaller values provide more real-time
+     sharing but increase coordination overhead.
+
+   Shared context implies shared KV cache: When `shared: true`, agents
+   using the same LLM server share both the conversation context and the
+   KV cache.  This means:
+
+   - Agents process the same conversation history
+   - The backend maintains a single KV cache for the shared context
+   - Cache preservation/flushing affects all agents using that context
+   - When one agent's turn adds to the context, the KV cache is updated
+     and available for the next agent's turn (reducing prefill cost)
+
+   Shared context enables:
+   - Collaborative multi-agent tasks (story-finishing, code review)
+   - Context reuse across agent turns (reduces redundant prefill)
+   - Coordinated cache management (shared KV cache amortizes prefill
+     across agents)
+
+   Example: In the story-finishing game, both agents use an LLM server
+   with `shared: true`.  They share both the conversation context (the
+   growing story) and the KV cache.  When Agent A adds to the story, the
+   KV cache is updated.  When Agent B's turn begins, it can reuse that
+   cache, avoiding expensive prefill over the shared story prefix.
+
+5. Operational Model
+
+5.1. Embedded Mode
+
+   In embedded mode, `orla agent` starts the Agentic Serving Layer
+   in-process:
+
+      orla agent --profile router_agent "list files"
+
+   The serving layer:
+   - Loads the specified agent profile
+   - Initializes the LLM server configuration
+   - Applies cache and context policies
+   - Manages inference for this agent instance only
+
+   Embedded mode is suitable for:
+   - Single-user, single-agent scenarios
+   - Development and testing
+   - Simple deployments
+
+5.2. Daemon Mode
+
+   In daemon mode, `orla daemon` runs as a separate process:
+
+      orla daemon --config ~/.orla/config.yaml
+
+   Agent instances connect to the daemon:
+
+      orla agent --daemon http://localhost:8081 --workflow story_finishing_game
+
+   The daemon:
+   - Manages a pool of LLM server configurations
+   - Coordinates multiple agent instances
+   - Implements shared context and cache policies
+   - Executes workflows (alternating turns, shared context)
+
+   Daemon mode is required for:
+   - Multi-agent experiments (e.g., story-finishing game)
+   - Workflows with multiple agents
+   - Shared context scenarios
+
+5.3. Backend Health Monitoring
+
+   The Agentic Serving Layer SHOULD:
+
+   - Monitor backend health (HTTP health checks, response times)
+   - Report backend status in logs and metrics
+
+   For MVP, automatic failover and retry logic are deferred to future work
+   (see Section 7).  If a backend is unavailable, the request fails with
+   a clear error message.
+
+   Backend selection considers:
+   - Health status (healthy, degraded, unavailable)
+   - Current load (concurrent requests, queue depth)
+   - Response time (p50, p95, p99 latency)
+
+6. Relationship to RFC 4
+
+6.1. Backward Compatibility
+
+   RFC 5 extends RFC 4 without breaking existing functionality:
+
+   - Existing `orla agent` commands continue to work
+   - Simple configurations (single model, single backend) work without
+     `agentic_serving` section
+   - Default behavior matches RFC 4 (embedded mode, single backend)
+
+6.2. Configuration Migration
+
+   RFC 4 configuration:
+
+      model: ollama:llama3
+      max_tool_calls: 10
+      streaming: true
+
+   Maps to RFC 5 configuration:
+
+      agentic_serving:
+        mode: embedded
+        llm_servers:
+          - name: "default"
+            backend:
+              type: "ollama"
+              endpoint: "http://localhost:11434"
+            model: "ollama:llama3"
+            context:
+              shared: false
+            cache:
+              policy: "preserve_on_small_turns"
+        agent_profiles:
+          - name: "default"
+            llm_server: "default"
+            inference:
+              max_tokens: null  # no limit
+
+   The Agentic Serving Layer automatically migrates RFC 4
+   configurations to RFC 5 format.
+
+6.3. Agent Loop Integration
+
+   The agent loop (RFC 4 Section 4.4) remains unchanged but now
+   interfaces with the Agentic Serving Layer:
+
+   - Agent loop requests inference with agent profile or workflow task
+   - Agentic Serving Layer selects LLM server configuration
+   - Inference executes on selected backend with configured policies
+   - Results return to agent loop
+
+   This separation enables:
+   - Policy-driven backend selection
+   - Cache management across agent turns
+   - Multi-agent coordination via workflows
+   - End-to-end optimization
+
+7. Future Work
+
+   The following features are explicitly out of scope for MVP but MAY be
+   added in future revisions:
+
+   1. Automatic backend failover and retry logic
+   2. Adaptive cache policies (load-aware adaptation, per-iteration behavior)
+   3. Runtime adaptation (automatic policy adjustment based on metrics)
+   4. Advanced selection rules (complex conditions beyond iteration-based)
+   5. Policy updates at runtime (SIGHUP reload, API-based updates)
+   6. Load balancing strategies (round-robin, least-loaded, affinity)
+   7. Distributed agent execution across multiple machines
+   8. Machine learning for policy optimization
+   9. Integration with external orchestration systems (Kubernetes, etc.)
+   10. Performance analytics and dashboards
+   11. Policy templates for common use cases
+
+8. References
+
+8.1. Normative References
+
+   [RFC1]  Orla Project, "RFC 1: Orla Runtime Specification",
+          December 2025.
+
+   [RFC3]  Orla Project, "RFC 3: Tool Package and Install System",
+          December 2025.
+
+   [RFC4]  Orla Project, "RFC 4: Orla Agent Mode Specification",
+          December 2025.
+
+   [RFC2119]
+          Bradner, S., "Key words for use in RFCs to Indicate
+          Requirement Levels", BCP 14, RFC 2119,
+          DOI 10.17487/RFC2119, March 1997,
+          <https://www.rfc-editor.org/info/rfc2119>.
+
+8.2. Informative References
+
+   [SGLang]
+          SGLang Project, "SGLang Documentation",
+          <https://docs.sglang.io>.
+
+   [vLLM]
+          vLLM Project, "vLLM: Easy, Fast, and Cheap LLM Serving",
+          <https://vllm.readthedocs.io>.
+
+   [Ollama]
+          Ollama Project, "Run large language models locally",
+          <https://ollama.ai>.
+
+Author's Address
+
+   Orla Project
+   https://github.com/dorcha-inc/orla
