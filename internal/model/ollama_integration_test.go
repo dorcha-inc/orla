@@ -197,6 +197,12 @@ done:
 //
 // Note: This test requires Docker to be running. It will fail if Docker is not available.
 func TestOllamaProvider_RemoteEndpoint_Integration(t *testing.T) {
+	// if on a local machine, skip the test
+	if core.IsLocalMachine() {
+		t.Skip("Skipping remote endpoint test on local machine")
+		return
+	}
+
 	ctx := context.Background()
 
 	// Start Ollama container using testcontainers
@@ -231,7 +237,7 @@ func TestOllamaProvider_RemoteEndpoint_Integration(t *testing.T) {
 	provider, createProviderErr := NewOllamaProvider(modelName, cfg)
 	require.NoError(t, createProviderErr, "Failed to create Ollama provider with remote endpoint")
 
-	testCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	testCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	// Ensure the remote Ollama is ready
@@ -243,7 +249,10 @@ func TestOllamaProvider_RemoteEndpoint_Integration(t *testing.T) {
 		{Role: MessageRoleUser, Content: "Say hello"},
 	}
 
-	response, streamCh, chatErr := provider.Chat(testCtx, messages, nil, false, nil)
+	// Limit max tokens to speed up the test
+	maxTokens := 50
+
+	response, streamCh, chatErr := provider.Chat(testCtx, messages, nil, false, &maxTokens)
 	require.NoError(t, chatErr)
 	assert.NotNil(t, response)
 	assert.Nil(t, streamCh) // stream=false

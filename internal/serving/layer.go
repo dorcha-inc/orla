@@ -26,6 +26,12 @@ type Layer struct {
 	agentProfiles map[string]*config.AgentProfile
 }
 
+// GetAgentProfile returns an agent profile by name
+func (l *Layer) GetAgentProfile(profileName string) (*config.AgentProfile, bool) {
+	profile, exists := l.agentProfiles[profileName]
+	return profile, exists
+}
+
 // NewLayer creates a new serving layer
 func NewLayer(cfg *config.AgenticServingConfig) (*Layer, error) {
 	if cfg == nil {

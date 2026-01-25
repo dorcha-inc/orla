@@ -308,3 +308,29 @@ func TestExecuteAgentPrompt_ModelOverride(t *testing.T) {
 	// The error should indicate the model override was attempted and failed validation
 	assert.Contains(t, err.Error(), "invalid-model-override", "Error should mention the model override that was attempted")
 }
+
+func TestCreateContextWithSignals(t *testing.T) {
+	// Test that createContextWithSignals creates a context and cancel function
+	ctx, cancel := createContextWithSignals()
+	require.NotNil(t, ctx)
+	require.NotNil(t, cancel)
+
+	// Context should be active initially
+	select {
+	case <-ctx.Done():
+		t.Fatal("Context should not be cancelled initially")
+	default:
+		// Good, context is active
+	}
+
+	// Cancel should work
+	cancel()
+
+	// Context should be cancelled after cancel is called
+	select {
+	case <-ctx.Done():
+		// Good, context is cancelled
+	default:
+		t.Fatal("Context should be cancelled after cancel() is called")
+	}
+}

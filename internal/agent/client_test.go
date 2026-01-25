@@ -210,3 +210,98 @@ func TestClient_Close_WithSessionError(t *testing.T) {
 	// Should not error when both are nil
 	assert.NoError(t, err)
 }
+
+func TestClient_CallTool_Success(t *testing.T) {
+	ctx := t.Context()
+
+	// Create a test server configuration with a tools directory
+	tmpDir := t.TempDir()
+	toolsDir := filepath.Join(tmpDir, "tools")
+	// #nosec G301 -- test directory permissions are acceptable for temporary test files
+	err := os.MkdirAll(toolsDir, 0755)
+	require.NoError(t, err)
+
+	// Create a test tool so the registry isn't empty
+	toolPath := filepath.Join(toolsDir, "test-tool.sh")
+	toolContent := "#!/bin/sh\necho hello world\n"
+
+	// #nosec G306 -- test file permissions are acceptable for temporary test files
+	err = os.WriteFile(toolPath, []byte(toolContent), 0755)
+	require.NoError(t, err)
+
+	// Create tools registry
+	registry, err := state.NewToolsRegistryFromDirectory(toolsDir)
+	require.NoError(t, err)
+
+	cfg := &config.OrlaConfig{
+		ToolsDir:      toolsDir,
+		ToolsRegistry: registry,
+		Port:          0, // Use 0 to get a random port
+		Timeout:       30,
+		LogFormat:     "json",
+		LogLevel:      "info",
+	}
+
+	// Create and start the test server
+	srv := server.NewOrlaServer(cfg, "")
+	require.NotNil(t, srv)
+
+	// Find an available port
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	require.True(t, ok)
+	port := addr.Port
+	require.NoError(t, listener.Close())
+
+	// Start server in a goroutine
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	defer serverCancel()
+
+	serverErrCh := make(chan error, 1)
+	go func() {
+		serverErrCh <- srv.Serve(serverCtx, fmt.Sprintf("localhost:%d", port))
+	}()
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Create MCP client with HTTP transport
+	mcpClient := mcp.NewClient(&mcp.Implementation{
+		Name:    "orla-agent",
+		Version: "1.0.0",
+	}, nil)
+
+	transport := &mcp.StreamableClientTransport{
+		Endpoint: fmt.Sprintf("http://%s/mcp", addr),
+		HTTPClient: &http.Client{
+			Timeout: 5 * time.Second,
+		},
+	}
+
+	// Connect to the test server
+	session, connectErr := mcpClient.Connect(ctx, transport, nil)
+	require.NoError(t, connectErr)
+	defer core.LogDeferredError(session.Close)
+
+	// Create client and test CallTool
+	client := &Client{McpSession: session}
+	params := &mcp.CallToolParams{
+		Name:      "test-tool",
+		Arguments: map[string]any{},
+	}
+	result, err := client.CallTool(ctx, params)
+	// Since we created a simple test tool, it should succeed
+	require.NoError(t, err, "CallTool should succeed with a valid session and test tool")
+	assert.NotNil(t, result, "CallTool result should not be nil")
+
+	// Cleanup
+	serverCancel()
+	// Wait for server to shut down (ignore errors as server may have already shut down)
+	select {
+	case <-serverErrCh:
+		// Server shut down
+	case <-time.After(1 * time.Second):
+		// Timeout waiting for server shutdown
+	}
+}

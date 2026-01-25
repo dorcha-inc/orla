@@ -5,111 +5,142 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMessageRole_String(t *testing.T) {
-	tests := []struct {
-		name     string
-		role     MessageRole
-		expected string
-	}{
-		{"user", MessageRoleUser, "user"},
-		{"assistant", MessageRoleAssistant, "assistant"},
-		{"system", MessageRoleSystem, "system"},
-		{"tool", MessageRoleTool, "tool"},
-		{"custom", MessageRole("custom"), "custom"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.role.String())
-		})
-	}
+	assert.Equal(t, "user", MessageRoleUser.String())
+	assert.Equal(t, "assistant", MessageRoleAssistant.String())
+	assert.Equal(t, "system", MessageRoleSystem.String())
+	assert.Equal(t, "tool", MessageRoleTool.String())
 }
 
-func TestStreamEventTypes(t *testing.T) {
-	t.Run("ContentEvent", func(t *testing.T) {
-		e := &ContentEvent{Content: "test"}
-		assert.Equal(t, StreamEventTypeContent, e.Type())
-	})
-
-	t.Run("ToolCallEvent", func(t *testing.T) {
-		e := &ToolCallEvent{Name: "test"}
-		assert.Equal(t, StreamEventTypeToolCall, e.Type())
-	})
-
-	t.Run("ThinkingEvent", func(t *testing.T) {
-		e := &ThinkingEvent{Content: "test"}
-		assert.Equal(t, StreamEventTypeThinking, e.Type())
-	})
-}
-
-func TestMessage(t *testing.T) {
+func TestMessage_UserMessage(t *testing.T) {
 	msg := Message{
 		Role:    MessageRoleUser,
-		Content: "Hello, world!",
+		Content: "Hello",
 	}
 
 	assert.Equal(t, MessageRoleUser, msg.Role)
-	assert.Equal(t, "Hello, world!", msg.Content)
+	assert.Equal(t, "Hello", msg.Content)
+	assert.Empty(t, msg.ToolName)
+	assert.Empty(t, msg.ToolCallID)
+}
+
+func TestMessage_ToolMessage(t *testing.T) {
+	msg := Message{
+		Role:       MessageRoleTool,
+		Content:    "tool result",
+		ToolName:   "test_tool",
+		ToolCallID: "call-123",
+	}
+
+	assert.Equal(t, MessageRoleTool, msg.Role)
+	assert.Equal(t, "tool result", msg.Content)
+	assert.Equal(t, "test_tool", msg.ToolName)
+	assert.Equal(t, "call-123", msg.ToolCallID)
 }
 
 func TestToolCallWithID(t *testing.T) {
 	toolCall := ToolCallWithID{
-		ID: "call_123",
+		ID: "call-123",
 		McpCallToolParams: mcp.CallToolParams{
 			Name:      "test_tool",
 			Arguments: map[string]any{"arg1": "value1"},
 		},
 	}
 
-	assert.Equal(t, "call_123", toolCall.ID)
+	assert.Equal(t, "call-123", toolCall.ID)
 	assert.Equal(t, "test_tool", toolCall.McpCallToolParams.Name)
-	assert.Equal(t, map[string]any{"arg1": "value1"}, toolCall.McpCallToolParams.Arguments)
+	args, ok := toolCall.McpCallToolParams.Arguments.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "value1", args["arg1"])
 }
 
 func TestToolResultWithID(t *testing.T) {
 	toolResult := ToolResultWithID{
-		ID: "call_123",
+		ID: "call-123",
 		McpCallToolResult: mcp.CallToolResult{
 			IsError: false,
 			Content: []mcp.Content{
-				&mcp.TextContent{Text: "Success"},
+				&mcp.TextContent{Text: "result"},
 			},
 		},
 	}
 
-	assert.Equal(t, "call_123", toolResult.ID)
+	assert.Equal(t, "call-123", toolResult.ID)
 	assert.False(t, toolResult.McpCallToolResult.IsError)
 	assert.Len(t, toolResult.McpCallToolResult.Content, 1)
 }
 
-func TestResponse(t *testing.T) {
-	response := Response{
-		Content: "Hello!",
+func TestResponse_Empty(t *testing.T) {
+	response := &Response{}
+
+	assert.Empty(t, response.Content)
+	assert.Empty(t, response.Thinking)
+	assert.Empty(t, response.ToolCalls)
+	assert.Empty(t, response.ToolResults)
+}
+
+func TestResponse_WithContent(t *testing.T) {
+	response := &Response{
+		Content:  "Hello world",
+		Thinking: "I should say hello",
+	}
+
+	assert.Equal(t, "Hello world", response.Content)
+	assert.Equal(t, "I should say hello", response.Thinking)
+}
+
+func TestResponse_WithToolCalls(t *testing.T) {
+	response := &Response{
+		Content: "I'll call a tool",
 		ToolCalls: []ToolCallWithID{
 			{
-				ID: "call_1",
+				ID: "call-1",
 				McpCallToolParams: mcp.CallToolParams{
-					Name:      "test_tool",
-					Arguments: map[string]any{"arg": "value"},
-				},
-			},
-		},
-		ToolResults: []ToolResultWithID{
-			{
-				ID: "call_1",
-				McpCallToolResult: mcp.CallToolResult{
-					IsError: false,
-					Content: []mcp.Content{&mcp.TextContent{Text: "result"}},
+					Name: "test_tool",
 				},
 			},
 		},
 	}
 
-	assert.Equal(t, "Hello!", response.Content)
 	assert.Len(t, response.ToolCalls, 1)
-	assert.Len(t, response.ToolResults, 1)
-	assert.Equal(t, "call_1", response.ToolCalls[0].ID)
-	assert.Equal(t, "call_1", response.ToolResults[0].ID)
+	assert.Equal(t, "call-1", response.ToolCalls[0].ID)
+	assert.Equal(t, "test_tool", response.ToolCalls[0].McpCallToolParams.Name)
+}
+
+func TestStreamEventType_String(t *testing.T) {
+	assert.Equal(t, "content", string(StreamEventTypeContent))
+	assert.Equal(t, "toolcall", string(StreamEventTypeToolCall))
+	assert.Equal(t, "thinking", string(StreamEventTypeThinking))
+}
+
+func TestContentEvent_Type(t *testing.T) {
+	event := &ContentEvent{
+		Content: "chunk",
+	}
+
+	assert.Equal(t, StreamEventTypeContent, event.Type())
+	assert.Equal(t, "chunk", event.Content)
+}
+
+func TestToolCallEvent_Type(t *testing.T) {
+	event := &ToolCallEvent{
+		Name:      "test_tool",
+		Arguments: map[string]any{"arg": "value"},
+	}
+
+	assert.Equal(t, StreamEventTypeToolCall, event.Type())
+	assert.Equal(t, "test_tool", event.Name)
+	assert.Equal(t, "value", event.Arguments["arg"])
+}
+
+func TestThinkingEvent_Type(t *testing.T) {
+	event := &ThinkingEvent{
+		Content: "thinking chunk",
+	}
+
+	assert.Equal(t, StreamEventTypeThinking, event.Type())
+	assert.Equal(t, "thinking chunk", event.Content)
 }

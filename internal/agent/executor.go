@@ -17,8 +17,8 @@ import (
 	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/model"
 	"github.com/dorcha-inc/orla/internal/serving"
-	servingapi "github.com/dorcha-inc/orla/internal/serving/api"
 	"github.com/dorcha-inc/orla/internal/tui"
+	publicapi "github.com/dorcha-inc/orla/pkg/api"
 	"go.uber.org/zap"
 )
 
@@ -223,148 +223,34 @@ func executeWithServingLayer(cfg *config.OrlaConfig, prompt string, daemonURL st
 }
 
 // executeWorkflowWithDaemon executes a workflow coordinated by a remote daemon
-// The daemon manages workflow state and assigns tasks; we execute them locally
-func executeWorkflowWithDaemon(ctx context.Context, cfg *config.OrlaConfig, prompt string, daemonURL string, workflowName string) (bool, error) {
+// Uses the public API workflow executor for remote execution
+func executeWorkflowWithDaemon(ctx context.Context, _ *config.OrlaConfig, prompt string, daemonURL string, workflowName string) (bool, error) {
 	zap.L().Info("Executing workflow with daemon coordination",
 		zap.String("daemon_url", daemonURL),
 		zap.String("workflow_name", workflowName))
 
-	// Create daemon coordinator
-	coordinator := servingapi.NewDaemonCoordinator(daemonURL)
+	// Create workflow executor (daemon reads orla.yaml and resolves server names automatically)
+	executor := publicapi.NewWorkflowExecutor(daemonURL)
 
-	// Check daemon health
+	healthClient := publicapi.NewClient(daemonURL)
 	healthCtx, healthCancel := context.WithTimeout(ctx, daemonTimeout)
-	if err := coordinator.Health(healthCtx); err != nil {
+	if err := healthClient.Health(healthCtx); err != nil {
 		healthCancel()
 		return false, fmt.Errorf("daemon health check failed: %w", err)
 	}
 	healthCancel()
 
-	// Create local serving layer for inference
-	layer, err := serving.NewLayer(cfg.AgenticServing)
-	if err != nil {
-		return false, fmt.Errorf("failed to create serving layer: %w", err)
-	}
-
-	// Start workflow on daemon
-	executionID, err := coordinator.StartWorkflow(ctx, workflowName)
-	if err != nil {
-		return false, fmt.Errorf("failed to start workflow on daemon: %w", err)
-	}
-
-	zap.L().Debug("Started workflow on daemon",
-		zap.String("execution_id", executionID))
-
-	// Execute tasks until workflow is complete
-	for {
-		// Get next task from daemon
-		task, taskIndex, complete, err := coordinator.GetNextTask(ctx, executionID)
-		if err != nil {
-			return false, fmt.Errorf("failed to get next task from daemon: %w", err)
-		}
-
-		if complete {
-			zap.L().Info("Workflow completed",
-				zap.String("execution_id", executionID))
-			break
-		}
-
-		// Determine the prompt for this task
-		taskPrompt := prompt
-		if task.Prompt != "" {
-			taskPrompt = task.Prompt
-		}
-
-		zap.L().Debug("Executing workflow task",
-			zap.String("execution_id", executionID),
-			zap.Int("task_index", taskIndex),
-			zap.String("agent_profile", task.AgentProfile))
-
-		// Get context from daemon if task uses shared context
-		if task.UseContext {
-			// Determine server name for context
-			profile := findAgentProfile(cfg.AgenticServing, task.AgentProfile)
-			if profile == nil {
-				return false, fmt.Errorf("agent profile '%s' not found but orla is configured to share context with the daemon", task.AgentProfile)
-			}
-
-			serverName := profile.LLMServer
-
-			if task.LLMServer != "" {
-				// if the task has an LLM server override, use it
-				serverName = task.LLMServer
-			}
-
-			messages, contextErr := coordinator.GetContext(ctx, serverName)
-			if contextErr != nil {
-				return false, fmt.Errorf("failed to get context from daemon: %w", contextErr)
-			}
-
-			// Prepend context messages to prompt
-			var contextStr strings.Builder
-			for _, msg := range messages {
-				fmt.Fprintf(&contextStr, "[%s]: %s\n", msg.Role, msg.Content)
-			}
-
-			taskPrompt = contextStr.String() + "\n" + taskPrompt
-
-		}
-
-		// Get provider for this task from local layer
-		provider, err := layer.GetProvider(ctx, task.AgentProfile, task)
-		if err != nil {
-			return false, fmt.Errorf("failed to get provider for task %d: %w", taskIndex, err)
-		}
-
-		// Execute inference locally (non-streaming for workflow tasks)
-		messages := []model.Message{
-			{Role: model.MessageRoleUser, Content: taskPrompt},
-		}
-		response, _, err := provider.Chat(ctx, messages, nil, false, nil)
-		if err != nil {
-			return false, fmt.Errorf("inference failed for task %d: %w", taskIndex, err)
-		}
-
-		// Print task output
+	// Execute workflow using public API (remote execution - daemon handles inference)
+	// Use callback to print task output
+	err := executor.ExecuteWorkflowWithCallback(ctx, workflowName, prompt, 0, func(taskIndex int, task *publicapi.WorkflowTask, response *publicapi.TaskResponse) error {
 		if response.Content != "" {
 			fmt.Printf("\n[Task %d - %s]:\n%s\n", taskIndex+1, task.AgentProfile, response.Content)
 		}
+		return nil
+	})
 
-		// Report task completion to daemon
-		if err := coordinator.CompleteTask(ctx, executionID, taskIndex, response); err != nil {
-			return false, fmt.Errorf("failed to complete task on daemon: %w", err)
-		}
-
-		// Sync context with daemon if task produced output and server has shared context enabled
-		if response.Content != "" {
-			profile := findAgentProfile(cfg.AgenticServing, task.AgentProfile)
-			if profile != nil {
-				serverName := profile.LLMServer
-				if task.LLMServer != "" {
-					serverName = task.LLMServer
-				}
-				// Check if this server has shared context enabled
-				var serverCfg *config.LLMServerConfig
-				if cfg.AgenticServing != nil {
-					for _, server := range cfg.AgenticServing.LLMServers {
-						if server.Name == serverName {
-							serverCfg = server
-							break
-						}
-					}
-				}
-				if serverCfg != nil && serverCfg.Context != nil && serverCfg.Context.Shared {
-					syncMessages := []model.Message{
-						{Role: model.MessageRoleUser, Content: taskPrompt},
-						{Role: model.MessageRoleAssistant, Content: response.Content},
-					}
-					if err := coordinator.SyncContext(ctx, serverName, syncMessages); err != nil {
-						zap.L().Warn("Failed to sync context to daemon",
-							zap.Error(err))
-					}
-				}
-			}
-		}
+	if err != nil {
+		return false, fmt.Errorf("workflow execution failed: %w", err)
 	}
 
 	return true, nil
@@ -509,19 +395,6 @@ func executeWithProfile(ctx context.Context, cfg *config.OrlaConfig, prompt stri
 	}
 
 	return true, nil
-}
-
-// findAgentProfile finds an agent profile by name in the config
-func findAgentProfile(cfg *config.AgenticServingConfig, name string) *config.AgentProfile {
-	if cfg == nil {
-		return nil
-	}
-	for _, profile := range cfg.AgentProfiles {
-		if profile.Name == name {
-			return profile
-		}
-	}
-	return nil
 }
 
 // ExecuteAgentPrompt is the main entry point for agent execution

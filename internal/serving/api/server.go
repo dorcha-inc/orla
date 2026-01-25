@@ -1,7 +1,7 @@
 // Package api provides the HTTP API for the Agentic Serving Layer daemon (RFC 5).
 // The daemon is a control plane for coordination (shared context, cache policies,
-// workflow execution). Actual inference happens locally on agents; the daemon
-// coordinates state across multiple agents.
+// workflow execution). Actual inference happens on the LLM backends; the daemon
+// coordinates state across multiple agents and LLM backends.
 package api
 
 import (
@@ -15,6 +15,7 @@ import (
 	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/model"
 	"github.com/dorcha-inc/orla/internal/serving"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )
 
@@ -70,6 +71,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/workflow/task/complete", s.handleCompleteTask)
 	s.mux.HandleFunc("POST /api/v1/workflow/task/execute", s.handleExecuteTask)
 	s.mux.HandleFunc("GET /api/v1/workflow/execution/", s.handleGetExecution)
+
+	// Agent execution endpoints
+	s.mux.HandleFunc("POST /api/v1/agent/execute", s.handleAgentExecute)
 }
 
 // Start starts the HTTP server
@@ -225,6 +229,7 @@ type GetNextTaskResponse struct {
 	Task      *config.WorkflowTask `json:"task,omitempty"`
 	TaskIndex int                  `json:"task_index"`
 	Complete  bool                 `json:"complete"`
+	LLMServer string               `json:"llm_server,omitempty"` // Resolved server name (from profile or task override)
 	Error     string               `json:"error,omitempty"`
 }
 
@@ -258,15 +263,29 @@ func (s *Server) handleGetNextTask(w http.ResponseWriter, r *http.Request) {
 
 	task := execution.Tasks[execution.CurrentTaskIndex]
 
+	// Resolve LLM server name from agent profile (daemon has the config)
+	// This allows the public API to know which server to sync context to
+	var resolvedServerName string
+	if task.LLMServer != "" {
+		resolvedServerName = task.LLMServer
+	} else if layer, ok := s.servingLayer.(*serving.Layer); ok {
+		// Resolve from agent profile
+		if profile, exists := layer.GetAgentProfile(task.AgentProfile); exists {
+			resolvedServerName = profile.LLMServer
+		}
+	}
+
 	zap.L().Debug("Returning next task",
 		zap.String("execution_id", executionID),
-		zap.Int("task_index", execution.CurrentTaskIndex))
+		zap.Int("task_index", execution.CurrentTaskIndex),
+		zap.String("resolved_server", resolvedServerName))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	writeJSON(w, GetNextTaskResponse{
 		Task:      task,
 		TaskIndex: execution.CurrentTaskIndex,
+		LLMServer: resolvedServerName,
 		Complete:  false,
 	})
 }
@@ -445,5 +464,83 @@ func (s *Server) handleGetExecution(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	writeJSON(w, GetExecutionResponse{
 		Execution: execution,
+	})
+}
+
+// AgentExecuteRequest represents a request to execute an agent
+type AgentExecuteRequest struct {
+	ProfileName string          `json:"profile_name"`
+	Prompt      string          `json:"prompt"`
+	Messages    []model.Message `json:"messages,omitempty"` // Conversation history
+	Tools       []*mcp.Tool     `json:"tools,omitempty"`    // Available tools (MCP format)
+	MaxTokens   *int            `json:"max_tokens,omitempty"`
+	Stream      bool            `json:"stream,omitempty"`
+}
+
+// AgentExecuteResponse represents the response from agent execution
+type AgentExecuteResponse struct {
+	Success  bool            `json:"success"`
+	Response *model.Response `json:"response,omitempty"`
+	Error    string          `json:"error,omitempty"`
+}
+
+// handleAgentExecute handles agent execution requests
+func (s *Server) handleAgentExecute(w http.ResponseWriter, r *http.Request) {
+	var req AgentExecuteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.ProfileName == "" {
+		http.Error(w, "profile_name is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get provider for this agent profile
+	provider, err := s.servingLayer.GetProvider(ctx, req.ProfileName, nil)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		writeJSON(w, AgentExecuteResponse{
+			Success: false,
+			Error:   fmt.Sprintf("failed to get provider: %v", err),
+		})
+		return
+	}
+
+	// Build messages
+	messages := req.Messages
+	if req.Prompt != "" {
+		messages = append(messages, model.Message{
+			Role:    model.MessageRoleUser,
+			Content: req.Prompt,
+		})
+	}
+
+	// Execute inference
+	// TODO(jadidbourbaki): add streaming support, if needed
+	response, _, err := provider.Chat(ctx, messages, req.Tools, false, req.MaxTokens)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		writeJSON(w, AgentExecuteResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	zap.L().Debug("Executed agent via API",
+		zap.String("profile_name", req.ProfileName),
+		zap.Int("response_length", len(response.Content)))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	writeJSON(w, AgentExecuteResponse{
+		Success:  true,
+		Response: response,
 	})
 }

@@ -13,31 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockProvider is a mock implementation of model.Provider for testing
-type mockProvider struct {
-	name            string
-	chatFunc        func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error)
-	ensureReadyFunc func(ctx context.Context) error
-}
-
-func (m *mockProvider) Name() string {
-	return m.name
-}
-
-func (m *mockProvider) Chat(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
-	if m.chatFunc != nil {
-		return m.chatFunc(ctx, messages, tools, stream, maxTokens)
-	}
-	return &model.Response{Content: "test response"}, nil, nil
-}
-
-func (m *mockProvider) EnsureReady(ctx context.Context) error {
-	if m.ensureReadyFunc != nil {
-		return m.ensureReadyFunc(ctx)
-	}
-	return nil
-}
-
 // mockClient is a mock implementation of Client for testing
 type mockClient struct {
 	listToolsFunc func(ctx context.Context) ([]*mcp.Tool, error)
