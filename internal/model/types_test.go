@@ -105,6 +105,7 @@ func TestResponse_WithToolCalls(t *testing.T) {
 		},
 	}
 
+	assert.Equal(t, "I'll call a tool", response.Content)
 	assert.Len(t, response.ToolCalls, 1)
 	assert.Equal(t, "call-1", response.ToolCalls[0].ID)
 	assert.Equal(t, "test_tool", response.ToolCalls[0].McpCallToolParams.Name)
