@@ -68,6 +68,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/v1/workflow/start", s.handleWorkflowStart)
 	s.mux.HandleFunc("GET /api/v1/workflow/task/next", s.handleGetNextTask)
 	s.mux.HandleFunc("POST /api/v1/workflow/task/complete", s.handleCompleteTask)
+	s.mux.HandleFunc("POST /api/v1/workflow/task/execute", s.handleExecuteTask)
 	s.mux.HandleFunc("GET /api/v1/workflow/execution/", s.handleGetExecution)
 }
 
@@ -336,6 +337,77 @@ func (s *Server) handleCompleteTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	writeJSON(w, CompleteTaskResponse{
 		Success: true,
+	})
+}
+
+// ExecuteTaskRequest represents a request to execute a task
+type ExecuteTaskRequest struct {
+	ExecutionID string `json:"execution_id"`
+	TaskIndex   int    `json:"task_index"`
+	Prompt      string `json:"prompt"`
+}
+
+// ExecuteTaskResponse represents the response from executing a task
+type ExecuteTaskResponse struct {
+	Success  bool            `json:"success"`
+	Response *model.Response `json:"response,omitempty"`
+	Error    string          `json:"error,omitempty"`
+}
+
+// handleExecuteTask handles task execution requests
+// This endpoint executes inference AND applies cache policies
+func (s *Server) handleExecuteTask(w http.ResponseWriter, r *http.Request) {
+	var req ExecuteTaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	execution, err := s.servingLayer.GetExecution(req.ExecutionID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		writeJSON(w, ExecuteTaskResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	// Verify task index matches
+	if req.TaskIndex != execution.CurrentTaskIndex {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, ExecuteTaskResponse{
+			Success: false,
+			Error:   fmt.Sprintf("task index mismatch: expected %d, got %d", execution.CurrentTaskIndex, req.TaskIndex),
+		})
+		return
+	}
+
+	// Execute the task (this handles inference, context, and cache policies)
+	ctx := r.Context()
+	response, err := s.servingLayer.ExecuteTask(ctx, execution, req.TaskIndex, req.Prompt)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		writeJSON(w, ExecuteTaskResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	zap.L().Debug("Executed task via API",
+		zap.String("execution_id", req.ExecutionID),
+		zap.Int("task_index", req.TaskIndex),
+		zap.Int("response_length", len(response.Content)))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	writeJSON(w, ExecuteTaskResponse{
+		Success:  true,
+		Response: response,
 	})
 }
 

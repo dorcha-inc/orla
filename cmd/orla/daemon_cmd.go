@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/dorcha-inc/orla/internal/config"
+	"github.com/dorcha-inc/orla/internal/core"
 	"github.com/dorcha-inc/orla/internal/serving"
 	servingapi "github.com/dorcha-inc/orla/internal/serving/api"
 	"github.com/spf13/cobra"
@@ -18,6 +19,7 @@ import (
 func newDaemonCmd() *cobra.Command {
 	var configPath string
 	var listenAddress string
+	var prettyLog bool
 
 	cmd := &cobra.Command{
 		Use:   "daemon",
@@ -32,6 +34,14 @@ Agents can use the daemon to execute workflows, share context, and manage cache 
 			cfg, err := config.LoadConfig(configPath)
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
+			}
+
+			// Resolve logging format: CLI flag wins; otherwise config
+			resolvedPrettyLog := resolveLogFormat(cfg, prettyLog)
+
+			// Initialize logger
+			if err := core.Init(resolvedPrettyLog); err != nil {
+				return fmt.Errorf("failed to initialize logger: %w", err)
 			}
 
 			// Check if agentic serving configuration exists
@@ -89,6 +99,7 @@ Agents can use the daemon to execute workflows, share context, and manage cache 
 
 	cmd.Flags().StringVarP(&configPath, "config", "c", "", "Path to config file (default: uses precedence)")
 	cmd.Flags().StringVarP(&listenAddress, "listen-address", "l", "", "Address to listen on (default: from config or localhost:8081)")
+	cmd.Flags().BoolVar(&prettyLog, "pretty", false, "Use pretty-printed logs instead of JSON")
 
 	return cmd
 }
