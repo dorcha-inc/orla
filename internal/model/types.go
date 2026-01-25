@@ -62,7 +62,8 @@ type Provider interface {
 	// messages: conversation history
 	// tools: available tools (for tool calling) - uses mcp.Tool for MCP compatibility
 	// stream: if true, stream responses via the returned channel
-	Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool) (*Response, <-chan StreamEvent, error)
+	// maxTokens: optional maximum number of tokens to generate (nil means use provider default)
+	Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*Response, <-chan StreamEvent, error)
 
 	// EnsureReady ensures the model provider is ready (e.g., starts Ollama if needed)
 	// Returns an error if the provider cannot be made ready

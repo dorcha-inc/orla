@@ -107,7 +107,7 @@ func (l *Layer) StartWorkflow(ctx context.Context, workflowName string) (*Workfl
 
 // ExecuteTask executes a single workflow task with the given prompt
 // It handles shared context, cache policies, and returns the response
-func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, taskIndex int, prompt string) (*model.Response, error) {
+func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, taskIndex int, prompt string, maxTokens *int) (*model.Response, error) {
 	if taskIndex < 0 || taskIndex >= len(execution.Tasks) {
 		return nil, fmt.Errorf("invalid task index: %d (workflow has %d tasks)", taskIndex, len(execution.Tasks))
 	}
@@ -178,7 +178,7 @@ func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, t
 	execution.State = WorkflowExecutionStateRunning
 
 	// Execute inference (non-streaming for workflow tasks)
-	response, _, err := provider.Chat(ctx, messages, nil, false)
+	response, _, err := provider.Chat(ctx, messages, nil, false, maxTokens)
 	if err != nil {
 		execution.State = WorkflowExecutionStateFailed
 		return nil, fmt.Errorf("inference failed for task %d: %w", taskIndex, err)

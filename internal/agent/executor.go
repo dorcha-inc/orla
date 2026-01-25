@@ -320,7 +320,7 @@ func executeWorkflowWithDaemon(ctx context.Context, cfg *config.OrlaConfig, prom
 		messages := []model.Message{
 			{Role: model.MessageRoleUser, Content: taskPrompt},
 		}
-		response, _, err := provider.Chat(ctx, messages, nil, false)
+		response, _, err := provider.Chat(ctx, messages, nil, false, nil)
 		if err != nil {
 			return false, fmt.Errorf("inference failed for task %d: %w", taskIndex, err)
 		}
@@ -406,7 +406,7 @@ func executeWorkflowEmbedded(ctx context.Context, cfg *config.OrlaConfig, prompt
 			zap.String("agent_profile", task.AgentProfile))
 
 		// Execute task
-		response, err := layer.ExecuteTask(ctx, execution, i, taskPrompt)
+		response, err := layer.ExecuteTask(ctx, execution, i, taskPrompt, nil)
 		if err != nil {
 			return false, fmt.Errorf("failed to execute workflow task %d: %w", i, err)
 		}

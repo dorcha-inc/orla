@@ -345,6 +345,7 @@ type ExecuteTaskRequest struct {
 	ExecutionID string `json:"execution_id"`
 	TaskIndex   int    `json:"task_index"`
 	Prompt      string `json:"prompt"`
+	MaxTokens   *int   `json:"max_tokens,omitempty"` // Optional: maximum tokens to generate
 }
 
 // ExecuteTaskResponse represents the response from executing a task
@@ -387,7 +388,7 @@ func (s *Server) handleExecuteTask(w http.ResponseWriter, r *http.Request) {
 
 	// Execute the task (this handles inference, context, and cache policies)
 	ctx := r.Context()
-	response, err := s.servingLayer.ExecuteTask(ctx, execution, req.TaskIndex, req.Prompt)
+	response, err := s.servingLayer.ExecuteTask(ctx, execution, req.TaskIndex, req.Prompt, req.MaxTokens)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)

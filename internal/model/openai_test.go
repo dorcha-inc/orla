@@ -270,7 +270,7 @@ func TestOpenAIProvider_Chat_NonStreaming_BasicAndToolCalls(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, p.EnsureReady(context.Background()))
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false)
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, nil)
 	require.NoError(t, err)
 	require.Nil(t, ch)
 	require.NotNil(t, resp)
@@ -310,7 +310,7 @@ func TestOpenAIProvider_Chat_Streaming_Content(t *testing.T) {
 	p, err := NewOpenAIProvider("m", cfg)
 	require.NoError(t, err)
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, true)
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, true, nil)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotNil(t, ch)
@@ -320,6 +320,151 @@ func TestOpenAIProvider_Chat_Streaming_Content(t *testing.T) {
 	}
 	// Response content is built incrementally by streaming handler; should include all chunks.
 	require.Equal(t, "hello", resp.Content)
+}
+
+func TestOpenAIProvider_Chat_WithMaxTokens(t *testing.T) {
+	maxTokens := 100
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/chat/completions", r.URL.Path)
+		require.Equal(t, "POST", r.Method)
+
+		var req openai.ChatCompletionRequest
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		// Verify that MaxTokens is set correctly
+		require.Equal(t, maxTokens, req.MaxTokens)
+
+		resp := openai.ChatCompletionResponse{
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Message: openai.ChatCompletionMessage{
+						Role:    "assistant",
+						Content: "Short response",
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		err = json.NewEncoder(w).Encode(resp)
+		require.NoError(t, err)
+	}))
+	defer srv.Close()
+
+	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint:     srv.URL,
+			Type:         core.LLMInferenceAPITypeOpenAI,
+			APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		},
+	}
+
+	p, err := NewOpenAIProvider("test-model", cfg)
+	require.NoError(t, err)
+	require.NoError(t, p.EnsureReady(context.Background()))
+
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, &maxTokens)
+	require.NoError(t, err)
+	require.Nil(t, ch)
+	require.NotNil(t, resp)
+	require.Equal(t, "Short response", resp.Content)
+}
+
+func TestOpenAIProvider_Chat_WithoutMaxTokens(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/chat/completions", r.URL.Path)
+		require.Equal(t, "POST", r.Method)
+
+		var req openai.ChatCompletionRequest
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		// Verify that MaxTokens is 0 (default/not set) when maxTokens is nil
+		require.Equal(t, 0, req.MaxTokens)
+
+		resp := openai.ChatCompletionResponse{
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Message: openai.ChatCompletionMessage{
+						Role:    "assistant",
+						Content: "Response",
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		err = json.NewEncoder(w).Encode(resp)
+		require.NoError(t, err)
+	}))
+	defer srv.Close()
+
+	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint:     srv.URL,
+			Type:         core.LLMInferenceAPITypeOpenAI,
+			APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		},
+	}
+
+	p, err := NewOpenAIProvider("test-model", cfg)
+	require.NoError(t, err)
+	require.NoError(t, p.EnsureReady(context.Background()))
+
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, nil)
+	require.NoError(t, err)
+	require.Nil(t, ch)
+	require.NotNil(t, resp)
+	require.Equal(t, "Response", resp.Content)
+}
+
+func TestOpenAIProvider_Chat_WithMaxTokensZero(t *testing.T) {
+	maxTokens := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/chat/completions", r.URL.Path)
+		require.Equal(t, "POST", r.Method)
+
+		var req openai.ChatCompletionRequest
+		err := json.NewDecoder(r.Body).Decode(&req)
+		require.NoError(t, err)
+
+		// Verify that MaxTokens is set even when 0
+		require.Equal(t, 0, req.MaxTokens)
+
+		resp := openai.ChatCompletionResponse{
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Message: openai.ChatCompletionMessage{
+						Role:    "assistant",
+						Content: "",
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		err = json.NewEncoder(w).Encode(resp)
+		require.NoError(t, err)
+	}))
+	defer srv.Close()
+
+	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
+	cfg := &config.OrlaConfig{
+		LLMBackend: &core.LLMBackend{
+			Endpoint:     srv.URL,
+			Type:         core.LLMInferenceAPITypeOpenAI,
+			APIKeyEnvVar: "ORLA_TEST_OPENAI_KEY",
+		},
+	}
+
+	p, err := NewOpenAIProvider("test-model", cfg)
+	require.NoError(t, err)
+	require.NoError(t, p.EnsureReady(context.Background()))
+
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, &maxTokens)
+	require.NoError(t, err)
+	require.Nil(t, ch)
+	require.NotNil(t, resp)
 }
 
 func TestOpenAIProvider_Chat_Streaming_WithToolCalls(t *testing.T) {
@@ -355,7 +500,7 @@ func TestOpenAIProvider_Chat_Streaming_WithToolCalls(t *testing.T) {
 	p, err := NewOpenAIProvider("m", cfg)
 	require.NoError(t, err)
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, true)
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, true, nil)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotNil(t, ch)
@@ -419,7 +564,7 @@ func TestOpenAIProvider_Chat_NonStreaming_NoChoices(t *testing.T) {
 	p, err := NewOpenAIProvider("m", cfg)
 	require.NoError(t, err)
 
-	_, _, err = p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false)
+	_, _, err = p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no choices")
 }
@@ -447,7 +592,7 @@ func TestOpenAIProvider_Chat_ToolConversionError(t *testing.T) {
 		},
 	}
 
-	_, _, err = p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, tools, false)
+	_, _, err = p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, tools, false, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "normalize tool input schema")
 }

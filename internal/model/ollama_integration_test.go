@@ -45,7 +45,7 @@ func ensureOllamaAvailable(t *testing.T) *OllamaProvider {
 	testMessages := []Message{
 		{Role: MessageRoleUser, Content: "test"},
 	}
-	_, _, testErr := provider.Chat(ctx, testMessages, nil, false)
+	_, _, testErr := provider.Chat(ctx, testMessages, nil, false, nil)
 	if testErr != nil {
 		if strings.Contains(testErr.Error(), "model") && strings.Contains(testErr.Error(), "not found") {
 			t.Fatalf("Model '%s' is not available. Please pull it with: ollama pull %s", orlaTesting.GetTestModelName(), orlaTesting.GetTestModelName())
@@ -75,7 +75,7 @@ func TestOllamaProvider_Chat_Integration(t *testing.T) {
 
 	t.Logf("Sending Messages: %+v", messages)
 
-	response, streamCh, err := provider.Chat(ctx, messages, nil, false)
+	response, streamCh, err := provider.Chat(ctx, messages, nil, false, nil)
 
 	t.Logf("Response: %+v", response)
 
@@ -116,7 +116,7 @@ func TestOllamaProvider_Chat_WithTools_Integration(t *testing.T) {
 
 	prettyPrint(t, "Sending Messages", messages)
 
-	response, streamCh, err := provider.Chat(ctx, messages, tools, false)
+	response, streamCh, err := provider.Chat(ctx, messages, tools, false, nil)
 	require.NoError(t, err)
 
 	prettyPrint(t, "Response", response)
@@ -145,7 +145,7 @@ func TestOllamaProvider_Chat_Streaming_Integration(t *testing.T) {
 
 	prettyPrint(t, "Sending Messages", messages)
 
-	response, streamCh, err := provider.Chat(ctx, messages, nil, true)
+	response, streamCh, err := provider.Chat(ctx, messages, nil, true, nil)
 	require.NoError(t, err)
 	// Streaming responses return a response object that gets populated as chunks arrive
 	// The response is shared between the goroutine (writer) and caller (reader)
@@ -243,7 +243,7 @@ func TestOllamaProvider_RemoteEndpoint_Integration(t *testing.T) {
 		{Role: MessageRoleUser, Content: "Say hello"},
 	}
 
-	response, streamCh, chatErr := provider.Chat(testCtx, messages, nil, false)
+	response, streamCh, chatErr := provider.Chat(testCtx, messages, nil, false, nil)
 	require.NoError(t, chatErr)
 	assert.NotNil(t, response)
 	assert.Nil(t, streamCh) // stream=false

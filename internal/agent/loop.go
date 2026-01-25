@@ -97,7 +97,7 @@ func (l *Loop) Execute(ctx context.Context, prompt string, messages []model.Mess
 			zap.Int("max_iterations", maxIterations))
 
 		// Send prompt and tools to the model
-		response, streamCh, err := l.provider.Chat(ctx, conversation, mcpTools, stream)
+		response, streamCh, err := l.provider.Chat(ctx, conversation, mcpTools, stream, nil)
 
 		if err != nil {
 			return nil, fmt.Errorf("model chat failed: %w", err)
