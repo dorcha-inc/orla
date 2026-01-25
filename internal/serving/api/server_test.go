@@ -71,14 +71,15 @@ func TestServer_HandleExecuteTask_WithMaxTokens(t *testing.T) {
 
 	// Start a workflow first
 	startReq := WorkflowStartRequest{WorkflowName: "test-workflow"}
-	startBody, _ := json.Marshal(startReq)
+	startBody, err := json.Marshal(startReq)
+	require.NoError(t, err)
 	startResp := httptest.NewRecorder()
 	startHTTPReq := httptest.NewRequest("POST", "/api/v1/workflow/start", bytes.NewReader(startBody))
 	server.mux.ServeHTTP(startResp, startHTTPReq)
 	require.Equal(t, http.StatusOK, startResp.Code)
 
 	var startResult WorkflowStartResponse
-	err := json.Unmarshal(startResp.Body.Bytes(), &startResult)
+	err = json.Unmarshal(startResp.Body.Bytes(), &startResult)
 	require.NoError(t, err)
 	executionID := startResult.ExecutionID
 
@@ -90,7 +91,8 @@ func TestServer_HandleExecuteTask_WithMaxTokens(t *testing.T) {
 		Prompt:      "test prompt",
 		MaxTokens:   &maxTokens,
 	}
-	body, _ := json.Marshal(req)
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
 	resp := httptest.NewRecorder()
 	httpReq := httptest.NewRequest("POST", "/api/v1/workflow/task/execute", bytes.NewReader(body))
 	server.mux.ServeHTTP(resp, httpReq)
@@ -114,14 +116,15 @@ func TestServer_HandleExecuteTask_WithoutMaxTokens(t *testing.T) {
 
 	// Start a workflow first
 	startReq := WorkflowStartRequest{WorkflowName: "test-workflow"}
-	startBody, _ := json.Marshal(startReq)
+	startBody, err := json.Marshal(startReq)
+	require.NoError(t, err)
 	startResp := httptest.NewRecorder()
 	startHTTPReq := httptest.NewRequest("POST", "/api/v1/workflow/start", bytes.NewReader(startBody))
 	server.mux.ServeHTTP(startResp, startHTTPReq)
 	require.Equal(t, http.StatusOK, startResp.Code)
 
 	var startResult WorkflowStartResponse
-	err := json.Unmarshal(startResp.Body.Bytes(), &startResult)
+	err = json.Unmarshal(startResp.Body.Bytes(), &startResult)
 	require.NoError(t, err)
 	executionID := startResult.ExecutionID
 
@@ -132,7 +135,8 @@ func TestServer_HandleExecuteTask_WithoutMaxTokens(t *testing.T) {
 		Prompt:      "test prompt",
 		// MaxTokens is nil (omitted)
 	}
-	body, _ := json.Marshal(req)
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
 	resp := httptest.NewRecorder()
 	httpReq := httptest.NewRequest("POST", "/api/v1/workflow/task/execute", bytes.NewReader(body))
 	server.mux.ServeHTTP(resp, httpReq)
@@ -154,14 +158,15 @@ func TestServer_HandleExecuteTask_WithMaxTokensZero(t *testing.T) {
 
 	// Start a workflow first
 	startReq := WorkflowStartRequest{WorkflowName: "test-workflow"}
-	startBody, _ := json.Marshal(startReq)
+	startBody, err := json.Marshal(startReq)
+	require.NoError(t, err)
 	startResp := httptest.NewRecorder()
 	startHTTPReq := httptest.NewRequest("POST", "/api/v1/workflow/start", bytes.NewReader(startBody))
 	server.mux.ServeHTTP(startResp, startHTTPReq)
 	require.Equal(t, http.StatusOK, startResp.Code)
 
 	var startResult WorkflowStartResponse
-	err := json.Unmarshal(startResp.Body.Bytes(), &startResult)
+	err = json.Unmarshal(startResp.Body.Bytes(), &startResult)
 	require.NoError(t, err)
 	executionID := startResult.ExecutionID
 
@@ -173,7 +178,8 @@ func TestServer_HandleExecuteTask_WithMaxTokensZero(t *testing.T) {
 		Prompt:      "test prompt",
 		MaxTokens:   &maxTokens,
 	}
-	body, _ := json.Marshal(req)
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
 	resp := httptest.NewRecorder()
 	httpReq := httptest.NewRequest("POST", "/api/v1/workflow/task/execute", bytes.NewReader(body))
 	server.mux.ServeHTTP(resp, httpReq)

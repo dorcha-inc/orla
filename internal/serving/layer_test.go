@@ -14,8 +14,7 @@ import (
 
 // mockProvider is a test implementation of model.Provider
 type mockProvider struct {
-	name      string
-	maxTokens *int
+	name          string
 	lastMaxTokens *int
 }
 
@@ -81,7 +80,7 @@ func TestLayer_ExecuteTask_WithMaxTokens(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	assert.Equal(t, "test response", response.Content)
-	
+
 	// Verify that maxTokens was passed to the provider
 	assert.NotNil(t, mock.lastMaxTokens)
 	assert.Equal(t, maxTokens, *mock.lastMaxTokens)
@@ -133,7 +132,7 @@ func TestLayer_ExecuteTask_WithoutMaxTokens(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	assert.Equal(t, "test response", response.Content)
-	
+
 	// Verify that maxTokens was nil when not provided
 	assert.Nil(t, mock.lastMaxTokens)
 }
@@ -184,7 +183,7 @@ func TestLayer_ExecuteTask_WithMaxTokensZero(t *testing.T) {
 	response, err := layer.ExecuteTask(context.Background(), execution, 0, "test prompt", &maxTokens)
 	require.NoError(t, err)
 	assert.NotNil(t, response)
-	
+
 	// Verify that maxTokens was passed even when 0
 	assert.NotNil(t, mock.lastMaxTokens)
 	assert.Equal(t, 0, *mock.lastMaxTokens)
