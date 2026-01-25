@@ -4,6 +4,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -72,14 +73,37 @@ func (c *SGLangCacheController) FlushCache(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to flush cache: %w", err)
 	}
-	core.LogDeferredError(resp.Body.Close)
+	defer core.LogDeferredError(resp.Body.Close)
+
+	// Read response body to check for "Cache flushed" message
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		bodyBytes = nil
+	}
+	bodyStr := string(bodyBytes)
+
+	// SGLang may return 400 with "Cache flushed." in the body, we treat this as success
+	// This happens when there are pending requests but the flush operation was queued
+	if resp.StatusCode == http.StatusBadRequest && strings.Contains(bodyStr, "Cache flushed") {
+		// Success - update cache state
+		c.mu.Lock()
+		c.state.IsFlushed = true
+		c.mu.Unlock()
+
+		zap.L().Debug("Flushed SGLang cache (400 with success message)",
+			zap.String("base_url", c.baseURL))
+		return nil
+	}
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
+		if bodyStr != "" {
+			return fmt.Errorf("flush cache returned status %d: %s", resp.StatusCode, bodyStr)
+		}
 		return fmt.Errorf("flush cache returned status %d", resp.StatusCode)
 	}
 
-	// Update cache state
+	// Success - update cache state
 	c.mu.Lock()
 	c.state.IsFlushed = true
 	c.mu.Unlock()
