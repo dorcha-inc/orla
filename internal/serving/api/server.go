@@ -43,10 +43,11 @@ func NewServer(servingLayer serving.ServingLayer, listenAddress string) *Server 
 		servingLayer: servingLayer,
 		mux:          mux,
 		httpServer: &http.Server{
-			Addr:         listenAddress,
-			Handler:      mux,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
+			Addr:              listenAddress,
+			Handler:           mux,
+			ReadHeaderTimeout: 10 * time.Second, // Protect against Slowloris attacks
+			// Note: WriteTimeout and IdleTimeout are intentionally not set since
+			// LLM inference can take variable amounts of time
 		},
 	}
 
