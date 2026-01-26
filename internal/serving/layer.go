@@ -225,7 +225,10 @@ func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, t
 		turnSize = (len(taskPrompt) + len(response.Content)) / 4
 	}
 
-	shouldFlush, err := l.cacheManager.ShouldFlush(ctx, serverName, turnSize, 0.0, isFinalTask)
+	// Get actual memory pressure from SGLang for flush_under_pressure policy
+	memoryPressure := l.cacheManager.GetMemoryPressure(ctx, l.serverManager, serverName)
+
+	shouldFlush, err := l.cacheManager.ShouldFlush(ctx, serverName, turnSize, memoryPressure, isFinalTask, execution.WorkflowName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate cache policy: %w", err)
 	}
@@ -234,7 +237,13 @@ func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, t
 	if shouldFlush {
 		flushErr := l.cacheManager.FlushCache(ctx, l.serverManager, serverName)
 		if flushErr != nil {
-			return nil, fmt.Errorf("failed to flush cache: %w", flushErr)
+			// Log warning but don't fail the task - cache flush is best-effort
+			// Under concurrent load, SGLang may not be able to flush immediately
+			zap.L().Warn("Cache flush failed, continuing without flush",
+				zap.String("server_name", serverName),
+				zap.String("workflow", execution.WorkflowName),
+				zap.Error(flushErr))
+			// Continue execution - the cache will be flushed on next opportunity
 		}
 	}
 

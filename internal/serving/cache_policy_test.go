@@ -49,12 +49,12 @@ func TestCachePolicyEvaluator_EvaluateDecision_Preserve(t *testing.T) {
 	evaluator := NewCachePolicyEvaluator(servers)
 
 	// Preserve policy should always return false (don't flush)
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.9, false)
+	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.9, false, "", "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush)
 
 	// Even with final iteration, preserve should still preserve (unless flush_after_final is set)
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.9, true)
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.9, true, "", "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush)
 }
@@ -64,7 +64,7 @@ func TestCachePolicyEvaluator_EvaluateDecision_PreserveWithFlushAfterFinal(t *te
 		{
 			Name: "server1",
 			Cache: &config.CacheConfig{
-				Policy:         config.CachePolicyPreserve,
+				Policy:          config.CachePolicyPreserve,
 				FlushAfterFinal: true,
 			},
 		},
@@ -72,12 +72,12 @@ func TestCachePolicyEvaluator_EvaluateDecision_PreserveWithFlushAfterFinal(t *te
 	evaluator := NewCachePolicyEvaluator(servers)
 
 	// Should preserve normally
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.9, false)
+	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.9, false, "", "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush)
 
 	// Should flush on final iteration
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.9, true)
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.9, true, "", "")
 	require.NoError(t, err)
 	assert.True(t, shouldFlush)
 }
@@ -94,11 +94,11 @@ func TestCachePolicyEvaluator_EvaluateDecision_AggressiveFlush(t *testing.T) {
 	evaluator := NewCachePolicyEvaluator(servers)
 
 	// Aggressive flush should always return true
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 10, 0.1, false)
+	shouldFlush, err := evaluator.EvaluateDecision("server1", 10, 0.1, false, "", "")
 	require.NoError(t, err)
 	assert.True(t, shouldFlush)
 
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.9, true)
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.9, true, "", "")
 	require.NoError(t, err)
 	assert.True(t, shouldFlush)
 }
@@ -108,7 +108,7 @@ func TestCachePolicyEvaluator_EvaluateDecision_PreserveOnSmallTurns(t *testing.T
 		{
 			Name: "server1",
 			Cache: &config.CacheConfig{
-				Policy:            config.CachePolicyPreserveOnSmallTurns,
+				Policy:             config.CachePolicyPreserveOnSmallTurns,
 				SmallTurnThreshold: 100,
 			},
 		},
@@ -116,17 +116,17 @@ func TestCachePolicyEvaluator_EvaluateDecision_PreserveOnSmallTurns(t *testing.T
 	evaluator := NewCachePolicyEvaluator(servers)
 
 	// Small turn should preserve
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 50, 0.5, false)
+	shouldFlush, err := evaluator.EvaluateDecision("server1", 50, 0.5, false, "", "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush)
 
 	// Large turn should flush
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 150, 0.5, false)
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 150, 0.5, false, "", "")
 	require.NoError(t, err)
 	assert.True(t, shouldFlush)
 
 	// Exactly at threshold should flush
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 100, 0.5, false)
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 100, 0.5, false, "", "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush) // threshold is exclusive
 }
@@ -144,12 +144,12 @@ func TestCachePolicyEvaluator_EvaluateDecision_PreserveOnSmallTurns_DefaultThres
 	evaluator := NewCachePolicyEvaluator(servers)
 
 	// Small turn should preserve
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 50, 0.5, false)
+	shouldFlush, err := evaluator.EvaluateDecision("server1", 50, 0.5, false, "", "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush)
 
 	// Large turn should flush
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 150, 0.5, false)
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 150, 0.5, false, "", "")
 	require.NoError(t, err)
 	assert.True(t, shouldFlush)
 }
@@ -159,7 +159,7 @@ func TestCachePolicyEvaluator_EvaluateDecision_FlushUnderPressure(t *testing.T) 
 		{
 			Name: "server1",
 			Cache: &config.CacheConfig{
-				Policy:                config.CachePolicyFlushUnderPressure,
+				Policy:                  config.CachePolicyFlushUnderPressure,
 				MemoryPressureThreshold: 0.8,
 			},
 		},
@@ -167,17 +167,17 @@ func TestCachePolicyEvaluator_EvaluateDecision_FlushUnderPressure(t *testing.T) 
 	evaluator := NewCachePolicyEvaluator(servers)
 
 	// Low pressure should preserve
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.5, false)
+	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.5, false, "", "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush)
 
 	// High pressure should flush
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.9, false)
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.9, false, "", "")
 	require.NoError(t, err)
 	assert.True(t, shouldFlush)
 
 	// Exactly at threshold should not flush (exclusive)
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.8, false)
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.8, false, "", "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush)
 }
@@ -195,12 +195,12 @@ func TestCachePolicyEvaluator_EvaluateDecision_FlushUnderPressure_DefaultThresho
 	evaluator := NewCachePolicyEvaluator(servers)
 
 	// Below default threshold should preserve
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.8, false)
+	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.8, false, "", "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush)
 
 	// Above default threshold should flush
-	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.9, false)
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 1000, 0.9, false, "", "")
 	require.NoError(t, err)
 	assert.True(t, shouldFlush)
 }
@@ -215,7 +215,7 @@ func TestCachePolicyEvaluator_EvaluateDecision_NoPolicy(t *testing.T) {
 	evaluator := NewCachePolicyEvaluator(servers)
 
 	// No policy should default to preserve
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.9, false)
+	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.9, false, "", "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush)
 }
@@ -231,7 +231,7 @@ func TestCachePolicyEvaluator_EvaluateDecision_UnknownPolicy(t *testing.T) {
 	}
 	evaluator := NewCachePolicyEvaluator(servers)
 
-	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.9, false)
+	shouldFlush, err := evaluator.EvaluateDecision("server1", 1000, 0.9, false, "", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown cache policy")
 	assert.False(t, shouldFlush)
@@ -279,7 +279,7 @@ func TestCacheManager_ShouldFlush(t *testing.T) {
 	manager := NewCacheManager(evaluator)
 
 	ctx := context.Background()
-	shouldFlush, err := manager.ShouldFlush(ctx, "server1", 100, 0.5, false)
+	shouldFlush, err := manager.ShouldFlush(ctx, "server1", 100, 0.5, false, "")
 	require.NoError(t, err)
 	assert.True(t, shouldFlush)
 
@@ -303,7 +303,7 @@ func TestCacheManager_ShouldFlush_Preserve(t *testing.T) {
 	manager := NewCacheManager(evaluator)
 
 	ctx := context.Background()
-	shouldFlush, err := manager.ShouldFlush(ctx, "server1", 100, 0.5, false)
+	shouldFlush, err := manager.ShouldFlush(ctx, "server1", 100, 0.5, false, "")
 	require.NoError(t, err)
 	assert.False(t, shouldFlush)
 
@@ -336,4 +336,70 @@ func TestCacheManager_MarkPreserved(t *testing.T) {
 	manager.MarkPreserved("server1")
 	state = manager.GetOrCreateCacheState("server1")
 	assert.False(t, state.IsFlushed)
+}
+
+func TestCachePolicyEvaluator_EvaluateDecision_PreserveWithinWorkflow(t *testing.T) {
+	servers := []*config.LLMServerConfig{
+		{
+			Name: "server1",
+			Cache: &config.CacheConfig{
+				Policy: config.CachePolicyPreserveWithinWorkflow,
+			},
+		},
+	}
+	evaluator := NewCachePolicyEvaluator(servers)
+
+	// First use of server (no last workflow) should preserve
+	shouldFlush, err := evaluator.EvaluateDecision("server1", 100, 0.5, false, "workflow1", "")
+	require.NoError(t, err)
+	assert.False(t, shouldFlush)
+
+	// Same workflow should preserve
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 100, 0.5, false, "workflow1", "workflow1")
+	require.NoError(t, err)
+	assert.False(t, shouldFlush)
+
+	// Different workflow should flush
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 100, 0.5, false, "workflow2", "workflow1")
+	require.NoError(t, err)
+	assert.True(t, shouldFlush)
+
+	// Back to first workflow should flush (transition)
+	shouldFlush, err = evaluator.EvaluateDecision("server1", 100, 0.5, false, "workflow1", "workflow2")
+	require.NoError(t, err)
+	assert.True(t, shouldFlush)
+}
+
+func TestCacheManager_ShouldFlush_PreserveWithinWorkflow(t *testing.T) {
+	servers := []*config.LLMServerConfig{
+		{
+			Name: "server1",
+			Cache: &config.CacheConfig{
+				Policy: config.CachePolicyPreserveWithinWorkflow,
+			},
+		},
+	}
+	evaluator := NewCachePolicyEvaluator(servers)
+	manager := NewCacheManager(evaluator)
+
+	ctx := context.Background()
+
+	// First workflow should preserve
+	shouldFlush, err := manager.ShouldFlush(ctx, "server1", 100, 0.5, false, "workflow1")
+	require.NoError(t, err)
+	assert.False(t, shouldFlush)
+
+	// Same workflow should preserve
+	shouldFlush, err = manager.ShouldFlush(ctx, "server1", 100, 0.5, false, "workflow1")
+	require.NoError(t, err)
+	assert.False(t, shouldFlush)
+
+	// Different workflow should flush
+	shouldFlush, err = manager.ShouldFlush(ctx, "server1", 100, 0.5, false, "workflow2")
+	require.NoError(t, err)
+	assert.True(t, shouldFlush)
+
+	// Check that workflow name was tracked
+	state := manager.GetOrCreateCacheState("server1")
+	assert.Equal(t, "workflow2", state.LastWorkflowName)
 }

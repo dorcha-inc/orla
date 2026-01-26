@@ -30,7 +30,7 @@ func TestNewClient(t *testing.T) {
 	assert.NotNil(t, client)
 	assert.Equal(t, "http://localhost:8081", client.baseURL)
 	assert.NotNil(t, client.httpClient)
-	assert.Equal(t, 30*time.Second, client.httpClient.Timeout)
+	assert.Equal(t, time.Duration(0), client.httpClient.Timeout)
 }
 
 func TestClient_Health_Success(t *testing.T) {
@@ -235,7 +235,7 @@ func TestClient_ExecuteTask_WithMaxTokens(t *testing.T) {
 func TestClient_ExecuteTask_WithoutMaxTokens(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req ExecuteTaskRequest
-		_ = decodeJSON(r, &req) //nolint:errcheck
+		_ = decodeJSON(r, &req)      //nolint:errcheck
 		assert.Nil(t, req.MaxTokens) // Should be nil when maxTokens <= 0
 
 		response := ExecuteTaskResponse{

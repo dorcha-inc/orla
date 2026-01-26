@@ -3,6 +3,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,9 @@ type CacheController interface {
 	FlushCache(ctx context.Context) error
 	// GetCacheState returns the current cache state
 	GetCacheState() CacheState
+	// GetMemoryPressure returns the current memory pressure (0.0-1.0)
+	// Returns 0.0 if memory pressure cannot be determined
+	GetMemoryPressure(ctx context.Context) (float64, error)
 }
 
 // CacheState represents the state of a cache
@@ -82,21 +86,32 @@ func (c *SGLangCacheController) FlushCache(ctx context.Context) error {
 	}
 	bodyStr := string(bodyBytes)
 
-	// SGLang may return 400 with "Cache flushed." in the body, we treat this as success
-	// This happens when there are pending requests but the flush operation was queued
-	if resp.StatusCode == http.StatusBadRequest && strings.Contains(bodyStr, "Cache flushed") {
+	// SGLang may return 400 or 500 when there are running requests
+	// If the body contains "Cache flushed", treat as success (operation was queued)
+	if strings.Contains(bodyStr, "Cache flushed") {
 		// Success - update cache state
 		c.mu.Lock()
 		c.state.IsFlushed = true
 		c.mu.Unlock()
 
-		zap.L().Debug("Flushed SGLang cache (400 with success message)",
+		zap.L().Debug("Flushed SGLang cache (non-200 with success message)",
+			zap.Int("status_code", resp.StatusCode),
 			zap.String("base_url", c.baseURL))
 		return nil
 	}
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
+		// Under concurrent load, SGLang may return 500 when flush cannot be performed
+		// This is expected behavior - log as warning but don't fail
+		if resp.StatusCode == http.StatusInternalServerError {
+			zap.L().Warn("SGLang cache flush returned 500 (likely due to running requests), continuing without flush",
+				zap.String("base_url", c.baseURL),
+				zap.String("response", bodyStr))
+			// Don't update state - cache may not have been flushed
+			return nil
+		}
+		// For other non-200 status codes, still return error
 		if bodyStr != "" {
 			return fmt.Errorf("flush cache returned status %d: %s", resp.StatusCode, bodyStr)
 		}
@@ -119,6 +134,71 @@ func (c *SGLangCacheController) GetCacheState() CacheState {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.state
+}
+
+// sglangServerInfo represents the response from SGLang's /get_server_info endpoint
+type sglangServerInfo struct {
+	InternalStates []sglangInternalState `json:"internal_states"`
+}
+
+// sglangInternalState represents an internal state entry from SGLang
+type sglangInternalState struct {
+	MemoryUsage sglangMemoryUsage `json:"memory_usage"`
+}
+
+// sglangMemoryUsage represents memory usage information from SGLang
+type sglangMemoryUsage struct {
+	// Weight is the fraction of memory used by model weights
+	Weight float64 `json:"weight"`
+	// KVCache is the fraction of memory used by KV cache (0.0-1.0)
+	KVCache float64 `json:"kvcache"`
+	// TokenCapacity is the maximum number of tokens that can be stored
+	TokenCapacity int `json:"token_capacity"`
+	// Graph is the fraction of memory used by CUDA graphs
+	Graph float64 `json:"graph"`
+}
+
+// GetMemoryPressure queries SGLang for current KV cache memory pressure
+// Returns the KV cache utilization as a fraction (0.0-1.0)
+func (c *SGLangCacheController) GetMemoryPressure(ctx context.Context) (float64, error) {
+	// Use /server_info (newer) or /get_server_info (deprecated but still works)
+	serverInfoURL := fmt.Sprintf("%s/get_server_info", c.baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", serverInfoURL, nil)
+	if err != nil {
+		return 0.0, fmt.Errorf("failed to create server info request: %w", err)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		zap.L().Debug("Failed to get SGLang server info, returning 0 memory pressure",
+			zap.Error(err))
+		return 0.0, nil // Return 0 on error to avoid triggering unnecessary flushes
+	}
+	defer core.LogDeferredError(resp.Body.Close)
+
+	if resp.StatusCode != http.StatusOK {
+		zap.L().Debug("SGLang server info returned non-OK status, returning 0 memory pressure",
+			zap.Int("status", resp.StatusCode))
+		return 0.0, nil
+	}
+
+	var serverInfo sglangServerInfo
+	if err := json.NewDecoder(resp.Body).Decode(&serverInfo); err != nil {
+		zap.L().Debug("Failed to decode SGLang server info, returning 0 memory pressure",
+			zap.Error(err))
+		return 0.0, nil
+	}
+
+	// Get memory pressure from first internal state (typical for single-GPU setup)
+	if len(serverInfo.InternalStates) > 0 {
+		pressure := serverInfo.InternalStates[0].MemoryUsage.KVCache
+		zap.L().Debug("Got SGLang memory pressure",
+			zap.Float64("kv_cache_pressure", pressure))
+		return pressure, nil
+	}
+
+	return 0.0, nil
 }
 
 // NewCacheController creates a cache controller based on the LLM server configuration

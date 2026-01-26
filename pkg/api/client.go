@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 // Client is the public API client for the Orla daemon
@@ -30,13 +29,11 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// NewClient creates a new daemon API client
+// NewClient creates a new daemon API client.
 func NewClient(baseURL string) *Client {
 	return &Client{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		baseURL:    baseURL,
+		httpClient: &http.Client{},
 	}
 }
 

@@ -54,20 +54,37 @@ func TestSGLangCacheController_FlushCache(t *testing.T) {
 }
 
 func TestSGLangCacheController_FlushCache_Non200Status(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Test with 500 status - should return nil (treated as warning for SGLang behavior)
+	server500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
-	defer server.Close()
+	defer server500.Close()
 
-	controller := NewSGLangCacheController(server.URL, nil)
+	controller500 := NewSGLangCacheController(server500.URL, nil)
 	ctx := context.Background()
 
-	err := controller.FlushCache(ctx)
+	err := controller500.FlushCache(ctx)
+	require.NoError(t, err) // 500 is treated as warning, not error
+
+	// State should not be updated on 500 (cache may not have been flushed)
+	state := controller500.GetCacheState()
+	assert.False(t, state.IsFlushed)
+
+	// Test with 400 status - should return error
+	server400 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, err := w.Write([]byte("Bad request"))
+		require.NoError(t, err)
+	}))
+	defer server400.Close()
+
+	controller400 := NewSGLangCacheController(server400.URL, nil)
+	err = controller400.FlushCache(ctx)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "status 500")
+	assert.Contains(t, err.Error(), "status 400")
 
 	// State should not be updated on error
-	state := controller.GetCacheState()
+	state = controller400.GetCacheState()
 	assert.False(t, state.IsFlushed)
 }
 

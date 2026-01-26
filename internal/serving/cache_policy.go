@@ -32,7 +32,8 @@ func NewCachePolicyEvaluator(servers []*config.LLMServerConfig) *CachePolicyEval
 
 // EvaluateDecision evaluates whether to flush or preserve cache based on the policy
 // Returns true if cache should be flushed, false if it should be preserved
-func (e *CachePolicyEvaluator) EvaluateDecision(serverName string, turnSize int, memoryPressure float64, isFinalIteration bool) (bool, error) {
+// workflowName is optional and used by preserve_within_workflow policy to detect workflow transitions
+func (e *CachePolicyEvaluator) EvaluateDecision(serverName string, turnSize int, memoryPressure float64, isFinalIteration bool, workflowName string, lastWorkflowName string) (bool, error) {
 	policy, exists := e.policies[serverName]
 	if !exists {
 		// No cache policy configured, default to preserve
@@ -71,6 +72,21 @@ func (e *CachePolicyEvaluator) EvaluateDecision(serverName string, turnSize int,
 		}
 		return memoryPressure > threshold, nil
 
+	case config.CachePolicyPreserveWithinWorkflow:
+		// Preserve cache within a workflow, but flush when transitioning to a different workflow
+		// If this is the first use of this server (lastWorkflowName is empty), preserve
+		// If workflow name changed, flush
+		if lastWorkflowName == "" {
+			// First use of this server, preserve cache
+			return false, nil
+		}
+		if workflowName != lastWorkflowName {
+			// Workflow changed, flush cache
+			return true, nil
+		}
+		// Same workflow, preserve cache
+		return false, nil
+
 	default:
 		return false, fmt.Errorf("unknown cache policy: %s", policy.Policy)
 	}
@@ -95,6 +111,8 @@ type CacheState struct {
 	LastTurnSize int
 	// LastMemoryPressure is the last known memory pressure (0.0-1.0)
 	LastMemoryPressure float64
+	// LastWorkflowName is the name of the last workflow that used this cache
+	LastWorkflowName string
 }
 
 // NewCacheManager creates a new cache manager
@@ -130,9 +148,18 @@ func (cm *CacheManager) getOrCreateCacheStateUnsafe(serverName string) *CacheSta
 }
 
 // ShouldFlush determines if the cache should be flushed based on the policy
-func (cm *CacheManager) ShouldFlush(ctx context.Context, serverName string, turnSize int, memoryPressure float64, isFinalIteration bool) (bool, error) {
+// workflowName is optional and used by preserve_within_workflow policy to detect workflow transitions
+func (cm *CacheManager) ShouldFlush(ctx context.Context, serverName string, turnSize int, memoryPressure float64, isFinalIteration bool, workflowName string) (bool, error) {
+	// Get current cache state to check last workflow name
+	cm.mu.RLock()
+	var lastWorkflowName string
+	if state, exists := cm.cacheState[serverName]; exists {
+		lastWorkflowName = state.LastWorkflowName
+	}
+	cm.mu.RUnlock()
+
 	// Evaluate policy decision
-	shouldFlush, err := cm.evaluator.EvaluateDecision(serverName, turnSize, memoryPressure, isFinalIteration)
+	shouldFlush, err := cm.evaluator.EvaluateDecision(serverName, turnSize, memoryPressure, isFinalIteration, workflowName, lastWorkflowName)
 	if err != nil {
 		return false, err
 	}
@@ -143,6 +170,9 @@ func (cm *CacheManager) ShouldFlush(ctx context.Context, serverName string, turn
 	state := cm.getOrCreateCacheStateUnsafe(serverName)
 	state.LastTurnSize = turnSize
 	state.LastMemoryPressure = memoryPressure
+	if workflowName != "" {
+		state.LastWorkflowName = workflowName
+	}
 	if shouldFlush {
 		state.IsFlushed = true
 	}
@@ -153,13 +183,17 @@ func (cm *CacheManager) ShouldFlush(ctx context.Context, serverName string, turn
 			zap.String("server_name", serverName),
 			zap.Int("turn_size", turnSize),
 			zap.Float64("memory_pressure", memoryPressure),
-			zap.Bool("is_final_iteration", isFinalIteration))
+			zap.Bool("is_final_iteration", isFinalIteration),
+			zap.String("workflow_name", workflowName),
+			zap.String("last_workflow_name", lastWorkflowName))
 	} else {
 		zap.L().Debug("Cache flush decision: preserve",
 			zap.String("server_name", serverName),
 			zap.Int("turn_size", turnSize),
 			zap.Float64("memory_pressure", memoryPressure),
-			zap.Bool("is_final_iteration", isFinalIteration))
+			zap.Bool("is_final_iteration", isFinalIteration),
+			zap.String("workflow_name", workflowName),
+			zap.String("last_workflow_name", lastWorkflowName))
 	}
 
 	return shouldFlush, nil
@@ -212,4 +246,23 @@ func (cm *CacheManager) FlushCache(ctx context.Context, serverManager *LLMServer
 		zap.String("server_name", serverName))
 
 	return nil
+}
+
+// GetMemoryPressure queries the memory pressure for a server from its cache controller
+// Returns 0.0 if memory pressure cannot be determined
+func (cm *CacheManager) GetMemoryPressure(ctx context.Context, serverManager *LLMServerManager, serverName string) float64 {
+	controller, err := serverManager.GetCacheController(serverName)
+	if err != nil || controller == nil {
+		return 0.0
+	}
+
+	pressure, err := controller.GetMemoryPressure(ctx)
+	if err != nil {
+		zap.L().Error("Failed to get memory pressure",
+			zap.String("server_name", serverName),
+			zap.Error(err))
+		return 0.0
+	}
+
+	return pressure
 }

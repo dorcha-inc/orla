@@ -30,6 +30,8 @@ const (
 	CachePolicyFlushUnderPressure CachePolicyType = "flush_under_pressure"
 	// CachePolicyAggressiveFlush always flushes cache after each request
 	CachePolicyAggressiveFlush CachePolicyType = "aggressive_flush"
+	// CachePolicyPreserveWithinWorkflow preserves cache within a workflow but flushes when transitioning to a different workflow
+	CachePolicyPreserveWithinWorkflow CachePolicyType = "preserve_within_workflow"
 )
 
 // AgenticServingConfig represents the Agentic Serving Layer configuration (RFC 5)
@@ -269,6 +271,7 @@ func validateCacheConfig(cache *CacheConfig) error {
 		CachePolicyPreserveOnSmallTurns:  {},
 		CachePolicyFlushUnderPressure:    {},
 		CachePolicyAggressiveFlush:       {},
+		CachePolicyPreserveWithinWorkflow: {},
 	}
 
 	if _, ok := validPolicies[cache.Policy]; !ok {
