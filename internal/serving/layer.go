@@ -198,7 +198,7 @@ func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, t
 	var chatErr error
 	// Execute inference (non-streaming for workflow tasks)
 	if options.Stream {
-		response, streamCh, chatErr = provider.Chat(ctx, messages, nil, true, 0)
+		response, streamCh, chatErr = provider.Chat(ctx, messages, nil, true, options.MaxTokens)
 	} else {
 		response, _, chatErr = provider.Chat(ctx, messages, nil, false, options.MaxTokens)
 	}
