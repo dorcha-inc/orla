@@ -116,7 +116,7 @@ func TestLoop_Execute_NoToolCalls(t *testing.T) {
 	}
 
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			return &model.Response{
 				Content:   "Hello, world!",
 				ToolCalls: []model.ToolCallWithID{},
@@ -161,7 +161,7 @@ func TestLoop_Execute_WithToolCalls(t *testing.T) {
 
 	callCount := 0
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			callCount++
 			if callCount == 1 {
 				// First call: model requests tool call
@@ -212,7 +212,7 @@ func TestLoop_Execute_Streaming(t *testing.T) {
 
 	streamCh := make(chan model.StreamEvent, len(chunks))
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			if stream {
 				// Send chunks
 				go func() {
@@ -260,7 +260,7 @@ func TestLoop_Execute_StreamingError(t *testing.T) {
 
 	streamCh := make(chan model.StreamEvent, 1)
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			go func() {
 				streamCh <- &model.ContentEvent{Content: "chunk"}
 				close(streamCh)
@@ -303,7 +303,7 @@ func TestLoop_Execute_MaxIterations(t *testing.T) {
 
 	callCount := 0
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			callCount++
 			// Always return tool calls to trigger max iterations
 			return &model.Response{
@@ -360,7 +360,7 @@ func TestLoop_Execute_ChatError(t *testing.T) {
 	}
 
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			return nil, nil, errors.New("chat error")
 		},
 	}
@@ -385,7 +385,7 @@ func TestLoop_Execute_NilResponse(t *testing.T) {
 	}
 
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			return nil, nil, nil
 		},
 	}
@@ -431,7 +431,7 @@ func TestLoop_Execute_WithExistingMessages(t *testing.T) {
 
 	var receivedMessages []model.Message
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			receivedMessages = messages
 			return &model.Response{
 				Content:   "response",
@@ -617,7 +617,7 @@ func TestLoop_Execute_ToolResultWithoutMatchingCall(t *testing.T) {
 
 	callCount := 0
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			callCount++
 			if callCount == 1 {
 				// Return tool call with ID that won't match
@@ -661,7 +661,7 @@ func TestLoop_Execute_StreamChannelNil(t *testing.T) {
 	}
 
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			// Return nil stream channel when streaming is enabled
 			return &model.Response{
 				Content:   "test",
@@ -698,7 +698,7 @@ func TestLoop_Execute_WithContentAndToolCalls(t *testing.T) {
 	callCount := 0
 	var receivedMessages []model.Message
 	provider := &mockProvider{
-		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+		chatFunc: func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 			callCount++
 			receivedMessages = messages
 			if callCount == 1 {

@@ -19,7 +19,7 @@ import (
 
 // mockServingLayer is a test implementation of serving.ServingLayer
 type mockServingLayer struct {
-	executions map[string]*serving.WorkflowExecution
+	executions    map[string]*serving.WorkflowExecution
 	lastMaxTokens *int
 }
 
@@ -47,8 +47,13 @@ func (m *mockServingLayer) StartWorkflow(ctx context.Context, workflowName strin
 	return exec, nil
 }
 
-func (m *mockServingLayer) ExecuteTask(ctx context.Context, execution *serving.WorkflowExecution, taskIndex int, prompt string, maxTokens *int) (*model.Response, error) {
-	m.lastMaxTokens = maxTokens
+func (m *mockServingLayer) ExecuteTask(ctx context.Context, execution *serving.WorkflowExecution, taskIndex int, prompt string, options serving.ExecuteTaskOptions) (*model.Response, error) {
+	if options.MaxTokens > 0 {
+		t := options.MaxTokens
+		m.lastMaxTokens = &t
+	} else {
+		m.lastMaxTokens = nil
+	}
 	return &model.Response{
 		Content: "test response",
 	}, nil
@@ -90,7 +95,7 @@ func TestServer_HandleExecuteTask_WithMaxTokens(t *testing.T) {
 		ExecutionID: executionID,
 		TaskIndex:   0,
 		Prompt:      "test prompt",
-		MaxTokens:   &maxTokens,
+		Options:     &ExecuteTaskRequestOptions{MaxTokens: &maxTokens},
 	}
 	body, err := json.Marshal(req)
 	require.NoError(t, err)
@@ -105,7 +110,7 @@ func TestServer_HandleExecuteTask_WithMaxTokens(t *testing.T) {
 	assert.True(t, result.Success)
 	assert.NotNil(t, result.Response)
 	assert.Equal(t, "test response", result.Response.Content)
-	
+
 	// Verify that maxTokens was passed to the serving layer
 	assert.NotNil(t, mockLayer.lastMaxTokens)
 	assert.Equal(t, maxTokens, *mockLayer.lastMaxTokens)
@@ -148,7 +153,7 @@ func TestServer_HandleExecuteTask_WithoutMaxTokens(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.NotNil(t, result.Response)
-	
+
 	// Verify that maxTokens was nil when not provided
 	assert.Nil(t, mockLayer.lastMaxTokens)
 }
@@ -177,7 +182,7 @@ func TestServer_HandleExecuteTask_WithMaxTokensZero(t *testing.T) {
 		ExecutionID: executionID,
 		TaskIndex:   0,
 		Prompt:      "test prompt",
-		MaxTokens:   &maxTokens,
+		Options:     &ExecuteTaskRequestOptions{MaxTokens: &maxTokens},
 	}
 	body, err := json.Marshal(req)
 	require.NoError(t, err)
@@ -190,10 +195,9 @@ func TestServer_HandleExecuteTask_WithMaxTokensZero(t *testing.T) {
 	err = json.Unmarshal(resp.Body.Bytes(), &result)
 	require.NoError(t, err)
 	assert.True(t, result.Success)
-	
-	// Verify that maxTokens was passed even when 0
-	assert.NotNil(t, mockLayer.lastMaxTokens)
-	assert.Equal(t, 0, *mockLayer.lastMaxTokens)
+
+	// When max_tokens=0 is sent, the layer receives MaxTokens 0; mock treats 0 as "no limit" (lastMaxTokens nil)
+	assert.Nil(t, mockLayer.lastMaxTokens)
 }
 
 func TestServer_HandleHealth(t *testing.T) {
@@ -385,8 +389,8 @@ func TestServer_HandleGetNextTask_Complete(t *testing.T) {
 	exec := &serving.WorkflowExecution{
 		ExecutionID:      "complete-exec",
 		CurrentTaskIndex: 1,
-		Tasks:           []*config.WorkflowTask{{AgentProfile: "test-profile"}},
-		State:           serving.WorkflowExecutionStatePending,
+		Tasks:            []*config.WorkflowTask{{AgentProfile: "test-profile"}},
+		State:            serving.WorkflowExecutionStatePending,
 	}
 	mockLayer.executions["complete-exec"] = exec
 
@@ -644,7 +648,7 @@ func (m *mockProviderForAPI) Name() string {
 	return "mock-provider"
 }
 
-func (m *mockProviderForAPI) Chat(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+func (m *mockProviderForAPI) Chat(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 	if m.chatError != nil {
 		return nil, nil, m.chatError
 	}

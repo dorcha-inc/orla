@@ -115,7 +115,7 @@ func (p *OllamaProvider) EnsureReady(ctx context.Context) error {
 }
 
 // Chat sends a chat request to Ollama
-func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*Response, <-chan StreamEvent, error) {
+func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool, maxTokens int) (*Response, <-chan StreamEvent, error) {
 	// Ensure Ollama is ready
 	if err := p.EnsureReady(ctx); err != nil {
 		return nil, nil, err
@@ -144,8 +144,8 @@ func (p *OllamaProvider) Chat(ctx context.Context, messages []Message, tools []*
 	options := ollamaOptions{
 		Temperature: defaultOllamaTemperature,
 	}
-	if maxTokens != nil {
-		options.NumPredict = maxTokens
+	if maxTokens > 0 {
+		options.NumPredict = &maxTokens
 	}
 
 	reqBody := ollamaChatRequest{

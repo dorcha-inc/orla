@@ -35,7 +35,7 @@ func (m *mockMCPClient) CallTool(ctx context.Context, params *mcp.CallToolParams
 // Supports both function-based (for flexibility) and field-based (for simplicity) approaches
 type mockProvider struct {
 	name            string
-	chatFunc        func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error)
+	chatFunc        func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error)
 	ensureReadyFunc func(ctx context.Context) error
 	// Field-based approach (used when chatFunc is nil)
 	chatResponse     *model.Response
@@ -51,7 +51,7 @@ func (m *mockProvider) Name() string {
 	return m.name
 }
 
-func (m *mockProvider) Chat(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
+func (m *mockProvider) Chat(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
 	if m == nil {
 		return nil, nil, errors.New("nil mock provider")
 	}

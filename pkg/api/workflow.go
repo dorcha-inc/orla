@@ -68,7 +68,10 @@ func (e *WorkflowExecutor) ExecuteWorkflow(ctx context.Context, workflowName str
 		}
 
 		// Execute task (daemon handles inference)
-		response, err := e.client.ExecuteTask(ctx, executionID, taskIndex, taskPrompt, maxTokensPerTask)
+		response, err := e.client.ExecuteTask(ctx, executionID, taskIndex, taskPrompt, &ExecuteTaskOptions{
+			MaxTokens: maxTokensPerTask,
+			Stream:    true,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to execute task %d: %w", taskIndex, err)
 		}
@@ -152,7 +155,10 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithCallback(
 		}
 
 		// Execute
-		response, err := e.client.ExecuteTask(ctx, executionID, taskIndex, taskPrompt, maxTokensPerTask)
+		response, err := e.client.ExecuteTask(ctx, executionID, taskIndex, taskPrompt, &ExecuteTaskOptions{
+			MaxTokens: maxTokensPerTask,
+			Stream:    true,
+		})
 		if err != nil {
 			return fmt.Errorf("failed to execute task %d: %w", taskIndex, err)
 		}

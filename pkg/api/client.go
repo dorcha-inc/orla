@@ -10,7 +10,7 @@
 //	client := api.NewClient("http://localhost:8081")
 //	execID, err := client.StartWorkflow(ctx, "story_finishing_game")
 //	task, taskIndex, complete, err := client.GetNextTask(ctx, execID)
-//	response, err := client.ExecuteTask(ctx, execID, taskIndex, prompt, maxTokens)
+//	response, err := client.ExecuteTask(ctx, execID, taskIndex, prompt, &api.ExecuteTaskOptions{Stream: true})
 //	err := client.CompleteTask(ctx, execID, taskIndex, response)
 package orla
 
@@ -174,12 +174,24 @@ func (c *Client) GetNextTask(ctx context.Context, executionID string) (*Workflow
 	return taskResp.Task, taskResp.TaskIndex, taskResp.Complete, taskResp.LLMServer, nil
 }
 
+// ExecuteTaskOptions are options for executing a task (mirrors serving.ExecuteTaskOptions).
+type ExecuteTaskOptions struct {
+	MaxTokens int  // Maximum tokens to generate; 0 = omit
+	Stream    bool // If true, server streams and returns response.metrics (ttft_ms, tpot_ms)
+}
+
 // ExecuteTaskRequest represents a task execution request
 type ExecuteTaskRequest struct {
-	ExecutionID string `json:"execution_id"`
-	TaskIndex   int    `json:"task_index"`
-	Prompt      string `json:"prompt"`
-	MaxTokens   *int   `json:"max_tokens,omitempty"` // Optional: maximum tokens to generate
+	ExecutionID string                     `json:"execution_id"`
+	TaskIndex   int                        `json:"task_index"`
+	Prompt      string                     `json:"prompt"`
+	Options     *ExecuteTaskRequestOptions `json:"options,omitempty"` // Optional; mirrors ExecuteTaskOptions
+}
+
+// ExecuteTaskRequestOptions are the JSON wire form of ExecuteTaskOptions.
+type ExecuteTaskRequestOptions struct {
+	MaxTokens *int `json:"max_tokens,omitempty"`
+	Stream    bool `json:"stream,omitempty"`
 }
 
 // ExecuteTaskResponse represents a task execution response
@@ -189,16 +201,25 @@ type ExecuteTaskResponse struct {
 	Error    string        `json:"error,omitempty"`
 }
 
-// TaskResponse represents the response from a task execution
+// TaskResponse represents the response from a task execution.
+// Matches the daemon's model.Response; Metrics is set when the task was executed with streaming.
 type TaskResponse struct {
-	Content   string `json:"content"`
-	Thinking  string `json:"thinking,omitempty"`
-	ToolCalls []any  `json:"tool_calls,omitempty"`
+	Content     string               `json:"content"`
+	Thinking    string               `json:"thinking,omitempty"`
+	ToolCalls   []any                `json:"tool_calls,omitempty"`
+	ToolResults []any                `json:"tool_results,omitempty"`
+	Metrics     *TaskResponseMetrics `json:"metrics,omitempty"`
 }
 
-// ExecuteTask executes a workflow task on the daemon
-// maxTokens is optional (pass 0 or negative to omit)
-func (c *Client) ExecuteTask(ctx context.Context, executionID string, taskIndex int, prompt string, maxTokens int) (*TaskResponse, error) {
+// TaskResponseMetrics holds timing metrics from streaming execution (TTFT, TPOT).
+type TaskResponseMetrics struct {
+	TTFTMs int64 `json:"ttft_ms,omitempty"` // Time to first token (ms)
+	TPOTMs int64 `json:"tpot_ms,omitempty"` // Time per output token (ms)
+}
+
+// ExecuteTask executes a workflow task on the daemon.
+// options may be nil for defaults.
+func (c *Client) ExecuteTask(ctx context.Context, executionID string, taskIndex int, prompt string, options *ExecuteTaskOptions) (*TaskResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/workflow/task/execute", c.baseURL)
 
 	reqBody := ExecuteTaskRequest{
@@ -206,8 +227,11 @@ func (c *Client) ExecuteTask(ctx context.Context, executionID string, taskIndex 
 		TaskIndex:   taskIndex,
 		Prompt:      prompt,
 	}
-	if maxTokens > 0 {
-		reqBody.MaxTokens = &maxTokens
+	if options != nil && (options.MaxTokens > 0 || options.Stream) {
+		reqBody.Options = &ExecuteTaskRequestOptions{Stream: options.Stream}
+		if options.MaxTokens > 0 {
+			reqBody.Options.MaxTokens = &options.MaxTokens
+		}
 	}
 
 	body, err := json.Marshal(reqBody)

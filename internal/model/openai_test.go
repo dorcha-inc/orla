@@ -270,7 +270,7 @@ func TestOpenAIProvider_Chat_NonStreaming_BasicAndToolCalls(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, p.EnsureReady(context.Background()))
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, nil)
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, 0)
 	require.NoError(t, err)
 	require.Nil(t, ch)
 	require.NotNil(t, resp)
@@ -310,7 +310,7 @@ func TestOpenAIProvider_Chat_Streaming_Content(t *testing.T) {
 	p, err := NewOpenAIProvider("m", cfg)
 	require.NoError(t, err)
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, true, nil)
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, true, 0)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotNil(t, ch)
@@ -364,7 +364,7 @@ func TestOpenAIProvider_Chat_WithMaxTokens(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, p.EnsureReady(context.Background()))
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, &maxTokens)
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, maxTokens)
 	require.NoError(t, err)
 	require.Nil(t, ch)
 	require.NotNil(t, resp)
@@ -412,7 +412,7 @@ func TestOpenAIProvider_Chat_WithoutMaxTokens(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, p.EnsureReady(context.Background()))
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, nil)
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, 0)
 	require.NoError(t, err)
 	require.Nil(t, ch)
 	require.NotNil(t, resp)
@@ -461,7 +461,7 @@ func TestOpenAIProvider_Chat_WithMaxTokensZero(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, p.EnsureReady(context.Background()))
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, &maxTokens)
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, maxTokens)
 	require.NoError(t, err)
 	require.Nil(t, ch)
 	require.NotNil(t, resp)
@@ -500,7 +500,7 @@ func TestOpenAIProvider_Chat_Streaming_WithToolCalls(t *testing.T) {
 	p, err := NewOpenAIProvider("m", cfg)
 	require.NoError(t, err)
 
-	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, true, nil)
+	resp, ch, err := p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, true, 0)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotNil(t, ch)
@@ -564,7 +564,7 @@ func TestOpenAIProvider_Chat_NonStreaming_NoChoices(t *testing.T) {
 	p, err := NewOpenAIProvider("m", cfg)
 	require.NoError(t, err)
 
-	_, _, err = p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, nil)
+	_, _, err = p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, nil, false, 0)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no choices")
 }
@@ -592,7 +592,7 @@ func TestOpenAIProvider_Chat_ToolConversionError(t *testing.T) {
 		},
 	}
 
-	_, _, err = p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, tools, false, nil)
+	_, _, err = p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, tools, false, 0)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "normalize tool input schema")
 }

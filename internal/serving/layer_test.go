@@ -22,8 +22,12 @@ func (m *mockProvider) Name() string {
 	return m.name
 }
 
-func (m *mockProvider) Chat(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*model.Response, <-chan model.StreamEvent, error) {
-	m.lastMaxTokens = maxTokens
+func (m *mockProvider) Chat(ctx context.Context, messages []model.Message, tools []*mcp.Tool, stream bool, maxTokens int) (*model.Response, <-chan model.StreamEvent, error) {
+	if maxTokens != 0 {
+		m.lastMaxTokens = &maxTokens
+	} else {
+		m.lastMaxTokens = nil
+	}
 	return &model.Response{
 		Content: "test response",
 	}, nil, nil
@@ -76,7 +80,7 @@ func TestLayer_ExecuteTask_WithMaxTokens(t *testing.T) {
 	execution, err := layer.StartWorkflow(context.Background(), "test-workflow")
 	require.NoError(t, err)
 
-	response, err := layer.ExecuteTask(context.Background(), execution, 0, "test prompt", &maxTokens)
+	response, err := layer.ExecuteTask(context.Background(), execution, 0, "test prompt", ExecuteTaskOptions{MaxTokens: maxTokens})
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	assert.Equal(t, "test response", response.Content)
@@ -128,7 +132,7 @@ func TestLayer_ExecuteTask_WithoutMaxTokens(t *testing.T) {
 	execution, err := layer.StartWorkflow(context.Background(), "test-workflow")
 	require.NoError(t, err)
 
-	response, err := layer.ExecuteTask(context.Background(), execution, 0, "test prompt", nil)
+	response, err := layer.ExecuteTask(context.Background(), execution, 0, "test prompt", ExecuteTaskOptions{})
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	assert.Equal(t, "test response", response.Content)
@@ -180,11 +184,10 @@ func TestLayer_ExecuteTask_WithMaxTokensZero(t *testing.T) {
 	execution, err := layer.StartWorkflow(context.Background(), "test-workflow")
 	require.NoError(t, err)
 
-	response, err := layer.ExecuteTask(context.Background(), execution, 0, "test prompt", &maxTokens)
+	response, err := layer.ExecuteTask(context.Background(), execution, 0, "test prompt", ExecuteTaskOptions{MaxTokens: maxTokens})
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 
-	// Verify that maxTokens was passed even when 0
-	assert.NotNil(t, mock.lastMaxTokens)
-	assert.Equal(t, 0, *mock.lastMaxTokens)
+	// When MaxTokens is 0, layer passes nil to provider (0 means no limit)
+	assert.Nil(t, mock.lastMaxTokens)
 }

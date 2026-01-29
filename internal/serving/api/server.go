@@ -361,10 +361,16 @@ func (s *Server) handleCompleteTask(w http.ResponseWriter, r *http.Request) {
 
 // ExecuteTaskRequest represents a request to execute a task
 type ExecuteTaskRequest struct {
-	ExecutionID string `json:"execution_id"`
-	TaskIndex   int    `json:"task_index"`
-	Prompt      string `json:"prompt"`
-	MaxTokens   *int   `json:"max_tokens,omitempty"` // Optional: maximum tokens to generate
+	ExecutionID string                     `json:"execution_id"`
+	TaskIndex   int                        `json:"task_index"`
+	Prompt      string                     `json:"prompt"`
+	Options     *ExecuteTaskRequestOptions `json:"options,omitempty"` // Optional; mirrors serving.ExecuteTaskOptions
+}
+
+// ExecuteTaskRequestOptions are optional parameters for task execution (mirrors serving.ExecuteTaskOptions).
+type ExecuteTaskRequestOptions struct {
+	MaxTokens *int `json:"max_tokens,omitempty"` // Optional: maximum tokens to generate
+	Stream    bool `json:"stream,omitempty"`     // If true, use streaming and populate response.metrics (ttft_ms, tpot_ms)
 }
 
 // ExecuteTaskResponse represents the response from executing a task
@@ -405,9 +411,18 @@ func (s *Server) handleExecuteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build options from request (mirrors serving.ExecuteTaskOptions)
+	opts := serving.ExecuteTaskOptions{}
+	if req.Options != nil {
+		opts.Stream = req.Options.Stream
+		if req.Options.MaxTokens != nil {
+			opts.MaxTokens = *req.Options.MaxTokens
+		}
+	}
+
 	// Execute the task (this handles inference, context, and cache policies)
 	ctx := r.Context()
-	response, err := s.servingLayer.ExecuteTask(ctx, execution, req.TaskIndex, req.Prompt, req.MaxTokens)
+	response, err := s.servingLayer.ExecuteTask(ctx, execution, req.TaskIndex, req.Prompt, opts)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -522,7 +537,11 @@ func (s *Server) handleAgentExecute(w http.ResponseWriter, r *http.Request) {
 
 	// Execute inference
 	// TODO(jadidbourbaki): add streaming support, if needed
-	response, _, err := provider.Chat(ctx, messages, req.Tools, false, req.MaxTokens)
+	maxTokens := 0
+	if req.MaxTokens != nil {
+		maxTokens = *req.MaxTokens
+	}
+	response, _, err := provider.Chat(ctx, messages, req.Tools, false, maxTokens)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)

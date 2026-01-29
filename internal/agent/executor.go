@@ -292,7 +292,7 @@ func executeWorkflowEmbedded(ctx context.Context, cfg *config.OrlaConfig, prompt
 			zap.String("agent_profile", task.AgentProfile))
 
 		// Execute task
-		response, err := layer.ExecuteTask(ctx, execution, i, taskPrompt, nil)
+		response, err := layer.ExecuteTask(ctx, execution, i, taskPrompt, serving.ExecuteTaskOptions{})
 		if err != nil {
 			return false, fmt.Errorf("failed to execute workflow task %d: %w", i, err)
 		}

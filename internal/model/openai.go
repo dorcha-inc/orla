@@ -88,7 +88,7 @@ func (p *OpenAIProvider) EnsureReady(ctx context.Context) error {
 }
 
 // Chat sends a chat request to the OpenAI-compatible API. This works with any server implementing the OpenAI Chat Completions API format.
-func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*Response, <-chan StreamEvent, error) {
+func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool, maxTokens int) (*Response, <-chan StreamEvent, error) {
 	// Ensure the OpenAI-compatible API is ready. This is a no-op for the OpenAI-compatible provider, but
 	// might as well check anyway in case we add health checks in the future.
 	readyErr := p.EnsureReady(ctx)
@@ -108,8 +108,8 @@ func (p *OpenAIProvider) Chat(ctx context.Context, messages []Message, tools []*
 		Messages: openAIMessages,
 		Stream:   stream,
 	}
-	if maxTokens != nil {
-		req.MaxTokens = *maxTokens
+	if maxTokens > 0 {
+		req.MaxTokens = maxTokens
 	}
 
 	// Add tools if provided

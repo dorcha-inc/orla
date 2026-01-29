@@ -377,7 +377,7 @@ func TestOllamaProvider_Chat_EnsureReadyFails(t *testing.T) {
 		{Role: MessageRoleUser, Content: "test"},
 	}
 
-	response, streamCh, err := provider.Chat(ctx, messages, nil, false, nil)
+	response, streamCh, err := provider.Chat(ctx, messages, nil, false, 0)
 	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Nil(t, streamCh)
@@ -416,7 +416,7 @@ func TestOllamaProvider_Chat_HTTPError(t *testing.T) {
 		{Role: MessageRoleUser, Content: "test"},
 	}
 
-	response, streamCh, err := provider.Chat(ctx, messages, nil, false, nil)
+	response, streamCh, err := provider.Chat(ctx, messages, nil, false, 0)
 	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Nil(t, streamCh)
@@ -455,7 +455,7 @@ func TestOllamaProvider_Chat_DecodeError(t *testing.T) {
 		{Role: MessageRoleUser, Content: "test"},
 	}
 
-	response, streamCh, err := provider.Chat(ctx, messages, nil, false, nil)
+	response, streamCh, err := provider.Chat(ctx, messages, nil, false, 0)
 	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Nil(t, streamCh)
@@ -511,7 +511,7 @@ func TestOllamaProvider_Chat_WithTools_NoToolCalls(t *testing.T) {
 		{Role: MessageRoleUser, Content: "test"},
 	}
 
-	response, streamCh, err := provider.Chat(ctx, messages, tools, false, nil)
+	response, streamCh, err := provider.Chat(ctx, messages, tools, false, 0)
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	assert.Nil(t, streamCh)
@@ -565,7 +565,7 @@ func TestOllamaProvider_Chat_Mock(t *testing.T) {
 		{Role: MessageRoleUser, Content: "Hello"},
 	}
 
-	response, streamCh, err := provider.Chat(ctx, messages, nil, false, nil)
+	response, streamCh, err := provider.Chat(ctx, messages, nil, false, 0)
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	// streamCh is nil when stream=false
@@ -633,7 +633,7 @@ func TestOllamaProvider_Chat_Mock_WithToolCalls(t *testing.T) {
 		},
 	}
 
-	response, _, err := provider.Chat(ctx, messages, tools, false, nil)
+	response, _, err := provider.Chat(ctx, messages, tools, false, 0)
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	assert.Len(t, response.ToolCalls, 1)
@@ -683,7 +683,7 @@ func TestOllamaProvider_Chat_Stream_Mock(t *testing.T) {
 		{Role: MessageRoleUser, Content: "Hello"},
 	}
 
-	response, streamCh, err := provider.Chat(ctx, messages, nil, true, nil)
+	response, streamCh, err := provider.Chat(ctx, messages, nil, true, 0)
 	require.NoError(t, err)
 	require.NotNil(t, response)
 	require.NotNil(t, streamCh)
@@ -759,7 +759,7 @@ func TestOllamaProvider_Chat_ThinkEnabled_Mock(t *testing.T) {
 	ctx := context.Background()
 	messages := []Message{{Role: MessageRoleUser, Content: "Hello"}}
 
-	response, _, err := provider.Chat(ctx, messages, nil, false, nil)
+	response, _, err := provider.Chat(ctx, messages, nil, false, 0)
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	assert.Equal(t, "I am thinking.", response.Thinking)
@@ -799,7 +799,7 @@ func TestOllamaProvider_Chat_WithToolMessage_Mock(t *testing.T) {
 		{Role: MessageRoleTool, Content: "tool output", ToolName: "test_tool"},
 	}
 
-	_, _, err := provider.Chat(ctx, messages, nil, false, nil)
+	_, _, err := provider.Chat(ctx, messages, nil, false, 0)
 	require.NoError(t, err)
 }
 
@@ -813,7 +813,7 @@ func TestOllamaProvider_Chat_NewRequestError(t *testing.T) {
 	}
 	ctx := context.Background()
 	messages := []Message{{Role: MessageRoleUser, Content: "Hello"}}
-	_, _, err := provider.Chat(ctx, messages, nil, false, nil)
+	_, _, err := provider.Chat(ctx, messages, nil, false, 0)
 	assert.Error(t, err)
 }
 
@@ -837,7 +837,7 @@ func TestOllamaProvider_Chat_ClientDoError(t *testing.T) {
 	}
 	ctx := context.Background()
 	messages := []Message{{Role: MessageRoleUser, Content: "Hello"}}
-	_, _, err := provider.Chat(ctx, messages, nil, false, nil)
+	_, _, err := provider.Chat(ctx, messages, nil, false, 0)
 	assert.Error(t, err)
 }
 
@@ -1109,11 +1109,11 @@ func TestOllamaProvider_Chat_WithMaxTokens(t *testing.T) {
 		var reqBody ollamaChatRequest
 		err := json.NewDecoder(r.Body).Decode(&reqBody)
 		require.NoError(t, err)
-		
+
 		// Verify that num_predict is set correctly
 		require.NotNil(t, reqBody.Options.NumPredict)
 		assert.Equal(t, maxTokens, *reqBody.Options.NumPredict)
-		
+
 		response := `{"message": {"role": "assistant", "content": "Short response"}, "done": true}`
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -1133,7 +1133,7 @@ func TestOllamaProvider_Chat_WithMaxTokens(t *testing.T) {
 	ctx := context.Background()
 	messages := []Message{{Role: MessageRoleUser, Content: "Hello"}}
 
-	response, _, err := provider.Chat(ctx, messages, nil, false, &maxTokens)
+	response, _, err := provider.Chat(ctx, messages, nil, false, maxTokens)
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	assert.Equal(t, "Short response", response.Content)
@@ -1148,10 +1148,10 @@ func TestOllamaProvider_Chat_WithoutMaxTokens(t *testing.T) {
 		var reqBody ollamaChatRequest
 		err := json.NewDecoder(r.Body).Decode(&reqBody)
 		require.NoError(t, err)
-		
+
 		// Verify that num_predict is not set when maxTokens is nil
 		assert.Nil(t, reqBody.Options.NumPredict)
-		
+
 		response := `{"message": {"role": "assistant", "content": "Response"}, "done": true}`
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -1171,13 +1171,14 @@ func TestOllamaProvider_Chat_WithoutMaxTokens(t *testing.T) {
 	ctx := context.Background()
 	messages := []Message{{Role: MessageRoleUser, Content: "Hello"}}
 
-	response, _, err := provider.Chat(ctx, messages, nil, false, nil)
+	response, _, err := provider.Chat(ctx, messages, nil, false, 0)
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	assert.Equal(t, "Response", response.Content)
 }
 
 func TestOllamaProvider_Chat_WithMaxTokensZero(t *testing.T) {
+	// maxTokens 0 means "no limit"; provider does not set NumPredict
 	maxTokens := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == ollamaHealthCheckEndpoint {
@@ -1187,11 +1188,10 @@ func TestOllamaProvider_Chat_WithMaxTokensZero(t *testing.T) {
 		var reqBody ollamaChatRequest
 		err := json.NewDecoder(r.Body).Decode(&reqBody)
 		require.NoError(t, err)
-		
-		// Verify that num_predict is set even when 0
-		require.NotNil(t, reqBody.Options.NumPredict)
-		assert.Equal(t, 0, *reqBody.Options.NumPredict)
-		
+
+		// When maxTokens is 0 we don't set NumPredict (0 = no limit)
+		assert.Nil(t, reqBody.Options.NumPredict)
+
 		response := `{"message": {"role": "assistant", "content": ""}, "done": true}`
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -1211,7 +1211,7 @@ func TestOllamaProvider_Chat_WithMaxTokensZero(t *testing.T) {
 	ctx := context.Background()
 	messages := []Message{{Role: MessageRoleUser, Content: "Hello"}}
 
-	response, _, err := provider.Chat(ctx, messages, nil, false, &maxTokens)
+	response, _, err := provider.Chat(ctx, messages, nil, false, maxTokens)
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 }

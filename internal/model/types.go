@@ -45,12 +45,20 @@ type ToolResultWithID struct {
 	McpCallToolResult mcp.CallToolResult
 }
 
+type ResponseMetrics struct {
+	// TTFTMs is time to first token in milliseconds. Only set when task was executed with streaming.
+	TTFTMs int64 `json:"ttft_ms,omitempty"`
+	// TPOTMs is time per output token in milliseconds. Only set when task was executed with streaming.
+	TPOTMs int64 `json:"tpot_ms,omitempty"`
+}
+
 // Response represents a model response
 type Response struct {
 	Content     string             `json:"content"`      // Text content from the model
 	Thinking    string             `json:"thinking"`     // Thinking trace from the model (if supported)
 	ToolCalls   []ToolCallWithID   `json:"tool_calls"`   // Tool calls requested by the model
 	ToolResults []ToolResultWithID `json:"tool_results"` // Tool results returned by the model
+	Metrics     *ResponseMetrics   `json:"metrics"`      // Response metrics
 }
 
 // Provider is the interface that all model providers must implement
@@ -62,8 +70,8 @@ type Provider interface {
 	// messages: conversation history
 	// tools: available tools (for tool calling) - uses mcp.Tool for MCP compatibility
 	// stream: if true, stream responses via the returned channel
-	// maxTokens: optional maximum number of tokens to generate (nil means use provider default)
-	Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool, maxTokens *int) (*Response, <-chan StreamEvent, error)
+	// maxTokens: maximum number of tokens to generate; 0 means no limit (use provider default)
+	Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, stream bool, maxTokens int) (*Response, <-chan StreamEvent, error)
 
 	// EnsureReady ensures the model provider is ready (e.g., starts Ollama if needed)
 	// Returns an error if the provider cannot be made ready

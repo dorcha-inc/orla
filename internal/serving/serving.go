@@ -18,9 +18,9 @@ type ServingLayer interface {
 	// StartWorkflow initializes a workflow execution
 	StartWorkflow(ctx context.Context, workflowName string) (*WorkflowExecution, error)
 
-	// ExecuteTask executes a single workflow task with the given prompt
-	// Returns the response from the task execution
-	ExecuteTask(ctx context.Context, execution *WorkflowExecution, taskIndex int, prompt string, maxTokens *int) (*model.Response, error)
+	// ExecuteTask executes a single workflow task with the given prompt and options
+	// Returns the response from the task execution (includes metrics when options.Stream is true)
+	ExecuteTask(ctx context.Context, execution *WorkflowExecution, taskIndex int, prompt string, options ExecuteTaskOptions) (*model.Response, error)
 
 	// GetSharedContext returns shared context for a given LLM server
 	GetSharedContext(serverName string) *SharedContext

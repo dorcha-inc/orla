@@ -183,8 +183,9 @@ func TestClient_ExecuteTask_Success(t *testing.T) {
 		assert.Equal(t, "exec-123", req.ExecutionID)
 		assert.Equal(t, 0, req.TaskIndex)
 		assert.Equal(t, "test prompt", req.Prompt)
-		assert.NotNil(t, req.MaxTokens)
-		assert.Equal(t, 100, *req.MaxTokens)
+		assert.NotNil(t, req.Options)
+		assert.NotNil(t, req.Options.MaxTokens)
+		assert.Equal(t, 100, *req.Options.MaxTokens)
 
 		response := ExecuteTaskResponse{
 			Success: true,
@@ -200,7 +201,7 @@ func TestClient_ExecuteTask_Success(t *testing.T) {
 
 	client := NewClient(server.URL)
 	ctx := context.Background()
-	taskResp, err := client.ExecuteTask(ctx, "exec-123", 0, "test prompt", 100)
+	taskResp, err := client.ExecuteTask(ctx, "exec-123", 0, "test prompt", &ExecuteTaskOptions{MaxTokens: 100})
 	require.NoError(t, err)
 	assert.NotNil(t, taskResp)
 	assert.Equal(t, "test response", taskResp.Content)
@@ -211,8 +212,9 @@ func TestClient_ExecuteTask_WithMaxTokens(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req ExecuteTaskRequest
 		_ = decodeJSON(r, &req) //nolint:errcheck
-		assert.NotNil(t, req.MaxTokens)
-		assert.Equal(t, 50, *req.MaxTokens)
+		assert.NotNil(t, req.Options)
+		assert.NotNil(t, req.Options.MaxTokens)
+		assert.Equal(t, 50, *req.Options.MaxTokens)
 
 		response := ExecuteTaskResponse{
 			Success: true,
@@ -227,7 +229,7 @@ func TestClient_ExecuteTask_WithMaxTokens(t *testing.T) {
 
 	client := NewClient(server.URL)
 	ctx := context.Background()
-	taskResp, err := client.ExecuteTask(ctx, "exec-123", 0, "test prompt", 50)
+	taskResp, err := client.ExecuteTask(ctx, "exec-123", 0, "test prompt", &ExecuteTaskOptions{MaxTokens: 50})
 	require.NoError(t, err)
 	assert.NotNil(t, taskResp)
 }
@@ -235,8 +237,8 @@ func TestClient_ExecuteTask_WithMaxTokens(t *testing.T) {
 func TestClient_ExecuteTask_WithoutMaxTokens(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req ExecuteTaskRequest
-		_ = decodeJSON(r, &req)      //nolint:errcheck
-		assert.Nil(t, req.MaxTokens) // Should be nil when maxTokens <= 0
+		_ = decodeJSON(r, &req) //nolint:errcheck
+		assert.True(t, req.Options == nil || req.Options.MaxTokens == nil)
 
 		response := ExecuteTaskResponse{
 			Success: true,
@@ -251,7 +253,7 @@ func TestClient_ExecuteTask_WithoutMaxTokens(t *testing.T) {
 
 	client := NewClient(server.URL)
 	ctx := context.Background()
-	taskResp, err := client.ExecuteTask(ctx, "exec-123", 0, "test prompt", 0)
+	taskResp, err := client.ExecuteTask(ctx, "exec-123", 0, "test prompt", nil)
 	require.NoError(t, err)
 	assert.NotNil(t, taskResp)
 }
@@ -269,7 +271,7 @@ func TestClient_ExecuteTask_ErrorResponse(t *testing.T) {
 
 	client := NewClient(server.URL)
 	ctx := context.Background()
-	_, err := client.ExecuteTask(ctx, "exec-123", 0, "test prompt", 100)
+	_, err := client.ExecuteTask(ctx, "exec-123", 0, "test prompt", &ExecuteTaskOptions{MaxTokens: 100})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "execution failed")
 }

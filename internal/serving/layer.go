@@ -4,6 +4,8 @@ package serving
 import (
 	"context"
 	"fmt"
+	"math"
+	"time"
 
 	"github.com/dorcha-inc/orla/internal/config"
 	"github.com/dorcha-inc/orla/internal/model"
@@ -24,6 +26,14 @@ type Layer struct {
 	workflowExecutor *WorkflowExecutor
 	// agentProfiles maps profile names to their configurations
 	agentProfiles map[string]*config.AgentProfile
+}
+
+// ExecuteTaskOptions are the additional options for executing a task
+type ExecuteTaskOptions struct {
+	// MaxTokens is the maximum number of tokens to generate.
+	MaxTokens int
+	// Stream is whether to stream the response.
+	Stream bool
 }
 
 // GetAgentProfile returns an agent profile by name
@@ -113,7 +123,7 @@ func (l *Layer) StartWorkflow(ctx context.Context, workflowName string) (*Workfl
 
 // ExecuteTask executes a single workflow task with the given prompt
 // It handles shared context, cache policies, and returns the response
-func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, taskIndex int, prompt string, maxTokens *int) (*model.Response, error) {
+func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, taskIndex int, prompt string, options ExecuteTaskOptions) (*model.Response, error) {
 	if taskIndex < 0 || taskIndex >= len(execution.Tasks) {
 		return nil, fmt.Errorf("invalid task index: %d (workflow has %d tasks)", taskIndex, len(execution.Tasks))
 	}
@@ -183,11 +193,46 @@ func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, t
 	// Update execution state to running
 	execution.State = WorkflowExecutionStateRunning
 
+	var response *model.Response
+	var streamCh <-chan model.StreamEvent
+	var chatErr error
 	// Execute inference (non-streaming for workflow tasks)
-	response, _, err := provider.Chat(ctx, messages, nil, false, maxTokens)
-	if err != nil {
-		execution.State = WorkflowExecutionStateFailed
-		return nil, fmt.Errorf("inference failed for task %d: %w", taskIndex, err)
+	if options.Stream {
+		response, streamCh, chatErr = provider.Chat(ctx, messages, nil, true, 0)
+	} else {
+		response, _, chatErr = provider.Chat(ctx, messages, nil, false, options.MaxTokens)
+	}
+
+	if chatErr != nil {
+		return nil, fmt.Errorf("inference failed for task %d: %w", taskIndex, chatErr)
+	}
+
+	if options.Stream && streamCh != nil {
+		response.Metrics = &model.ResponseMetrics{
+			TTFTMs: -1,
+			TPOTMs: -1,
+		}
+
+		responseStart := time.Now()
+		contentReceived := false
+
+		contentChunkCount := 0
+		for ev := range streamCh {
+			if contentEv, ok := ev.(*model.ContentEvent); ok && contentEv.Content != "" {
+				if !contentReceived {
+					response.Metrics.TTFTMs = time.Since(responseStart).Milliseconds()
+				}
+				contentReceived = true
+				contentChunkCount++
+			}
+		}
+
+		if contentChunkCount > 0 {
+			decodeDurationMs := time.Since(responseStart).Milliseconds()
+			// do floating point division and round to nearest integer
+			response.Metrics.TPOTMs = int64(math.Round(float64(decodeDurationMs) / float64(contentChunkCount)))
+		}
+
 	}
 
 	// Update accumulated context with user message and response
@@ -215,10 +260,10 @@ func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, t
 	// Evaluate cache policy
 	isFinalTask := taskIndex == len(execution.Tasks)-1
 
-	// Use maxTokens if available
+	// Use options.MaxTokens if available
 	var turnSize int
-	if maxTokens != nil && *maxTokens > 0 {
-		turnSize = *maxTokens
+	if options.MaxTokens > 0 {
+		turnSize = options.MaxTokens
 	} else {
 		// Fallback to character-based estimate if maxTokens not available
 		// Rough approximation: ~4 characters per token
