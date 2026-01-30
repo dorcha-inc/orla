@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/dorcha-inc/orla/internal/config"
@@ -215,24 +216,27 @@ func (l *Layer) ExecuteTask(ctx context.Context, execution *WorkflowExecution, t
 
 		responseStart := time.Now()
 		contentReceived := false
-
+		var streamedContent strings.Builder
 		contentChunkCount := 0
 		for ev := range streamCh {
-			if contentEv, ok := ev.(*model.ContentEvent); ok && contentEv.Content != "" {
-				if !contentReceived {
-					response.Metrics.TTFTMs = time.Since(responseStart).Milliseconds()
+			if contentEv, ok := ev.(*model.ContentEvent); ok {
+				if contentEv.Content != "" {
+					if !contentReceived {
+						response.Metrics.TTFTMs = time.Since(responseStart).Milliseconds()
+					}
+					contentReceived = true
+					contentChunkCount++
+					streamedContent.WriteString(contentEv.Content)
 				}
-				contentReceived = true
-				contentChunkCount++
 			}
 		}
+		response.Content = streamedContent.String()
 
 		if contentChunkCount > 0 {
 			decodeDurationMs := time.Since(responseStart).Milliseconds()
 			// do floating point division and round to nearest integer
 			response.Metrics.TPOTMs = int64(math.Round(float64(decodeDurationMs) / float64(contentChunkCount)))
 		}
-
 	}
 
 	// Update accumulated context with user message and response
