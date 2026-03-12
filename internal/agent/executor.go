@@ -51,6 +51,15 @@ func (e *Executor) Execute(ctx context.Context, prompt string, messages []model.
 
 	conversation := make([]model.Message, len(messages))
 	copy(conversation, messages)
+
+	// Apply system prompt from config if no messages exist yet or the first isn't a system prompt
+	if e.cfg != nil && e.cfg.SystemPrompt != "" && (len(conversation) == 0 || conversation[0].Role != model.MessageRoleSystem) {
+		systemMsg := model.Message{
+			Role:    model.MessageRoleSystem,
+			Content: e.cfg.SystemPrompt,
+		}
+		conversation = append([]model.Message{systemMsg}, conversation...)
+	}
 	if prompt != "" {
 		conversation = append(conversation, model.Message{
 			Role:    model.MessageRoleUser,
@@ -242,7 +251,7 @@ func createContextWithSignals() (context.Context, context.CancelFunc) {
 
 // ExecuteAgentPrompt is the main entry point for one-shot agent execution.
 // configPath is the path to the config file; if empty, defaults only (no file read).
-func ExecuteAgentPrompt(prompt string, modelOverride string, configPath string) error {
+func ExecuteAgentPrompt(prompt string, modelOverride string, configPath string, systemPromptOverride string) error {
 	if prompt == "" {
 		return fmt.Errorf("prompt is required")
 	}
@@ -266,6 +275,9 @@ func ExecuteAgentPrompt(prompt string, modelOverride string, configPath string) 
 
 	if modelOverride != "" {
 		cfg.Model = modelOverride
+	}
+	if systemPromptOverride != "" {
+		cfg.SystemPrompt = systemPromptOverride
 	}
 
 	executor, executorErr := NewExecutor(cfg)

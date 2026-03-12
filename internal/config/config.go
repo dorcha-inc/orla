@@ -79,6 +79,7 @@ type OrlaConfig struct {
 	OutputFormat OrlaOutputFormat `yaml:"output_format,omitempty" mapstructure:"output_format"` // output format: "auto", "rich", or "plain"
 	ShowThinking bool             `yaml:"show_thinking,omitempty" mapstructure:"show_thinking"` // show thinking trace output (for thinking-capable models)
 	ShowProgress bool             `yaml:"show_progress,omitempty" mapstructure:"show_progress"` // show progress messages even when UI is disabled (e.g., when stdin is piped)
+	SystemPrompt string           `yaml:"system_prompt,omitempty" mapstructure:"system_prompt"` // custom system prompt
 }
 
 // setupViper sets defaults and, if configPath is non-empty, reads that file only.
