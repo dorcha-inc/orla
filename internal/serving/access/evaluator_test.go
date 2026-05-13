@@ -145,48 +145,6 @@ func TestEvaluator_ManagedScopedPerResourceType(t *testing.T) {
 	assert.True(t, d.Allowed)
 }
 
-func TestEvaluator_SkillVisibility(t *testing.T) {
-	s := NewStore()
-	require.NoError(t, s.Add(&Policy{
-		Name: "hr-skill-access", Subjects: []string{"group:hr"}, Resources: []string{"skill:query-hr-*"}, Action: ActionAllow,
-	}))
-	e := NewEvaluator(s)
-
-	// HR group can see the skill.
-	d := e.CheckAccess(map[string]string{"group": "hr"}, ResourceTypeSkill, "query-hr-db")
-	assert.True(t, d.Allowed)
-
-	// Engineering is managed for skills (the policy subject "group:hr" doesn't match,
-	// but engineering has no skill policies at all, so unmanaged → allowed).
-	d = e.CheckAccess(map[string]string{"group": "engineering"}, ResourceTypeSkill, "query-hr-db")
-	assert.True(t, d.Allowed)
-}
-
-func TestEvaluator_SkillScopedBackendPolicy(t *testing.T) {
-	s := NewStore()
-	// Skill-scoped policy: summarize skills cannot use backend:strong.
-	require.NoError(t, s.Add(&Policy{
-		Name: "skill-no-strong", Subjects: []string{"skill:summarize-*"}, Resources: []string{"backend:strong"}, Action: ActionDeny,
-	}))
-	// Everyone can use all backends.
-	require.NoError(t, s.Add(&Policy{
-		Name: "allow-all-backends", Subjects: []string{"skill:*"}, Resources: []string{"backend:*"}, Action: ActionAllow,
-	}))
-	e := NewEvaluator(s)
-
-	// With skill tag injected, summarize-tickets is denied for strong.
-	d := e.CheckAccess(map[string]string{"skill": "summarize-tickets"}, ResourceTypeBackend, "strong")
-	assert.False(t, d.Allowed)
-
-	// But allowed for cheap.
-	d = e.CheckAccess(map[string]string{"skill": "summarize-tickets"}, ResourceTypeBackend, "cheap")
-	assert.True(t, d.Allowed)
-
-	// A different skill is allowed for strong.
-	d = e.CheckAccess(map[string]string{"skill": "analyze-data"}, ResourceTypeBackend, "strong")
-	assert.True(t, d.Allowed)
-}
-
 func TestEvaluator_NoTagsAllowed(t *testing.T) {
 	s := NewStore()
 	require.NoError(t, s.Add(&Policy{

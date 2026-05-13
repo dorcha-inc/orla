@@ -117,10 +117,6 @@ func (s *AgenticServer) registerRoutes(rateLimitRPS int) {
 	s.mux.HandleFunc("GET /api/v1/policies", s.handleListPolicies)
 	s.mux.HandleFunc("DELETE /api/v1/policies/{name}", s.handleRemovePolicy)
 
-	s.mux.HandleFunc("POST /api/v1/skills", s.handleRegisterSkill)
-	s.mux.HandleFunc("GET /api/v1/skills", s.handleListSkills)
-	s.mux.HandleFunc("DELETE /api/v1/skills/{name}", s.handleRemoveSkill)
-
 	s.mux.HandleFunc("POST /api/v1/access/check", s.handleAccessCheck)
 }
 
@@ -169,7 +165,6 @@ type ExecuteRequest struct {
 	CachePolicy string            `json:"cache_policy,omitempty"`
 	Tags        map[string]string `json:"tags,omitempty"`
 	DataLabels  []string          `json:"data_labels,omitempty"`
-	SkillID     string            `json:"skill_id,omitempty"`
 }
 
 // ExecuteResponse is the response body for the execute endpoint.
@@ -233,25 +228,13 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Access control enforcement (skill + backend + tool + data).
+	// Access control enforcement (backend + tool + data).
 	if len(req.Tags) > 0 {
 		toolNames := make([]string, len(req.Tools))
 		for i, t := range req.Tools {
 			toolNames[i] = t.Name
 		}
-		d, updatedTags := s.layer.ValidateAccess(req.Tags, req.Backend, toolNames, effectiveLabels, req.SkillID)
-		if !d.Allowed {
-			http.Error(w, d.Reason, http.StatusForbidden)
-			return
-		}
-		req.Tags = updatedTags
-	} else if req.SkillID != "" {
-		// Skill specified without tags — still need manifest bounds check.
-		toolNames := make([]string, len(req.Tools))
-		for i, t := range req.Tools {
-			toolNames[i] = t.Name
-		}
-		d, _ := s.layer.ValidateAccess(nil, req.Backend, toolNames, effectiveLabels, req.SkillID)
+		d := s.layer.ValidateAccess(req.Tags, req.Backend, toolNames, effectiveLabels)
 		if !d.Allowed {
 			http.Error(w, d.Reason, http.StatusForbidden)
 			return
@@ -695,74 +678,6 @@ func (s *AgenticServer) handleRegisterWorkflow(w http.ResponseWriter, r *http.Re
 	core.WriteJSONResponse(w, map[string]bool{"success": true})
 }
 
-// ---- Skill registry endpoints ----
-
-// RegisterSkillRequest is the request body for registering a skill manifest.
-type RegisterSkillRequest struct {
-	Name             string   `json:"name"`
-	RequiresBackends []string `json:"requires_backends"`
-	RequiresTools    []string `json:"requires_tools,omitempty"`
-	RequiresLabels   []string `json:"requires_labels,omitempty"`
-}
-
-func (s *AgenticServer) handleRegisterSkill(w http.ResponseWriter, r *http.Request) {
-	body := http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
-	var req RegisterSkillRequest
-	if err := json.NewDecoder(body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	m := &core.SkillManifest{
-		Name:             req.Name,
-		RequiresBackends: req.RequiresBackends,
-		RequiresTools:    req.RequiresTools,
-		RequiresLabels:   req.RequiresLabels,
-	}
-	if err := s.layer.SkillRegistry.Register(m); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	zap.L().Info("Registered skill",
-		zap.String("name", m.Name),
-		zap.Strings("requires_backends", m.RequiresBackends))
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	core.WriteJSONResponse(w, map[string]bool{"success": true})
-}
-
-// ListSkillsResponse is the response body for listing skills.
-type ListSkillsResponse struct {
-	Skills []*core.SkillManifest `json:"skills"`
-}
-
-func (s *AgenticServer) handleListSkills(w http.ResponseWriter, r *http.Request) {
-	skills := s.layer.SkillRegistry.List()
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	core.WriteJSONResponse(w, ListSkillsResponse{Skills: skills})
-}
-
-func (s *AgenticServer) handleRemoveSkill(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	if name == "" {
-		http.Error(w, "skill name is required in URL path", http.StatusBadRequest)
-		return
-	}
-	if err := s.layer.SkillRegistry.Remove(name); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	zap.L().Info("Removed skill", zap.String("name", name))
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	core.WriteJSONResponse(w, map[string]bool{"success": true})
-}
-
 // AccessCheckRequest is the request body for the access validation endpoint.
 // Agents that manage their own inference can use this to check policies without executing.
 type AccessCheckRequest struct {
@@ -770,7 +685,6 @@ type AccessCheckRequest struct {
 	Backend    string            `json:"backend,omitempty"`
 	Tools      []string          `json:"tools,omitempty"`
 	DataLabels []string          `json:"data_labels,omitempty"`
-	SkillID    string            `json:"skill_id,omitempty"`
 }
 
 // AccessCheckResponse is the response body for the access validation endpoint.
@@ -791,7 +705,7 @@ func (s *AgenticServer) handleAccessCheck(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	d, _ := s.layer.ValidateAccess(req.Tags, req.Backend, req.Tools, req.DataLabels, req.SkillID)
+	d := s.layer.ValidateAccess(req.Tags, req.Backend, req.Tools, req.DataLabels)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

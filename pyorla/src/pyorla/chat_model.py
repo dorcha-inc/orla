@@ -195,7 +195,6 @@ def _clone_stage(src: Stage) -> Stage:
     s.tags = dict(src.tags)
     s.data_labels = list(src.data_labels)
     s.declassifies = list(src.declassifies)
-    s.skill_id = src.skill_id
     return s
 
 

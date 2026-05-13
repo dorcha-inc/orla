@@ -19,7 +19,6 @@ from pyorla.types import (
     InferenceResponse,
     InferenceResponseMetrics,
     LLMBackend,
-    SkillManifest,
     StreamEvent,
 )
 
@@ -211,7 +210,6 @@ class OrlaClient:
         backend: str = "",
         tools: list[str] | None = None,
         data_labels: list[str] | None = None,
-        skill_id: str = "",
     ) -> tuple[bool, str]:
         """Check access control policies without executing inference.
 
@@ -225,8 +223,6 @@ class OrlaClient:
             payload["tools"] = tools
         if data_labels:
             payload["data_labels"] = data_labels
-        if skill_id:
-            payload["skill_id"] = skill_id
         resp = self._sync.post("/api/v1/access/check", json=payload)
         _raise_http(resp)
         data = resp.json()
@@ -239,7 +235,6 @@ class OrlaClient:
         backend: str = "",
         tools: list[str] | None = None,
         data_labels: list[str] | None = None,
-        skill_id: str = "",
     ) -> tuple[bool, str]:
         payload: dict[str, Any] = {"tags": tags}
         if backend:
@@ -248,47 +243,10 @@ class OrlaClient:
             payload["tools"] = tools
         if data_labels:
             payload["data_labels"] = data_labels
-        if skill_id:
-            payload["skill_id"] = skill_id
         resp = await self._async.post("/api/v1/access/check", json=payload)
         await _araise_http(resp)
         data = resp.json()
         return data.get("allowed", False), data.get("reason", "")
-
-    # ------------------------------------------------------------------
-    # Skill registry
-    # ------------------------------------------------------------------
-
-    def register_skill(self, manifest: SkillManifest) -> None:
-        """Register a skill manifest with the daemon."""
-        payload = _manifest_to_dict(manifest)
-        resp = self._sync.post("/api/v1/skills", json=payload)
-        _raise_http(resp)
-
-    async def aregister_skill(self, manifest: SkillManifest) -> None:
-        payload = _manifest_to_dict(manifest)
-        resp = await self._async.post("/api/v1/skills", json=payload)
-        await _araise_http(resp)
-
-    def list_skills(self) -> list[SkillManifest]:
-        """List all registered skill manifests."""
-        resp = self._sync.get("/api/v1/skills")
-        _raise_http(resp)
-        return _parse_skills(resp.json())
-
-    async def alist_skills(self) -> list[SkillManifest]:
-        resp = await self._async.get("/api/v1/skills")
-        await _araise_http(resp)
-        return _parse_skills(resp.json())
-
-    def remove_skill(self, name: str) -> None:
-        """Remove a skill by name."""
-        resp = self._sync.delete(f"/api/v1/skills/{name}")
-        _raise_http(resp)
-
-    async def aremove_skill(self, name: str) -> None:
-        resp = await self._async.delete(f"/api/v1/skills/{name}")
-        await _araise_http(resp)
 
     # ------------------------------------------------------------------
     # Workflow DAG registration (for data label propagation)
@@ -505,27 +463,6 @@ async def _araise_http(resp: httpx.Response) -> None:
             body=text or None,
             request_id=rid if isinstance(rid, str) else None,
         ) from e
-
-
-def _manifest_to_dict(m: SkillManifest) -> dict[str, Any]:
-    d: dict[str, Any] = {"name": m.name, "requires_backends": m.requires_backends}
-    if m.requires_tools:
-        d["requires_tools"] = m.requires_tools
-    if m.requires_labels:
-        d["requires_labels"] = m.requires_labels
-    return d
-
-
-def _parse_skills(data: dict) -> list[SkillManifest]:
-    return [
-        SkillManifest(
-            name=s["name"],
-            requires_backends=s.get("requires_backends", []),
-            requires_tools=s.get("requires_tools", []),
-            requires_labels=s.get("requires_labels", []),
-        )
-        for s in data.get("skills", [])
-    ]
 
 
 def _parse_policies(data: dict) -> list[AccessPolicy]:

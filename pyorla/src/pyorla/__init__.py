@@ -60,8 +60,6 @@ from pyorla.types import (
     SCHEDULING_POLICY_PRIORITY,
     AccessPolicy,
     CacheHints,
-    RESOURCE_TYPE_SKILL,
-    SkillManifest,
     CostModel,
     ExecuteRequest,
     InferenceResponse,
@@ -122,9 +120,6 @@ __all__ = [
     "AccessPolicy",
     "ACCESS_ACTION_ALLOW",
     "ACCESS_ACTION_DENY",
-    # Skills
-    "SkillManifest",
-    "RESOURCE_TYPE_SKILL",
     # Types
     "CostModel",
     "LLMBackend",

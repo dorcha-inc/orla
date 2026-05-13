@@ -96,7 +96,6 @@ class Stage:
         self.tags: dict[str, str] = {}
         self.data_labels: list[str] = []
         self.declassifies: list[str] = []
-        self.skill_id: str = ""
 
     # ---- Setters ----
 
@@ -166,9 +165,6 @@ class Stage:
     def set_declassifies(self, labels: list[str]) -> None:
         self.declassifies = labels
 
-    def set_skill_id(self, skill_id: str) -> None:
-        self.skill_id = skill_id
-
     # ---- Tools ----
 
     def add_tool(self, tool: Tool) -> None:
@@ -206,7 +202,6 @@ class Stage:
         req.accuracy_policy = self.accuracy_policy
         req.tags = self.tags
         req.data_labels = self.data_labels
-        req.skill_id = self.skill_id
 
         if self.tools:
             req.tools = [t.to_mcp() for t in self.tools.values()]

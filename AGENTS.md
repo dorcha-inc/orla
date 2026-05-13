@@ -223,9 +223,6 @@ The `orla serve` daemon exposes an HTTP API for inference and backend management
 | `/api/v1/policies` | POST | Add an access control policy |
 | `/api/v1/policies` | GET | List all access control policies |
 | `/api/v1/policies/{name}` | DELETE | Remove an access control policy |
-| `/api/v1/skills` | POST | Register a skill manifest |
-| `/api/v1/skills` | GET | List all registered skills |
-| `/api/v1/skills/{name}` | DELETE | Remove a skill |
 | `/api/v1/access/check` | POST | Validate access control policies without executing |
 | `/api/v1/workflow/complete` | POST | Notify workflow completion for memory tracking |
 | `/metrics` | GET | Prometheus metrics |
