@@ -7,6 +7,7 @@
   <a href="https://www.bestpractices.dev/projects/6573"><img src="https://www.bestpractices.dev/projects/6573/badge" alt="OpenSSF Best Practices"></a>
   <a href="https://github.com/harvard-cns/orla/actions/workflows/build.yml"><img src="https://github.com/harvard-cns/orla/actions/workflows/build.yml/badge.svg" alt="Build"></a>
   <a href="https://github.com/harvard-cns/orla/actions/workflows/pyorla-ci.yml"><img src="https://github.com/harvard-cns/orla/actions/workflows/pyorla-ci.yml/badge.svg" alt="pyorla CI"></a>
+  <a href="https://codecov.io/gh/harvard-cns/orla"><img src="https://codecov.io/gh/harvard-cns/orla/branch/main/graph/badge.svg" alt="Codecov"></a>
   <a href="https://pypi.org/project/pyorla/"><img src="https://img.shields.io/pypi/v/pyorla" alt="pyorla on PyPI"></a>
 </p>
 

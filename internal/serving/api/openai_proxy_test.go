@@ -365,6 +365,252 @@ func TestConvertMessagesToInternal_UnsupportedRole(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported role")
 }
 
+func TestChatCompletions_AccuracyRouting(t *testing.T) {
+	srv := model.NewMockLLMServer().ReturnContent("routed").Start()
+	t.Cleanup(srv.Close)
+	t.Setenv(testAPIKeyEnvVar2, "k")
+
+	layer := serving.NewAgenticLayer()
+	layer.AddLLMBackend("expensive", &core.LLMBackend{
+		Type:         core.LLMInferenceAPITypeOpenAI,
+		Endpoint:     srv.URL() + "/v1",
+		Quality:      core.Ptr(0.9),
+		CostModel:    &core.CostModel{InputCostPerMToken: 5.0, OutputCostPerMToken: 20.0},
+		APIKeyEnvVar: testAPIKeyEnvVar2,
+	}, "openai:big")
+	layer.AddLLMBackend("cheap", &core.LLMBackend{
+		Type:         core.LLMInferenceAPITypeOpenAI,
+		Endpoint:     srv.URL() + "/v1",
+		Quality:      core.Ptr(0.5),
+		CostModel:    &core.CostModel{InputCostPerMToken: 0.1, OutputCostPerMToken: 0.5},
+		APIKeyEnvVar: testAPIKeyEnvVar2,
+	}, "openai:small")
+	server := NewAgenticServer(layer, ":0", nil)
+
+	accuracy := 0.4
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "expensive",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+			Metadata: &chatRequestMeta{Orla: &orlaMetaInBody{
+				Stage:    "planning",
+				Accuracy: &accuracy,
+			}},
+		},
+		nil,
+	)
+
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+	var result chatCompletion
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &result))
+	assert.Equal(t, "routed", result.Choices[0].Message.Content)
+	assert.Equal(t, "cheap", result.Model, "expected accuracy routing to pick the cheapest qualifying backend")
+}
+
+func TestChatCompletions_AccuracyStrict_NoneQualify(t *testing.T) {
+	layer := serving.NewAgenticLayer()
+	layer.AddLLMBackend("only", &core.LLMBackend{
+		Type:         core.LLMInferenceAPITypeOpenAI,
+		Endpoint:     "http://x",
+		Quality:      core.Ptr(0.3),
+		CostModel:    &core.CostModel{InputCostPerMToken: 0.1, OutputCostPerMToken: 0.5},
+		APIKeyEnvVar: testAPIKeyEnvVar,
+	}, "openai:m")
+	t.Setenv(testAPIKeyEnvVar, "k")
+	server := NewAgenticServer(layer, ":0", nil)
+
+	accuracy := 0.9
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "only",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+			Metadata: &chatRequestMeta{Orla: &orlaMetaInBody{
+				Stage:          "planning",
+				Accuracy:       &accuracy,
+				AccuracyPolicy: model.AccuracyPolicyStrict,
+			}},
+		},
+		nil,
+	)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code, resp.Body.String())
+}
+
+func TestChatCompletions_AccuracyOutOfRange(t *testing.T) {
+	server, _ := newProxyTestServer(t)
+
+	accuracy := 1.5
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "cheap",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+			Metadata: &chatRequestMeta{Orla: &orlaMetaInBody{
+				Stage:    "planning",
+				Accuracy: &accuracy,
+			}},
+		},
+		nil,
+	)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Contains(t, resp.Body.String(), "accuracy must be in [0.0, 1.0]")
+}
+
+func TestChatCompletions_AccuracyPolicyInvalid(t *testing.T) {
+	server, _ := newProxyTestServer(t)
+
+	accuracy := 0.5
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "cheap",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+			Metadata: &chatRequestMeta{Orla: &orlaMetaInBody{
+				Stage:          "planning",
+				Accuracy:       &accuracy,
+				AccuracyPolicy: "bogus",
+			}},
+		},
+		nil,
+	)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Contains(t, resp.Body.String(), "accuracy_policy must be")
+}
+
+func TestChatCompletions_WorkflowLabelPropagation(t *testing.T) {
+	srv := model.NewMockLLMServer().ReturnContent("ok").Start()
+	t.Cleanup(srv.Close)
+	t.Setenv(testAPIKeyEnvVar, "k")
+
+	layer := serving.NewAgenticLayer()
+	layer.AddLLMBackend("ext", &core.LLMBackend{
+		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
+	}, "openai:m")
+
+	// Register a workflow: stage-a → stage-b.
+	layer.WorkflowManager.Register("wf-1")
+	layer.WorkflowManager.RegisterEdges("wf-1", [][2]string{{"stage-a", "stage-b"}})
+
+	// Deny "pii" data on backend "ext".
+	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
+		Name: "no-pii-ext", Subjects: []string{"backend:ext"}, Resources: []string{"data:pii"}, Action: access.ActionDeny,
+	}))
+	server := NewAgenticServer(layer, ":0", nil)
+
+	// Stage A explicitly carries pii; the proxy should record this on the workflow.
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "ext",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+		},
+		map[string]string{
+			headerOrlaStage:       "stage-a",
+			headerOrlaWorkflowRun: "wf-1",
+			headerOrlaDataLabels:  "pii",
+		},
+	)
+	require.Equal(t, http.StatusForbidden, resp.Code, "stage-a should be denied directly")
+
+	// Stage B inherits pii via the registered edge — also denied even without explicit labels.
+	resp = doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "ext",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+		},
+		map[string]string{
+			headerOrlaStage:       "stage-b",
+			headerOrlaWorkflowRun: "wf-1",
+		},
+	)
+	require.Equal(t, http.StatusForbidden, resp.Code, "stage-b should be denied via propagated label")
+	assert.Contains(t, resp.Body.String(), "data access denied")
+}
+
+func TestChatCompletions_WorkflowNotRegistered(t *testing.T) {
+	server, _ := newProxyTestServer(t)
+
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "cheap",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+		},
+		map[string]string{
+			headerOrlaStage:       "planning",
+			headerOrlaWorkflowRun: "wf-nonexistent",
+		},
+	)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Contains(t, resp.Body.String(), "wf-nonexistent")
+}
+
+func TestChatCompletions_CachePolicyPassthrough(t *testing.T) {
+	server, _ := newProxyTestServer(t)
+
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "cheap",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+			Metadata: &chatRequestMeta{Orla: &orlaMetaInBody{
+				Stage:       "planning",
+				CachePolicy: "flush",
+			}},
+		},
+		nil,
+	)
+
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+}
+
+func TestChatCompletions_SchedulingPolicyInvalid(t *testing.T) {
+	server, _ := newProxyTestServer(t)
+
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "cheap",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+			Metadata: &chatRequestMeta{Orla: &orlaMetaInBody{
+				Stage:            "planning",
+				SchedulingPolicy: "round-robin",
+			}},
+		},
+		nil,
+	)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Contains(t, resp.Body.String(), "scheduling policy")
+}
+
+func TestApplyOrlaInferenceKnobs_AllFields(t *testing.T) {
+	opts := model.InferenceOptions{}
+	chatOpts := serving.ChatOptions{}
+	priority := 5
+	requestPriority := 3
+	accuracy := 0.7
+
+	applyOrlaInferenceKnobs(&opts, &chatOpts, &chatRequestMeta{Orla: &orlaMetaInBody{
+		Accuracy:                &accuracy,
+		AccuracyPolicy:          model.AccuracyPolicyPrefer,
+		CachePolicy:             "preserve",
+		SchedulingPolicy:        string(model.SchedulingPolicyPriority),
+		RequestSchedulingPolicy: string(model.RequestSchedulingPolicyPriority),
+		SchedulingHints:         &orlaSchedulingHints{Priority: &priority, RequestPriority: &requestPriority},
+		ReasoningEffort:         "high",
+		ChatTemplateKwargs:      map[string]any{"foo": "bar"},
+	}})
+
+	assert.Equal(t, 0.7, *opts.Accuracy)
+	assert.Equal(t, model.AccuracyPolicyPrefer, opts.AccuracyPolicy)
+	assert.Equal(t, "preserve", chatOpts.CachePolicy)
+	assert.Equal(t, model.SchedulingPolicyPriority, opts.SchedulingPolicy)
+	assert.Equal(t, model.RequestSchedulingPolicyPriority, opts.RequestSchedulingPolicy)
+	require.NotNil(t, opts.SchedulingHints)
+	assert.Equal(t, 5, *opts.SchedulingHints.Priority)
+	assert.Equal(t, 3, *opts.SchedulingHints.RequestPriority)
+	assert.Equal(t, "high", opts.ReasoningEffort)
+	assert.Equal(t, "bar", opts.ChatTemplateKwargs["foo"])
+}
+
 // parseSSEChunks parses an OpenAI-style data-only SSE stream into typed chunks
 // and reports whether the stream terminated with "[DONE]".
 func parseSSEChunks(t *testing.T, raw string) ([]chatCompletionChunk, bool) {

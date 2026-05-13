@@ -46,10 +46,26 @@ type chatRequestMeta struct {
 }
 
 type orlaMetaInBody struct {
+	// Identity / routing
 	Stage       string            `json:"stage,omitempty"`
 	WorkflowRun string            `json:"workflow_run,omitempty"`
 	DataLabels  []string          `json:"data_labels,omitempty"`
 	Tags        map[string]string `json:"tags,omitempty"`
+
+	// Inference knobs
+	Accuracy                *float64             `json:"accuracy,omitempty"`
+	AccuracyPolicy          string               `json:"accuracy_policy,omitempty"`
+	CachePolicy             string               `json:"cache_policy,omitempty"`
+	SchedulingPolicy        string               `json:"scheduling_policy,omitempty"`
+	RequestSchedulingPolicy string               `json:"request_scheduling_policy,omitempty"`
+	SchedulingHints         *orlaSchedulingHints `json:"scheduling_hints,omitempty"`
+	ReasoningEffort         string               `json:"reasoning_effort,omitempty"`
+	ChatTemplateKwargs      map[string]any       `json:"chat_template_kwargs,omitempty"`
+}
+
+type orlaSchedulingHints struct {
+	Priority        *int `json:"priority,omitempty"`
+	RequestPriority *int `json:"request_priority,omitempty"`
 }
 
 type chatMessage struct {
@@ -169,15 +185,6 @@ func (s *AgenticServer) handleChatCompletions(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	toolNames := make([]string, len(tools))
-	for i, t := range tools {
-		toolNames[i] = t.Name
-	}
-	if d := s.layer.ValidateAccess(tags, req.Model, toolNames, dataLabels); !d.Allowed {
-		writeOpenAIError(w, http.StatusForbidden, d.Reason)
-		return
-	}
-
 	opts := model.InferenceOptions{
 		Stream:      req.Stream,
 		MaxTokens:   req.MaxTokens,
@@ -188,20 +195,57 @@ func (s *AgenticServer) handleChatCompletions(w http.ResponseWriter, r *http.Req
 		opts.ResponseFormat = rf
 	}
 	chatOpts := serving.ChatOptions{WorkflowID: workflowRun}
+	applyOrlaInferenceKnobs(&opts, &chatOpts, req.Metadata)
 
-	ctx := r.Context()
-	if req.Stream {
-		s.streamChatCompletion(w, ctx, req.Model, stage, messages, tools, opts, chatOpts)
+	if err := validateInferencePolicies(opts); err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	response, err := s.layer.Execute(ctx, req.Model, stage, messages, tools, opts, chatOpts)
+	backend := req.Model
+	if opts.Accuracy != nil {
+		selected, aerr := s.layer.SelectBackendByAccuracy(*opts.Accuracy, opts.AccuracyPolicy, backend)
+		if aerr != nil {
+			writeOpenAIError(w, http.StatusBadRequest, aerr.Error())
+			return
+		}
+		backend = selected
+	}
+
+	// Effective data labels merge explicit labels with those inherited from
+	// upstream stages in the registered workflow DAG.
+	effectiveLabels := dataLabels
+	if workflowRun != "" {
+		labels, lerr := s.layer.WorkflowManager.EffectiveLabels(workflowRun, stage, dataLabels)
+		if lerr != nil {
+			writeOpenAIError(w, http.StatusBadRequest, lerr.Error())
+			return
+		}
+		effectiveLabels = labels
+	}
+
+	toolNames := make([]string, len(tools))
+	for i, t := range tools {
+		toolNames[i] = t.Name
+	}
+	if d := s.layer.ValidateAccess(tags, backend, toolNames, effectiveLabels); !d.Allowed {
+		writeOpenAIError(w, http.StatusForbidden, d.Reason)
+		return
+	}
+
+	ctx := r.Context()
+	if req.Stream {
+		s.streamChatCompletion(w, ctx, backend, stage, messages, tools, opts, chatOpts)
+		return
+	}
+
+	response, err := s.layer.Execute(ctx, backend, stage, messages, tools, opts, chatOpts)
 	if err != nil {
 		writeOpenAIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	completion := buildChatCompletion(req.Model, response)
+	completion := buildChatCompletion(backend, response)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	core.WriteJSONResponse(w, completion)
@@ -330,6 +374,67 @@ func extractOrlaContext(r *http.Request, req *chatCompletionRequest) (stage, wor
 		tags[tagKeyWorkflowRun] = workflowRun
 	}
 	return stage, workflowRun, dataLabels, tags
+}
+
+// applyOrlaInferenceKnobs copies metadata.orla inference fields into the
+// runtime InferenceOptions and ChatOptions structs.
+func applyOrlaInferenceKnobs(opts *model.InferenceOptions, chatOpts *serving.ChatOptions, meta *chatRequestMeta) {
+	if meta == nil || meta.Orla == nil {
+		return
+	}
+	m := meta.Orla
+	if m.Accuracy != nil {
+		opts.Accuracy = m.Accuracy
+	}
+	if m.AccuracyPolicy != "" {
+		opts.AccuracyPolicy = m.AccuracyPolicy
+	}
+	if m.SchedulingPolicy != "" {
+		opts.SchedulingPolicy = model.SchedulingPolicy(m.SchedulingPolicy)
+	}
+	if m.RequestSchedulingPolicy != "" {
+		opts.RequestSchedulingPolicy = model.RequestSchedulingPolicy(m.RequestSchedulingPolicy)
+	}
+	if m.SchedulingHints != nil {
+		opts.SchedulingHints = &model.SchedulingHints{
+			Priority:        m.SchedulingHints.Priority,
+			RequestPriority: m.SchedulingHints.RequestPriority,
+		}
+	}
+	if m.ReasoningEffort != "" {
+		opts.ReasoningEffort = m.ReasoningEffort
+	}
+	if len(m.ChatTemplateKwargs) > 0 {
+		opts.ChatTemplateKwargs = m.ChatTemplateKwargs
+	}
+	if m.CachePolicy != "" {
+		chatOpts.CachePolicy = m.CachePolicy
+	}
+}
+
+// validateInferencePolicies mirrors the scheduling/accuracy validation done by
+// handleExecute so the proxy returns the same errors on bad input.
+func validateInferencePolicies(opts model.InferenceOptions) error {
+	switch opts.GetSchedulingPolicy() {
+	case model.SchedulingPolicyFCFS, model.SchedulingPolicyPriority:
+	default:
+		return fmt.Errorf("unsupported scheduling policy %q", opts.SchedulingPolicy)
+	}
+	switch opts.RequestSchedulingPolicy {
+	case "", model.RequestSchedulingPolicyFCFS, model.RequestSchedulingPolicyPriority:
+	default:
+		return fmt.Errorf("unsupported request scheduling policy %q", opts.RequestSchedulingPolicy)
+	}
+	if opts.AccuracyPolicy != "" && opts.AccuracyPolicy != model.AccuracyPolicyPrefer && opts.AccuracyPolicy != model.AccuracyPolicyStrict {
+		return fmt.Errorf("accuracy_policy must be %q or %q; got %q", model.AccuracyPolicyPrefer, model.AccuracyPolicyStrict, opts.AccuracyPolicy)
+	}
+	if opts.Accuracy != nil {
+		a := *opts.Accuracy
+		if !(a >= 0 && a <= 1) {
+			return fmt.Errorf("accuracy must be in [0.0, 1.0]; got %v", a)
+		}
+	}
+	return nil
 }
 
 func convertMessagesToInternal(in []chatMessage) ([]model.Message, error) {

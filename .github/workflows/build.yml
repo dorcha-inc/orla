@@ -74,6 +74,14 @@ jobs:
           go test -coverprofile=coverage.out -covermode=atomic ./internal/... ./pkg/...
           go tool cover -func coverage.out
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: go
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
       - name: Get version
         id: version
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))

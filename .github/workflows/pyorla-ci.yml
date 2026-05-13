@@ -35,5 +35,13 @@ jobs:
         run: |
           uv sync --all-groups
           uv run ty check
-          uv run pytest --cov=pyorla --cov-report=term-missing
+          uv run pytest --cov=pyorla --cov-report=term-missing --cov-report=xml
           uv build
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: pyorla/coverage.xml
+          flags: pyorla
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

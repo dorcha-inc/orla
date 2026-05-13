@@ -1,0 +1,38 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+        threshold: 0%
+
+ignore:
+  - "cmd/**"
+  - "examples/**"
+  - "**/mock_*.go"
+  - "internal/testing/**"
+  - "**/*_test.go"
+  - "pyorla/tests/**"
+  - "docs/**"
+  - "deploy/**"
+  - "scripts/**"
+
+flag_management:
+  default_rules:
+    carryforward: true
+  individual_flags:
+    - name: go
+      paths:
+        - internal/
+        - pkg/
+    - name: pyorla
+      paths:
+        - pyorla/src/
+
+comment:
+  layout: "header, diff, flags, components, files"
+  behavior: default
+  require_changes: false
