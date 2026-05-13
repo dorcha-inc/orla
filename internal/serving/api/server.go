@@ -97,15 +97,18 @@ func (s *AgenticServer) registerRoutes(rateLimitRPS int) {
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.Handle("GET /metrics", promhttp.Handler())
 
-	var executeHandler, backendsHandler http.Handler
+	var executeHandler, chatHandler, backendsHandler http.Handler
 	executeHandler = http.HandlerFunc(s.handleExecute)
+	chatHandler = http.HandlerFunc(s.handleChatCompletions)
 	backendsHandler = http.HandlerFunc(s.handleRegisterBackend)
 	if rateLimitRPS > 0 {
 		limiter := rate.NewLimiter(rate.Limit(rateLimitRPS), rateLimitRPS) // burst = RPS for predictable limiting
 		executeHandler = rateLimitMiddleware(limiter, executeHandler)
+		chatHandler = rateLimitMiddleware(limiter, chatHandler)
 		backendsHandler = rateLimitMiddleware(limiter, backendsHandler)
 	}
 	s.mux.Handle("POST /api/v1/execute", executeHandler)
+	s.mux.Handle("POST /v1/chat/completions", chatHandler)
 	s.mux.Handle("POST /api/v1/backends", backendsHandler)
 
 	s.mux.HandleFunc("GET /api/v1/backends", s.handleListBackends)

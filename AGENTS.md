@@ -215,6 +215,7 @@ The `orla serve` daemon exposes an HTTP API for inference and backend management
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/v1/health` | GET | Health check |
+| `/v1/chat/completions` | POST | OpenAI-compatible chat completions proxy (streaming or non-streaming) |
 | `/api/v1/execute` | POST | Run inference (streaming or non-streaming) |
 | `/api/v1/backends` | GET | List registered backends |
 | `/api/v1/backends` | POST | Register an LLM backend |
@@ -228,6 +229,20 @@ The `orla serve` daemon exposes an HTTP API for inference and backend management
 | `/metrics` | GET | Prometheus metrics |
 
 See `docs/openapi.yaml` for the full OpenAPI 3.0 spec.
+
+### OpenAI-compatible proxy
+
+`POST /v1/chat/completions` lets developers use any OpenAI-compatible client (raw OpenAI SDK, LangChain, LangGraph, AutoGen, CrewAI, etc.) by pointing `base_url` at the Orla daemon. Routing is carried out-of-band:
+
+- **`model` field = Orla backend name** (e.g. `"model": "cheap"` selects the registered backend named `cheap`). The backend's `model_id` is what gets sent upstream.
+- **Headers** for Orla metadata (with `metadata.orla` in the request body as a fallback for SDKs that can't easily set headers):
+  - `X-Orla-Stage` (required) — names the stage this call belongs to. Becomes the `stage` tag for access control.
+  - `X-Orla-Workflow-Run` (optional) — workflow run id, becomes the `workflow_run` tag.
+  - `X-Orla-Data-Labels` (optional) — comma-separated sensitivity labels, checked against data access policies.
+  - `X-Orla-Tag-<Key>` (optional, repeatable) — adds an arbitrary tag (`tenant`, `group`, etc.) for policy matching. Header names are lowercased.
+- Requests/responses are standard OpenAI chat completion shapes (including streaming SSE that terminates with `data: [DONE]`). Tool calls flow through `tool_calls` and `role: "tool"` messages — Orla observes tool names for policy enforcement but does not execute tools.
+
+The original `POST /api/v1/execute` endpoint still works and uses Orla's bespoke request shape. New integrations should prefer the proxy.
 
 ## Production Features
 

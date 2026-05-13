@@ -21,6 +21,69 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
 
+  /v1/chat/completions:
+    post:
+      summary: OpenAI-compatible chat completions (proxy)
+      description: |
+        Drop-in OpenAI Chat Completions endpoint. Point any OpenAI-compatible client
+        (OpenAI SDK, LangChain, LangGraph, AutoGen, CrewAI) at this URL to get Orla
+        routing, access control, memory, and cost tracking without code changes.
+
+        The `model` field carries the registered Orla backend name. Orla metadata
+        (stage, workflow_run, data_labels, custom tags) flows through headers, with
+        a `metadata.orla` body field as a fallback. Standard OpenAI request and
+        response shapes apply, including streaming (`stream: true` returns SSE
+        chunks terminated by `data: [DONE]`).
+      operationId: chatCompletions
+      parameters:
+        - name: X-Orla-Stage
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Stage identifier for this call. Becomes the `stage` tag for access control.
+        - name: X-Orla-Workflow-Run
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Workflow run id when this call is part of a registered workflow DAG.
+        - name: X-Orla-Data-Labels
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Comma-separated sensitivity labels (e.g. `pii,secret`).
+        - name: X-Orla-Tag-*
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Repeatable. Any header starting with `X-Orla-Tag-` adds a tag for policy matching (e.g. `X-Orla-Tag-Tenant: engineering`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: Success (non-streaming) or SSE stream (when `stream: true`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatCompletion"
+            text/event-stream:
+              schema:
+                type: string
+                description: OpenAI-style data-only SSE chunks terminated by `data: [DONE]`.
+        "400":
+          description: Invalid request (missing model, missing stage, malformed messages, etc.)
+        "403":
+          description: Access denied by policy
+        "500":
+          description: Upstream provider error
+
   /api/v1/execute:
     post:
       summary: Run inference
@@ -267,6 +330,158 @@ paths:
 
 components:
   schemas:
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          description: Registered Orla backend name (e.g. "cheap", "strong").
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatTool"
+        stream:
+          type: boolean
+        max_tokens:
+          type: integer
+        temperature:
+          type: number
+        top_p:
+          type: number
+        response_format:
+          $ref: "#/components/schemas/ChatResponseFormat"
+        metadata:
+          type: object
+          description: Optional fallback channel for Orla metadata when headers cannot be set.
+          properties:
+            orla:
+              type: object
+              properties:
+                stage:
+                  type: string
+                workflow_run:
+                  type: string
+                data_labels:
+                  type: array
+                  items:
+                    type: string
+                tags:
+                  type: object
+                  additionalProperties:
+                    type: string
+
+    ChatMessage:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system, tool]
+        content:
+          type: string
+        name:
+          type: string
+        tool_call_id:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessageToolCall"
+
+    ChatMessageToolCall:
+      type: object
+      required: [id, function]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [function]
+        function:
+          type: object
+          required: [name, arguments]
+          properties:
+            name:
+              type: string
+            arguments:
+              type: string
+              description: JSON-encoded argument string per OpenAI spec.
+
+    ChatTool:
+      type: object
+      required: [function]
+      properties:
+        type:
+          type: string
+          enum: [function]
+        function:
+          type: object
+          required: [name]
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            parameters:
+              type: object
+              description: JSON Schema for the tool's parameters.
+
+    ChatResponseFormat:
+      type: object
+      properties:
+        type:
+          type: string
+        json_schema:
+          type: object
+          properties:
+            name:
+              type: string
+            strict:
+              type: boolean
+            schema:
+              type: object
+
+    ChatCompletion:
+      type: object
+      required: [id, object, created, model, choices]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [chat.completion]
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            required: [index, message, finish_reason]
+            properties:
+              index:
+                type: integer
+              message:
+                $ref: "#/components/schemas/ChatMessage"
+              finish_reason:
+                type: string
+                enum: [stop, tool_calls]
+        usage:
+          type: object
+          properties:
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+            total_tokens:
+              type: integer
+
     HealthResponse:
       type: object
       required: [status]
