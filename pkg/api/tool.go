@@ -1,5 +1,4 @@
 // Package orla provides a public Go client library for Orla server.
-// Tool support uses the Model Context Protocol (MCP) types from github.com/modelcontextprotocol/go-sdk/mcp.
 
 package orla
 
@@ -7,9 +6,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// toolPayload is the wire shape sent to the daemon for a single tool definition.
+// Mirrors internal/model.Tool's JSON encoding.
+type toolPayload struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+}
 
 // ToolSchema is a JSON-serializable object (e.g. for tool input/output).
 type ToolSchema map[string]any
@@ -58,14 +63,17 @@ func ToolRunnerFromSchema(fn func(ctx context.Context, input ToolSchema) (ToolSc
 	}
 }
 
-// toMCP returns the MCP tool spec for the execute request.
-func (t *Tool) toMCP() *mcp.Tool {
-	return &mcp.Tool{
-		Name:         t.Name,
-		Description:  t.Description,
-		InputSchema:  t.InputSchema,
-		OutputSchema: t.OutputSchema,
+// toWire returns the wire payload sent to the daemon for this tool.
+func (t *Tool) toWire() (*toolPayload, error) {
+	out := &toolPayload{Name: t.Name, Description: t.Description}
+	if t.InputSchema != nil {
+		params, err := json.Marshal(t.InputSchema)
+		if err != nil {
+			return nil, fmt.Errorf("marshal tool %q input schema: %w", t.Name, err)
+		}
+		out.Parameters = params
 	}
+	return out, nil
 }
 
 // ToolCall is one tool invocation from the agent.
@@ -84,42 +92,12 @@ type ToolResult struct {
 	IsError      bool       `json:"is_error,omitempty"`
 }
 
-// toolCallWithID is a tool call with an ID.
-// NOTE: this is the same as orla/internal/model/types.go:toolCallWithID.
-// If updating this, update the other one as well.
-type toolCallWithID struct {
-	ID                string `json:"id"`
-	McpCallToolParams mcp.CallToolParams
-}
-
-func toolCallWithIDFromJSON(data []byte) (*toolCallWithID, error) {
-	var tc toolCallWithID
-	if err := json.Unmarshal(data, &tc); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal ToolCallWithID: %w", err)
-	}
-	return &tc, nil
-}
-
-func (tc *toolCallWithID) toToolCall() (*ToolCall, error) {
-	var args ToolSchema
-	// Note(jadidbourbaki): in go, ToolSchema is a named type for map[string]any so it is
-	// not possible to convert it directly from a map[string]any via type assertion.
-	switch v := tc.McpCallToolParams.Arguments.(type) {
-	case ToolSchema:
-		args = v
-	case map[string]any:
-		args = ToolSchema(v)
-	case nil:
-		// nil is fine, we interpret it as no arguments.
-		args = ToolSchema{}
-	default:
-		return nil, fmt.Errorf("failed to convert arguments to ToolSchema (got type %T): %v", tc.McpCallToolParams.Arguments, tc.McpCallToolParams.Arguments)
-	}
-	return &ToolCall{
-		ID:             tc.ID,
-		Name:           tc.McpCallToolParams.Name,
-		InputArguments: args,
-	}, nil
+// toolCallWire is the wire shape returned by the daemon for one tool call.
+// Mirrors internal/model.ToolCall's JSON encoding.
+type toolCallWire struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 // NewToolCallFromRawToolCall converts a raw tool call from an InferenceResponse to a ToolCall.
@@ -128,13 +106,17 @@ func NewToolCallFromRawToolCall(rawToolCall RawToolCall) (*ToolCall, error) {
 	if len(rawToolCall) == 0 {
 		return nil, fmt.Errorf("rawToolCall is empty")
 	}
-
-	tc, err := toolCallWithIDFromJSON(rawToolCall)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal rawToolCall: %w", err)
+	var w toolCallWire
+	if err := json.Unmarshal(rawToolCall, &w); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal tool call: %w", err)
 	}
-
-	return tc.toToolCall()
+	args := ToolSchema{}
+	if len(w.Arguments) > 0 {
+		if err := json.Unmarshal(w.Arguments, &args); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tool call arguments: %w", err)
+		}
+	}
+	return &ToolCall{ID: w.ID, Name: w.Name, InputArguments: args}, nil
 }
 
 // ToMessage returns a tool-result message to append to the conversation.

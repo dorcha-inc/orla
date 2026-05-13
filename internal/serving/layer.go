@@ -10,7 +10,6 @@ import (
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/harvard-cns/orla/internal/serving/access"
 	"github.com/harvard-cns/orla/internal/serving/memory"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )
 
@@ -49,7 +48,7 @@ func (l *AgenticLayer) GetModelProvider(ctx context.Context, backendName string)
 
 // Execute runs a single non-streaming inference call against the named LLM backend.
 // For streaming, use ExecuteStream instead. opts.Stream must be false.
-func (l *AgenticLayer) Execute(ctx context.Context, serverName, stageName string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions, chatOpts ...ChatOptions) (*model.Response, error) {
+func (l *AgenticLayer) Execute(ctx context.Context, serverName, stageName string, messages []model.Message, tools []*model.Tool, opts model.InferenceOptions, chatOpts ...ChatOptions) (*model.Response, error) {
 	if opts.Stream {
 		return nil, fmt.Errorf("Execute does not support streaming, use ExecuteStream instead")
 	}
@@ -68,7 +67,7 @@ func (l *AgenticLayer) Execute(ctx context.Context, serverName, stageName string
 // is consumed), a channel of stream events, and an error. The caller must consume the channel
 // until closed; the response content, tool_calls, and metrics are populated by the provider's
 // goroutine as the stream completes. opts.Stream must be true.
-func (l *AgenticLayer) ExecuteStream(ctx context.Context, serverName, stageName string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions, chatOpts ...ChatOptions) (*model.Response, <-chan model.StreamEvent, error) {
+func (l *AgenticLayer) ExecuteStream(ctx context.Context, serverName, stageName string, messages []model.Message, tools []*model.Tool, opts model.InferenceOptions, chatOpts ...ChatOptions) (*model.Response, <-chan model.StreamEvent, error) {
 	if !opts.Stream {
 		return nil, nil, fmt.Errorf("ExecuteStream requires opts.Stream to be true")
 	}
@@ -129,7 +128,7 @@ func (l *AgenticLayer) CheckBackendAccess(tags map[string]string, backendName st
 
 // CheckToolAccess checks whether the given tags permit all requested tools.
 // Returns the first denial encountered, or an allowed decision if all tools pass.
-func (l *AgenticLayer) CheckToolAccess(tags map[string]string, tools []*mcp.Tool) access.Decision {
+func (l *AgenticLayer) CheckToolAccess(tags map[string]string, tools []*model.Tool) access.Decision {
 	for _, t := range tools {
 		if d := l.policyEvaluator.CheckAccess(tags, access.ResourceTypeTool, t.Name); !d.Allowed {
 			return d

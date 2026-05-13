@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/sashabaranov/go-openai"
-
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/harvard-cns/orla/internal/serving/access"
@@ -47,9 +45,12 @@ func TestLayer_Execute_WithMaxTokens(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "test response", response.Content)
 
-	var req openai.ChatCompletionRequest
+	var req struct {
+		MaxTokens *int `json:"max_tokens"`
+	}
 	require.NoError(t, json.Unmarshal(srv.LastRequestBody(), &req))
-	assert.Equal(t, 42, req.MaxTokens)
+	require.NotNil(t, req.MaxTokens)
+	assert.Equal(t, 42, *req.MaxTokens)
 }
 
 func TestLayer_Execute_WithoutMaxTokens(t *testing.T) {
@@ -70,9 +71,11 @@ func TestLayer_Execute_WithoutMaxTokens(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "test response", response.Content)
 
-	var req openai.ChatCompletionRequest
+	var req struct {
+		MaxTokens *int `json:"max_tokens"`
+	}
 	require.NoError(t, json.Unmarshal(srv.LastRequestBody(), &req))
-	assert.Equal(t, 0, req.MaxTokens)
+	assert.Nil(t, req.MaxTokens)
 }
 
 func TestLayer_Execute_ServerNotFound(t *testing.T) {

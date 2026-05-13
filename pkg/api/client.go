@@ -15,8 +15,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // OrlaClient is the public API client for the Orla daemon
@@ -107,7 +105,7 @@ type ExecuteRequest struct {
 	// Messages are the messages to execute.
 	Messages []Message `json:"messages,omitempty"`
 	// Tools are the tools attached to this request.
-	Tools []*mcp.Tool `json:"tools,omitempty"`
+	Tools []*toolPayload `json:"tools,omitempty"`
 	// MaxTokens is the maximum number of tokens to generate. A nil value means use the backend default.
 	MaxTokens *int `json:"max_tokens,omitempty"`
 	// Stream is whether to stream the response. A nil value means no streaming.

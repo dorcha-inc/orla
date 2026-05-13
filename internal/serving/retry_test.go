@@ -3,17 +3,30 @@ package serving
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
+	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/harvard-cns/orla/internal/model"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/sashabaranov/go-openai"
+	"github.com/openai/openai-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// newOpenAIError builds an *openai.Error suitable for tests. The Error() method
+// dereferences Request and Response, so we stub them.
+func newOpenAIError(status int, message string) *openai.Error {
+	req, err := http.NewRequest("POST", "http://example", nil)
+	if err != nil {
+		panic(err)
+	}
+	resp := &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(""))}
+	return &openai.Error{StatusCode: status, Message: message, Request: req, Response: resp}
+}
 
 // mockRetryProvider returns a configurable sequence of (response, error) per call.
 type mockRetryProvider struct {
@@ -26,7 +39,7 @@ type mockRetryProvider struct {
 
 func (p *mockRetryProvider) Name() string { return "mock" }
 
-func (p *mockRetryProvider) Chat(_ context.Context, _ []model.Message, _ []*mcp.Tool, _ model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
+func (p *mockRetryProvider) Chat(_ context.Context, _ []model.Message, _ []*model.Tool, _ model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
 	idx := int(p.callCount.Add(1) - 1)
 	if idx >= len(p.results) {
 		return nil, nil, errors.New("unexpected call: no more results")
@@ -59,27 +72,27 @@ func TestIsRetryable_ContextDeadlineExceededReturnsFalse(t *testing.T) {
 }
 
 func TestIsRetryable_APIError400ReturnsFalse(t *testing.T) {
-	err := &openai.APIError{HTTPStatusCode: 400, Message: "bad request"}
+	err := newOpenAIError(400, "bad request")
 	assert.False(t, isRetryable(err))
 }
 
 func TestIsRetryable_APIError404ReturnsFalse(t *testing.T) {
-	err := &openai.APIError{HTTPStatusCode: 404, Message: "not found"}
+	err := newOpenAIError(404, "not found")
 	assert.False(t, isRetryable(err))
 }
 
 func TestIsRetryable_APIError429ReturnsTrue(t *testing.T) {
-	err := &openai.APIError{HTTPStatusCode: 429, Message: "rate limit"}
+	err := newOpenAIError(429, "rate limit")
 	assert.True(t, isRetryable(err))
 }
 
 func TestIsRetryable_APIError500ReturnsTrue(t *testing.T) {
-	err := &openai.APIError{HTTPStatusCode: 500, Message: "internal error"}
+	err := newOpenAIError(500, "internal error")
 	assert.True(t, isRetryable(err))
 }
 
 func TestIsRetryable_APIError503ReturnsTrue(t *testing.T) {
-	err := &openai.APIError{HTTPStatusCode: 503, Message: "unavailable"}
+	err := newOpenAIError(503, "unavailable")
 	assert.True(t, isRetryable(err))
 }
 
@@ -123,7 +136,7 @@ func TestChatWithRetry_SuccessOnSecondAttemptAfter500(t *testing.T) {
 			resp *model.Response
 			err  error
 		}{
-			{nil, &openai.APIError{HTTPStatusCode: 500, Message: "server error"}},
+			{nil, newOpenAIError(500, "server error")},
 			{&model.Response{Content: "ok"}, nil},
 		},
 	}
@@ -139,7 +152,7 @@ func TestChatWithRetry_NonRetryable400ReturnsImmediately(t *testing.T) {
 			resp *model.Response
 			err  error
 		}{
-			{nil, &openai.APIError{HTTPStatusCode: 400, Message: "bad request"}},
+			{nil, newOpenAIError(400, "bad request")},
 		},
 	}
 	_, _, err := chatWithRetry(context.Background(), p, nil, nil, model.InferenceOptions{})
@@ -153,9 +166,9 @@ func TestChatWithRetry_ExhaustsRetriesThenReturnsError(t *testing.T) {
 			resp *model.Response
 			err  error
 		}{
-			{nil, &openai.APIError{HTTPStatusCode: 503, Message: "unavailable"}},
-			{nil, &openai.APIError{HTTPStatusCode: 503, Message: "unavailable"}},
-			{nil, &openai.APIError{HTTPStatusCode: 503, Message: "unavailable"}},
+			{nil, newOpenAIError(503, "unavailable")},
+			{nil, newOpenAIError(503, "unavailable")},
+			{nil, newOpenAIError(503, "unavailable")},
 		},
 	}
 	_, _, err := chatWithRetry(context.Background(), p, nil, nil, model.InferenceOptions{})
@@ -169,7 +182,7 @@ func TestChatWithRetry_ContextCanceledDuringBackoffReturnsContextError(t *testin
 			resp *model.Response
 			err  error
 		}{
-			{nil, &openai.APIError{HTTPStatusCode: 503, Message: "unavailable"}},
+			{nil, newOpenAIError(503, "unavailable")},
 			{&model.Response{Content: "ok"}, nil}, // would succeed on retry
 		},
 	}

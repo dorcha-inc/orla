@@ -94,7 +94,7 @@ func TestIntegration_Execute_WithToolCalls(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, response)
 	require.Len(t, response.ToolCalls, 1)
-	assert.Equal(t, "get_weather", response.ToolCalls[0].McpCallToolParams.Name)
+	assert.Equal(t, "get_weather", response.ToolCalls[0].Name)
 }
 
 func TestIntegration_Execute_BackendNotFound(t *testing.T) {

@@ -7,9 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"go.uber.org/zap"
 )
 
 // MockProvider is a mock implementation of Provider for testing.
@@ -18,7 +15,7 @@ type MockProvider struct {
 	mu sync.RWMutex
 
 	name            string
-	chatFunc        func(ctx context.Context, messages []Message, tools []*mcp.Tool, opts InferenceOptions) (*Response, <-chan StreamEvent, error)
+	chatFunc        func(ctx context.Context, messages []Message, tools []*Tool, opts InferenceOptions) (*Response, <-chan StreamEvent, error)
 	ensureReadyFunc func(ctx context.Context) error
 
 	// Builder-configured response (used when chatFunc is nil)
@@ -51,28 +48,23 @@ func (b *MockProviderBuilder) WithName(name string) *MockProviderBuilder {
 
 // WithContent sets the response content (non-streaming).
 func (b *MockProviderBuilder) WithContent(content string) *MockProviderBuilder {
-	b.p.chatResponse = &Response{Content: content, ToolCalls: []ToolCallWithID{}}
+	b.p.chatResponse = &Response{Content: content, ToolCalls: []ToolCall{}}
 	return b
 }
 
 // WithToolCall adds a tool call to the response. argsJSON is the JSON-encoded arguments.
 func (b *MockProviderBuilder) WithToolCall(name, argsJSON string) *MockProviderBuilder {
-	var args map[string]any
-	if argsJSON != "" {
-		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-			zap.L().Warn("mock provider: failed to unmarshal tool call args, using nil", zap.Error(err), zap.String("argsJSON", argsJSON))
-			args = nil
-		}
-	}
 	if b.p.chatResponse == nil {
 		b.p.chatResponse = &Response{}
 	}
-	b.p.chatResponse.ToolCalls = append(b.p.chatResponse.ToolCalls, ToolCallWithID{
-		ID: "call_" + name,
-		McpCallToolParams: mcp.CallToolParams{
-			Name:      name,
-			Arguments: args,
-		},
+	var args json.RawMessage
+	if argsJSON != "" {
+		args = json.RawMessage(argsJSON)
+	}
+	b.p.chatResponse.ToolCalls = append(b.p.chatResponse.ToolCalls, ToolCall{
+		ID:        "call_" + name,
+		Name:      name,
+		Arguments: args,
 	})
 	return b
 }
@@ -110,7 +102,7 @@ func (b *MockProviderBuilder) WithEnsureReadyError(err error) *MockProviderBuild
 }
 
 // WithChatFunc sets a custom Chat implementation (overrides builder-configured response).
-func (b *MockProviderBuilder) WithChatFunc(fn func(ctx context.Context, messages []Message, tools []*mcp.Tool, opts InferenceOptions) (*Response, <-chan StreamEvent, error)) *MockProviderBuilder {
+func (b *MockProviderBuilder) WithChatFunc(fn func(ctx context.Context, messages []Message, tools []*Tool, opts InferenceOptions) (*Response, <-chan StreamEvent, error)) *MockProviderBuilder {
 	b.p.chatFunc = fn
 	return b
 }
@@ -131,7 +123,7 @@ func (m *MockProvider) Name() string {
 }
 
 // Chat sends a chat request and returns the configured or custom response.
-func (m *MockProvider) Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, opts InferenceOptions) (*Response, <-chan StreamEvent, error) {
+func (m *MockProvider) Chat(ctx context.Context, messages []Message, tools []*Tool, opts InferenceOptions) (*Response, <-chan StreamEvent, error) {
 	if m == nil {
 		return nil, nil, errors.New("nil mock provider")
 	}
@@ -149,7 +141,7 @@ func (m *MockProvider) Chat(ctx context.Context, messages []Message, tools []*mc
 		return nil, nil, m.chatError
 	}
 	if m.chatResponse == nil {
-		return &Response{Content: "test response", ToolCalls: []ToolCallWithID{}}, nil, nil
+		return &Response{Content: "test response", ToolCalls: []ToolCall{}}, nil, nil
 	}
 	return m.chatResponse, m.chatStreamCh, nil
 }

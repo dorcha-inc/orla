@@ -1,9 +1,9 @@
 package model
 
 import (
+	"encoding/json"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,19 +41,18 @@ func TestMessage_ToolMessage(t *testing.T) {
 	assert.Equal(t, "call-123", msg.ToolCallID)
 }
 
-func TestToolCallWithID(t *testing.T) {
-	toolCall := ToolCallWithID{
-		ID: "call-123",
-		McpCallToolParams: mcp.CallToolParams{
-			Name:      "test_tool",
-			Arguments: map[string]any{"arg1": "value1"},
-		},
+func TestToolCall(t *testing.T) {
+	toolCall := ToolCall{
+		ID:        "call-123",
+		Name:      "test_tool",
+		Arguments: json.RawMessage(`{"arg1":"value1"}`),
 	}
 
 	assert.Equal(t, "call-123", toolCall.ID)
-	assert.Equal(t, "test_tool", toolCall.McpCallToolParams.Name)
-	args, ok := toolCall.McpCallToolParams.Arguments.(map[string]any)
-	require.True(t, ok)
+	assert.Equal(t, "test_tool", toolCall.Name)
+
+	var args map[string]any
+	require.NoError(t, json.Unmarshal(toolCall.Arguments, &args))
 	assert.Equal(t, "value1", args["arg1"])
 }
 
@@ -78,20 +77,15 @@ func TestResponse_WithContent(t *testing.T) {
 func TestResponse_WithToolCalls(t *testing.T) {
 	response := &Response{
 		Content: "I'll call a tool",
-		ToolCalls: []ToolCallWithID{
-			{
-				ID: "call-1",
-				McpCallToolParams: mcp.CallToolParams{
-					Name: "test_tool",
-				},
-			},
+		ToolCalls: []ToolCall{
+			{ID: "call-1", Name: "test_tool"},
 		},
 	}
 
 	assert.Equal(t, "I'll call a tool", response.Content)
 	assert.Len(t, response.ToolCalls, 1)
 	assert.Equal(t, "call-1", response.ToolCalls[0].ID)
-	assert.Equal(t, "test_tool", response.ToolCalls[0].McpCallToolParams.Name)
+	assert.Equal(t, "test_tool", response.ToolCalls[0].Name)
 }
 
 func TestStreamEventType_String(t *testing.T) {

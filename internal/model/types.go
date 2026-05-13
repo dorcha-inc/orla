@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type MessageRole string
@@ -36,15 +34,24 @@ type Message struct {
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	// ToolCalls carries the tool calls from an assistant message so they can be
 	// replayed in the conversation history on the next turn.
-	ToolCalls []ToolCallWithID `json:"tool_calls,omitempty"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
 
-// ToolCallWithID represents a tool invocation request from the model.
-// It embeds mcp.CallToolParams for MCP compatibility, and adds an ID
-// for tracking in the agent loop so we can match results back to calls.
-type ToolCallWithID struct {
-	ID                string `json:"id"` // Unique identifier for this tool call
-	McpCallToolParams mcp.CallToolParams
+// Tool describes a function-style tool the model can call. Mirrors the OpenAI
+// wire shape; Parameters is a JSON Schema passed through verbatim.
+type Tool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+}
+
+// ToolCall is a tool invocation request from the model. Arguments is the
+// JSON-encoded argument object as returned by the upstream API; Orla passes
+// it through without introspecting it.
+type ToolCall struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 // ResponseMetrics holds latency, token, and cost data for an inference call.
@@ -121,7 +128,7 @@ func (h *SchedulingHints) GetRequestPriority() int {
 type Response struct {
 	Content   string           `json:"content"`    // Text content from the model
 	Thinking  string           `json:"thinking"`   // Thinking trace from the model (if supported)
-	ToolCalls []ToolCallWithID `json:"tool_calls"` // Tool calls requested by the model
+	ToolCalls []ToolCall       `json:"tool_calls"` // Tool calls requested by the model
 	Metrics   *ResponseMetrics `json:"metrics"`    // Response metrics
 }
 
@@ -183,7 +190,7 @@ type Provider interface {
 	Name() string
 
 	// Chat sends a chat request to the model with the given inference options and returns the response.
-	Chat(ctx context.Context, messages []Message, tools []*mcp.Tool, opts InferenceOptions) (*Response, <-chan StreamEvent, error)
+	Chat(ctx context.Context, messages []Message, tools []*Tool, opts InferenceOptions) (*Response, <-chan StreamEvent, error)
 
 	// EnsureReady ensures the model provider is ready (e.g., starts Ollama if needed)
 	// Returns an error if the provider cannot be made ready

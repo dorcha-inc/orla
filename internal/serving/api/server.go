@@ -13,7 +13,6 @@ import (
 	"github.com/harvard-cns/orla/internal/serving"
 	"github.com/harvard-cns/orla/internal/serving/access"
 	"github.com/harvard-cns/orla/internal/serving/metrics"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
@@ -161,7 +160,7 @@ type ExecuteRequest struct {
 	StageID  string          `json:"stage_id,omitempty"`
 	Prompt   string          `json:"prompt,omitempty"`
 	Messages []model.Message `json:"messages,omitempty"`
-	Tools    []*mcp.Tool     `json:"tools,omitempty"`
+	Tools    []*model.Tool   `json:"tools,omitempty"`
 	model.InferenceOptions
 
 	WorkflowID  string            `json:"workflow_id,omitempty"`
@@ -303,7 +302,7 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *AgenticServer) handleExecuteStream(w http.ResponseWriter, ctx context.Context, backend, stage string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions, chatOpts serving.ChatOptions) {
+func (s *AgenticServer) handleExecuteStream(w http.ResponseWriter, ctx context.Context, backend, stage string, messages []model.Message, tools []*model.Tool, opts model.InferenceOptions, chatOpts serving.ChatOptions) {
 	response, eventCh, err := s.layer.ExecuteStream(ctx, backend, stage, messages, tools, opts, chatOpts)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")

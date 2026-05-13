@@ -8,8 +8,7 @@ import (
 	"time"
 
 	"github.com/harvard-cns/orla/internal/model"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/sashabaranov/go-openai"
+	"github.com/openai/openai-go"
 	"go.uber.org/zap"
 )
 
@@ -27,10 +26,10 @@ func isRetryable(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	// Check for OpenAI APIError with HTTP status
-	var apiErr *openai.APIError
+	// Check for OpenAI API error with HTTP status
+	var apiErr *openai.Error
 	if errors.As(err, &apiErr) {
-		switch apiErr.HTTPStatusCode {
+		switch apiErr.StatusCode {
 		case 400, 401, 403, 404:
 			return false // client errors
 		case 429, 500, 502, 503, 504:
@@ -53,7 +52,7 @@ func isRetryable(err error) bool {
 }
 
 // chatWithRetry calls provider.Chat with exponential backoff on retryable errors.
-func chatWithRetry(ctx context.Context, provider model.Provider, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
+func chatWithRetry(ctx context.Context, provider model.Provider, messages []model.Message, tools []*model.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
 	var lastErr error
 	for attempt := range retryMaxAttempts {
 		resp, ch, err := provider.Chat(ctx, messages, tools, opts)

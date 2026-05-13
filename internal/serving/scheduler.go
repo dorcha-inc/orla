@@ -12,7 +12,6 @@ import (
 	"github.com/harvard-cns/orla/internal/serving/cost"
 	"github.com/harvard-cns/orla/internal/serving/memory"
 	"github.com/harvard-cns/orla/internal/serving/metrics"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )
 
@@ -21,7 +20,7 @@ type scheduledRequest struct {
 	backend   string
 	stageName string
 	messages  []model.Message
-	tools     []*mcp.Tool
+	tools     []*model.Tool
 	opts      model.InferenceOptions
 
 	enqueuedAt time.Time

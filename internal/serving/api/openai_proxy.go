@@ -13,7 +13,6 @@ import (
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/harvard-cns/orla/internal/serving"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )
 
@@ -224,7 +223,7 @@ func (s *AgenticServer) streamChatCompletion(
 	ctx context.Context,
 	backend, stage string,
 	messages []model.Message,
-	tools []*mcp.Tool,
+	tools []*model.Tool,
 	opts model.InferenceOptions,
 	chatOpts serving.ChatOptions,
 ) {
@@ -355,18 +354,17 @@ func convertMessagesToInternal(in []chatMessage) ([]model.Message, error) {
 		}
 		msg := model.Message{Role: role, Content: m.Content, ToolCallID: m.ToolCallID, ToolName: m.Name}
 		for j, tc := range m.ToolCalls {
-			var args any
+			var args json.RawMessage
 			if tc.Function.Arguments != "" {
-				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-					return nil, fmt.Errorf("message[%d].tool_calls[%d].function.arguments: %w", i, j, err)
+				if !json.Valid([]byte(tc.Function.Arguments)) {
+					return nil, fmt.Errorf("message[%d].tool_calls[%d].function.arguments: invalid JSON", i, j)
 				}
+				args = json.RawMessage(tc.Function.Arguments)
 			}
-			msg.ToolCalls = append(msg.ToolCalls, model.ToolCallWithID{
-				ID: tc.ID,
-				McpCallToolParams: mcp.CallToolParams{
-					Name:      tc.Function.Name,
-					Arguments: args,
-				},
+			msg.ToolCalls = append(msg.ToolCalls, model.ToolCall{
+				ID:        tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: args,
 			})
 		}
 		out = append(out, msg)
@@ -374,11 +372,11 @@ func convertMessagesToInternal(in []chatMessage) ([]model.Message, error) {
 	return out, nil
 }
 
-func convertToolsToInternal(in []chatTool) ([]*mcp.Tool, error) {
+func convertToolsToInternal(in []chatTool) ([]*model.Tool, error) {
 	if len(in) == 0 {
 		return nil, nil
 	}
-	out := make([]*mcp.Tool, 0, len(in))
+	out := make([]*model.Tool, 0, len(in))
 	for i, t := range in {
 		if t.Type != "" && t.Type != "function" {
 			return nil, fmt.Errorf("tools[%d]: unsupported type %q (only \"function\" is supported)", i, t.Type)
@@ -386,16 +384,15 @@ func convertToolsToInternal(in []chatTool) ([]*mcp.Tool, error) {
 		if t.Function.Name == "" {
 			return nil, fmt.Errorf("tools[%d].function.name is required", i)
 		}
-		tool := &mcp.Tool{
+		tool := &model.Tool{
 			Name:        t.Function.Name,
 			Description: t.Function.Description,
 		}
 		if len(t.Function.Parameters) > 0 {
-			var schema map[string]any
-			if err := json.Unmarshal(t.Function.Parameters, &schema); err != nil {
-				return nil, fmt.Errorf("tools[%d].function.parameters: %w", i, err)
+			if !json.Valid(t.Function.Parameters) {
+				return nil, fmt.Errorf("tools[%d].function.parameters: invalid JSON", i)
 			}
-			tool.InputSchema = schema
+			tool.Parameters = t.Function.Parameters
 		}
 		out = append(out, tool)
 	}
@@ -416,15 +413,14 @@ func convertResponseFormat(rf *openAIResponseFmt) *model.StructuredOutputOptions
 func buildChatCompletion(backend string, resp *model.Response) chatCompletion {
 	msg := chatMessage{Role: "assistant", Content: resp.Content}
 	for _, tc := range resp.ToolCalls {
-		argsBytes, err := json.Marshal(tc.McpCallToolParams.Arguments)
-		if err != nil {
-			zap.L().Error("failed to marshal tool call arguments", zap.Error(err), zap.String("tool", tc.McpCallToolParams.Name))
-			argsBytes = []byte("{}")
+		args := string(tc.Arguments)
+		if args == "" {
+			args = "{}"
 		}
 		msg.ToolCalls = append(msg.ToolCalls, chatMessageToolCall{
 			ID:       tc.ID,
 			Type:     "function",
-			Function: chatToolFunctionCall{Name: tc.McpCallToolParams.Name, Arguments: string(argsBytes)},
+			Function: chatToolFunctionCall{Name: tc.Name, Arguments: args},
 		})
 	}
 	completion := chatCompletion{

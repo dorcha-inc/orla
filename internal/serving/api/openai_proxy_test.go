@@ -353,10 +353,8 @@ func TestConvertMessagesToInternal_ToolCallsArgsParsed(t *testing.T) {
 	require.Len(t, out, 1)
 	require.Len(t, out[0].ToolCalls, 1)
 	assert.Equal(t, "call_1", out[0].ToolCalls[0].ID)
-	assert.Equal(t, "search", out[0].ToolCalls[0].McpCallToolParams.Name)
-	args, ok := out[0].ToolCalls[0].McpCallToolParams.Arguments.(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "foo", args["q"])
+	assert.Equal(t, "search", out[0].ToolCalls[0].Name)
+	assert.JSONEq(t, `{"q":"foo"}`, string(out[0].ToolCalls[0].Arguments))
 }
 
 func TestConvertMessagesToInternal_UnsupportedRole(t *testing.T) {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/docker/docker/pkg/namesgenerator"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // ExecutionMode controls how a stage executes within a workflow DAG.
@@ -139,7 +138,11 @@ func (s *Stage) buildRequestWithMessages(messages []Message) (*ExecuteRequest, e
 	}
 	s.applyInferenceOptions(r)
 	if len(s.Tools) > 0 {
-		r.Tools = s.toolsToMCP()
+		tools, err := s.toolsToWire()
+		if err != nil {
+			return nil, err
+		}
+		r.Tools = tools
 	}
 	return r, nil
 }
@@ -162,12 +165,16 @@ func (s *Stage) applyInferenceOptions(r *ExecuteRequest) {
 	r.WorkflowID = s.workflowID
 }
 
-func (s *Stage) toolsToMCP() []*mcp.Tool {
-	out := make([]*mcp.Tool, 0, len(s.Tools))
+func (s *Stage) toolsToWire() ([]*toolPayload, error) {
+	out := make([]*toolPayload, 0, len(s.Tools))
 	for _, t := range s.Tools {
-		out = append(out, t.toMCP())
+		w, err := t.toWire()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, w)
 	}
-	return out
+	return out, nil
 }
 
 // --- Execution methods ---

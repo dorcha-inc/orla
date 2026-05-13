@@ -9,7 +9,6 @@ import (
 
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/harvard-cns/orla/internal/model"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -170,7 +169,7 @@ type delayProvider struct {
 
 func (p *delayProvider) Name() string { return "delay" }
 
-func (p *delayProvider) Chat(_ context.Context, _ []model.Message, _ []*mcp.Tool, _ model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
+func (p *delayProvider) Chat(_ context.Context, _ []model.Message, _ []*model.Tool, _ model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
 	p.callCount.Add(1)
 	cur := p.inflight.Add(1)
 	for {

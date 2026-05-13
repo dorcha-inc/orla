@@ -11,7 +11,6 @@ import (
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/harvard-cns/orla/internal/serving/memory"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 )
 
@@ -172,7 +171,7 @@ type ChatOptions struct {
 
 // ScheduleChat queues a request for execution under the backend's scheduling policy.
 // stageName identifies the stage queue inside the backend. Empty uses "default".
-func (m *LLMBackendManager) ScheduleChat(ctx context.Context, backendName, stageName string, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions, chatOpts ...ChatOptions) (*model.Response, <-chan model.StreamEvent, error) {
+func (m *LLMBackendManager) ScheduleChat(ctx context.Context, backendName, stageName string, messages []model.Message, tools []*model.Tool, opts model.InferenceOptions, chatOpts ...ChatOptions) (*model.Response, <-chan model.StreamEvent, error) {
 	m.mu.Lock()
 	exec, err := m.getOrCreateExecutorLocked(backendName)
 	m.mu.Unlock()

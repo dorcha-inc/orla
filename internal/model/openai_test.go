@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/sashabaranov/go-openai"
+	"github.com/openai/openai-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/harvard-cns/orla/internal/core"
@@ -14,165 +13,65 @@ import (
 
 const testAPIKeyEnvVar = "ORLA_TEST_OPENAI_KEY" //nolint:gosec // G101 - env var name, not a credential
 
-func TestNormalizeSchemaToMap_MapPassthrough(t *testing.T) {
+func TestConvertToolsToOpenAIParams_PassesParametersThrough(t *testing.T) {
 	t.Parallel()
 
-	tool := &mcp.Tool{
-		Name:        "hello",
-		Description: "desc",
-		InputSchema: map[string]any{"type": "object", "properties": map[string]any{"x": map[string]any{"type": "string"}}},
-	}
-
-	got, err := normalizeSchemaToMap(tool)
+	params := json.RawMessage(`{"type":"object","properties":{"x":{"type":"string"}}}`)
+	got, err := convertToolsToOpenAIParams([]*Tool{
+		{Name: "t1", Description: "d1", Parameters: params},
+	})
 	require.NoError(t, err)
-	require.Equal(t, "object", got["type"])
+	require.Len(t, got, 1)
+	require.Equal(t, "t1", got[0].Function.Name)
+	require.Equal(t, "d1", got[0].Function.Description.Value)
+	require.Equal(t, "object", got[0].Function.Parameters["type"])
 }
 
-func TestNormalizeSchemaToMap_RawMessage(t *testing.T) {
+func TestConvertToolsToOpenAIParams_OmitsEmptyParameters(t *testing.T) {
 	t.Parallel()
 
-	raw := json.RawMessage(`{"type":"object","properties":{"x":{"type":"string"}}}`)
-	tool := &mcp.Tool{Name: "raw", InputSchema: raw}
-
-	got, err := normalizeSchemaToMap(tool)
+	got, err := convertToolsToOpenAIParams([]*Tool{{Name: "t1"}})
 	require.NoError(t, err)
-	require.Equal(t, "object", got["type"])
+	require.Len(t, got, 1)
+	require.Nil(t, got[0].Function.Parameters)
 }
 
-func TestNormalizeSchemaToMap_JSONBytes(t *testing.T) {
+func TestConvertToolsToOpenAIParams_InvalidParametersJSONErrors(t *testing.T) {
 	t.Parallel()
 
-	b := []byte(`{"type":"object"}`)
-	tool := &mcp.Tool{Name: "bytes", InputSchema: b}
-
-	got, err := normalizeSchemaToMap(tool)
-	require.NoError(t, err)
-	require.Equal(t, "object", got["type"])
-}
-
-func TestNormalizeSchemaToMap_MarshalableStruct(t *testing.T) {
-	t.Parallel()
-
-	type schema struct {
-		Type string `json:"type"`
-	}
-	tool := &mcp.Tool{Name: "struct", InputSchema: schema{Type: "object"}}
-
-	got, err := normalizeSchemaToMap(tool)
-	require.NoError(t, err)
-	require.Equal(t, "object", got["type"])
-}
-
-func TestNormalizeSchemaToMap_NilSchema(t *testing.T) {
-	t.Parallel()
-
-	tool := &mcp.Tool{Name: "nil", InputSchema: nil}
-	_, err := normalizeSchemaToMap(tool)
+	_, err := convertToolsToOpenAIParams([]*Tool{
+		{Name: "t1", Parameters: json.RawMessage(`{not valid`)},
+	})
 	require.Error(t, err)
 }
 
-func TestConvertToolsToOpenAIFormat_UsesNormalizedSchema(t *testing.T) {
+func TestConvertMessagesToOpenAI_UnsupportedRoleErrors(t *testing.T) {
 	t.Parallel()
 
-	tools := []*mcp.Tool{
-		{
-			Name:        "t1",
-			Description: "d1",
-			InputSchema: json.RawMessage(`{"type":"object","properties":{"x":{"type":"string"}}}`),
-		},
-	}
-
-	got, err := convertToolsToOpenAIFormat(tools)
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	require.Equal(t, openai.ToolTypeFunction, got[0].Type)
-	require.NotNil(t, got[0].Function)
-	require.Equal(t, "t1", got[0].Function.Name)
-
-	// Parameters should be a map[string]any after normalization.
-	_, ok := got[0].Function.Parameters.(map[string]any)
-	require.True(t, ok, "expected parameters to be map[string]any, got %T", got[0].Function.Parameters)
+	_, err := convertMessagesToOpenAI([]Message{{Role: "developer", Content: "x"}})
+	require.Error(t, err)
 }
 
-func TestConvertMessageToOpenAI_ToolRoleSetsToolCallID(t *testing.T) {
+func TestConvertOpenAIToolCalls_PassesArgumentsThrough(t *testing.T) {
 	t.Parallel()
 
-	msg := Message{
-		Role:       MessageRoleTool,
-		Content:    "result",
-		ToolName:   "some_tool",
-		ToolCallID: "call_123",
-	}
-
-	got := convertMessageToOpenAI(msg)
-	require.Equal(t, openai.ChatMessageRoleTool, got.Role)
-	require.Equal(t, "call_123", got.ToolCallID)
-}
-
-func TestConvertOpenAIToolCalls_ParsesArgumentsAndUsesCallID(t *testing.T) {
-	t.Parallel()
-
-	calls := []openai.ToolCall{
-		{
-			ID:   "abc",
-			Type: openai.ToolTypeFunction,
-			Function: openai.FunctionCall{
-				Name:      "do",
-				Arguments: `{"x":"y"}`,
-			},
-		},
+	calls := []openai.ChatCompletionMessageToolCall{
+		{ID: "abc", Function: openai.ChatCompletionMessageToolCallFunction{Name: "do", Arguments: `{"x":"y"}`}},
 	}
 
 	got, err := convertOpenAIToolCalls(calls)
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	require.Equal(t, "abc", got[0].ID)
-	require.Equal(t, "do", got[0].McpCallToolParams.Name)
-
-	args, ok := got[0].McpCallToolParams.Arguments.(map[string]any)
-	require.True(t, ok, "expected arguments to be map[string]any, got %T", got[0].McpCallToolParams.Arguments)
-	require.Equal(t, "y", args["x"])
-}
-
-func TestConvertOpenAIToolCalls_InvalidJSONReturnsError(t *testing.T) {
-	t.Parallel()
-
-	calls := []openai.ToolCall{
-		{
-			ID:   "good",
-			Type: openai.ToolTypeFunction,
-			Function: openai.FunctionCall{
-				Name:      "good_tool",
-				Arguments: `{"ok":true}`,
-			},
-		},
-		{
-			ID:   "bad",
-			Type: openai.ToolTypeFunction,
-			Function: openai.FunctionCall{
-				Name:      "bad_tool",
-				Arguments: `{"oops":`, // invalid JSON
-			},
-		},
-	}
-
-	got, err := convertOpenAIToolCalls(calls)
-	require.Error(t, err)
-	require.Nil(t, got)
+	require.Equal(t, "do", got[0].Name)
+	require.JSONEq(t, `{"x":"y"}`, string(got[0].Arguments))
 }
 
 func TestConvertOpenAIToolCalls_EmptyIDReturnsError(t *testing.T) {
 	t.Parallel()
 
-	calls := []openai.ToolCall{
-		{
-			ID:   "",
-			Type: openai.ToolTypeFunction,
-			Function: openai.FunctionCall{
-				Name:      "tool",
-				Arguments: `{}`,
-			},
-		},
+	calls := []openai.ChatCompletionMessageToolCall{
+		{ID: "", Function: openai.ChatCompletionMessageToolCallFunction{Name: "tool", Arguments: `{}`}},
 	}
 
 	got, err := convertOpenAIToolCalls(calls)
@@ -254,7 +153,7 @@ func TestOpenAIProvider_Chat_NonStreaming_BasicAndToolCalls(t *testing.T) {
 	require.Equal(t, "hello", resp.Content)
 	require.Len(t, resp.ToolCalls, 1)
 	require.Equal(t, "call_abc", resp.ToolCalls[0].ID)
-	require.Equal(t, "do", resp.ToolCalls[0].McpCallToolParams.Name)
+	require.Equal(t, "do", resp.ToolCalls[0].Name)
 }
 
 func TestOpenAIProvider_Chat_Streaming_Content(t *testing.T) {
@@ -307,9 +206,12 @@ func TestOpenAIProvider_Chat_WithMaxTokens(t *testing.T) {
 	require.NotNil(t, resp)
 	require.Equal(t, "Short response", resp.Content)
 
-	var req openai.ChatCompletionRequest
+	var req struct {
+		MaxTokens *int `json:"max_tokens"`
+	}
 	require.NoError(t, json.Unmarshal(srv.LastRequestBody(), &req))
-	require.Equal(t, maxTokens, req.MaxTokens)
+	require.NotNil(t, req.MaxTokens)
+	require.Equal(t, maxTokens, *req.MaxTokens)
 }
 
 func TestOpenAIProvider_Chat_WithoutMaxTokens(t *testing.T) {
@@ -333,9 +235,11 @@ func TestOpenAIProvider_Chat_WithoutMaxTokens(t *testing.T) {
 	require.NotNil(t, resp)
 	require.Equal(t, "Response", resp.Content)
 
-	var req openai.ChatCompletionRequest
+	var req struct {
+		MaxTokens *int `json:"max_tokens"`
+	}
 	require.NoError(t, json.Unmarshal(srv.LastRequestBody(), &req))
-	require.Equal(t, 0, req.MaxTokens)
+	require.Nil(t, req.MaxTokens)
 }
 
 func TestOpenAIProvider_Chat_WithMaxTokensZero(t *testing.T) {
@@ -359,9 +263,12 @@ func TestOpenAIProvider_Chat_WithMaxTokensZero(t *testing.T) {
 	require.Nil(t, ch)
 	require.NotNil(t, resp)
 
-	var req openai.ChatCompletionRequest
+	var req struct {
+		MaxTokens *int `json:"max_tokens"`
+	}
 	require.NoError(t, json.Unmarshal(srv.LastRequestBody(), &req))
-	require.Equal(t, 0, req.MaxTokens)
+	require.NotNil(t, req.MaxTokens)
+	require.Equal(t, 0, *req.MaxTokens)
 }
 
 func TestOpenAIProvider_Chat_Streaming_WithToolCalls(t *testing.T) {
@@ -393,35 +300,7 @@ func TestOpenAIProvider_Chat_Streaming_WithToolCalls(t *testing.T) {
 	require.Equal(t, "hi", resp.Content)
 	require.Len(t, resp.ToolCalls, 1)
 	require.Equal(t, "call_1", resp.ToolCalls[0].ID)
-	require.Equal(t, "tool", resp.ToolCalls[0].McpCallToolParams.Name)
-}
-
-func TestConvertMessageToOpenAI_ToolRoleMissingToolCallID(t *testing.T) {
-	t.Parallel()
-
-	msg := Message{
-		Role:     MessageRoleTool,
-		Content:  "result",
-		ToolName: "some_tool",
-		// ToolCallID is empty
-	}
-
-	got := convertMessageToOpenAI(msg)
-	require.Equal(t, openai.ChatMessageRoleTool, got.Role)
-	require.Empty(t, got.ToolCallID)
-}
-
-func TestConvertMessageToOpenAI_NonToolRole(t *testing.T) {
-	t.Parallel()
-
-	msg := Message{
-		Role:    MessageRoleUser,
-		Content: "hello",
-	}
-
-	got := convertMessageToOpenAI(msg)
-	require.Equal(t, openai.ChatMessageRoleUser, got.Role)
-	require.Equal(t, "hello", got.Content)
+	require.Equal(t, "tool", resp.ToolCalls[0].Name)
 }
 
 func TestOpenAIProvider_Chat_NonStreaming_NoChoices(t *testing.T) {
@@ -444,32 +323,6 @@ func TestOpenAIProvider_Chat_NonStreaming_NoChoices(t *testing.T) {
 	require.Contains(t, err.Error(), "no choices")
 }
 
-func TestOpenAIProvider_Chat_ToolConversionError(t *testing.T) {
-	t.Setenv("ORLA_TEST_OPENAI_KEY", "k")
-
-	llmBackend := &core.LLMBackend{
-		Endpoint:     "http://example",
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
-	}
-
-	p, err := NewOpenAIProvider("m", llmBackend)
-	require.NoError(t, err)
-
-	// Tool with nil InputSchema should cause conversion error
-	tools := []*mcp.Tool{
-		{
-			Name:        "bad_tool",
-			Description: "desc",
-			InputSchema: nil,
-		},
-	}
-
-	_, _, err = p.Chat(context.Background(), []Message{{Role: MessageRoleUser, Content: "hi"}}, tools, InferenceOptions{Stream: false})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "normalize tool input schema")
-}
-
 func TestGetOpenAICompatibleEndpoint_MissingEndpoint(t *testing.T) {
 	t.Parallel()
 
@@ -480,52 +333,6 @@ func TestGetOpenAICompatibleEndpoint_MissingEndpoint(t *testing.T) {
 		})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "endpoint is required")
-}
-
-func TestNormalizeSchemaToMap_UnmarshalError(t *testing.T) {
-	t.Parallel()
-
-	tool := &mcp.Tool{
-		Name:        "bad",
-		InputSchema: []byte(`{invalid json}`),
-	}
-
-	_, err := normalizeSchemaToMap(tool)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unmarshal")
-}
-
-func TestNormalizeSchemaToMap_MarshalError(t *testing.T) {
-	t.Parallel()
-
-	// Channel cannot be marshaled to JSON
-	tool := &mcp.Tool{
-		Name:        "bad",
-		InputSchema: make(chan int),
-	}
-
-	_, err := normalizeSchemaToMap(tool)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "marshal")
-}
-
-func TestConvertOpenAIToolCalls_ErrorPropagates(t *testing.T) {
-	t.Parallel()
-
-	calls := []openai.ToolCall{
-		{
-			ID:   "bad",
-			Type: openai.ToolTypeFunction,
-			Function: openai.FunctionCall{
-				Name:      "tool",
-				Arguments: `{invalid json}`,
-			},
-		},
-	}
-
-	_, err := convertOpenAIToolCalls(calls)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unmarshal")
 }
 
 func TestOpenAIProvider_Chat_WithResponseFormat_NonStreaming(t *testing.T) {
@@ -557,14 +364,23 @@ func TestOpenAIProvider_Chat_WithResponseFormat_NonStreaming(t *testing.T) {
 	require.NotNil(t, resp)
 	require.Equal(t, `{"answer":"hello"}`, resp.Content)
 
-	var req openai.ChatCompletionRequest
+	var req struct {
+		ResponseFormat *struct {
+			Type       string `json:"type"`
+			JSONSchema *struct {
+				Name   string          `json:"name"`
+				Strict bool            `json:"strict"`
+				Schema json.RawMessage `json:"schema"`
+			} `json:"json_schema"`
+		} `json:"response_format"`
+	}
 	require.NoError(t, json.Unmarshal(srv.LastRequestBody(), &req))
 	require.NotNil(t, req.ResponseFormat, "request should include response_format")
-	require.Equal(t, openai.ChatCompletionResponseFormatTypeJSONSchema, req.ResponseFormat.Type)
+	require.Equal(t, "json_schema", req.ResponseFormat.Type)
 	require.NotNil(t, req.ResponseFormat.JSONSchema)
 	require.Equal(t, "test-schema", req.ResponseFormat.JSONSchema.Name)
 	require.True(t, req.ResponseFormat.JSONSchema.Strict)
-	require.NotNil(t, req.ResponseFormat.JSONSchema.Schema)
+	require.NotEmpty(t, req.ResponseFormat.JSONSchema.Schema)
 
 	var parsed map[string]any
 	require.NoError(t, json.Unmarshal([]byte(resp.Content), &parsed))
@@ -591,7 +407,9 @@ func TestOpenAIProvider_Chat_WithoutResponseFormat_RequestOmitsResponseFormat(t 
 	require.NotNil(t, resp)
 	require.Equal(t, "plain text", resp.Content)
 
-	var req openai.ChatCompletionRequest
+	var req struct {
+		ResponseFormat any `json:"response_format"`
+	}
 	require.NoError(t, json.Unmarshal(srv.LastRequestBody(), &req))
 	require.Nil(t, req.ResponseFormat, "request should not include response_format when opts.ResponseFormat is nil")
 }

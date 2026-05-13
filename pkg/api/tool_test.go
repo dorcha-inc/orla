@@ -72,24 +72,24 @@ func TestToolRunnerFromSchema_NilOutBecomesEmpty(t *testing.T) {
 	assert.Empty(t, result.OutputValues)
 }
 
-func TestTool_toMCP(t *testing.T) {
+func TestTool_toWire(t *testing.T) {
 	t.Parallel()
-	tool, err := NewTool("mcp_tool", "MCP desc", ToolSchema{"a": "b"}, nil, func(ctx context.Context, in ToolSchema) (*ToolResult, error) {
+	tool, err := NewTool("a_tool", "A desc", ToolSchema{"type": "object"}, nil, func(ctx context.Context, in ToolSchema) (*ToolResult, error) {
 		return &ToolResult{OutputValues: in}, nil
 	})
 	require.NoError(t, err)
-	mcpTool := tool.toMCP()
-	require.NotNil(t, mcpTool)
-	assert.Equal(t, "mcp_tool", mcpTool.Name)
-	assert.Equal(t, "MCP desc", mcpTool.Description)
-	assert.Equal(t, tool.InputSchema, mcpTool.InputSchema)
-	assert.Equal(t, tool.OutputSchema, mcpTool.OutputSchema)
+	wire, err := tool.toWire()
+	require.NoError(t, err)
+	require.NotNil(t, wire)
+	assert.Equal(t, "a_tool", wire.Name)
+	assert.Equal(t, "A desc", wire.Description)
+	assert.JSONEq(t, `{"type":"object"}`, string(wire.Parameters))
 }
 
 func TestNewToolCallFromRawToolCall_Valid(t *testing.T) {
 	t.Parallel()
-	// JSON shape matches toolCallWithID: id + McpCallToolParams (name, arguments)
-	raw := RawToolCall(`{"id":"call_1","McpCallToolParams":{"name":"my_tool","arguments":{"key":"value"}}}`)
+	// Wire shape: id, name, arguments (JSON-encoded).
+	raw := RawToolCall(`{"id":"call_1","name":"my_tool","arguments":{"key":"value"}}`)
 	tc, err := NewToolCallFromRawToolCall(raw)
 	require.NoError(t, err)
 	require.NotNil(t, tc)
@@ -100,7 +100,7 @@ func TestNewToolCallFromRawToolCall_Valid(t *testing.T) {
 
 func TestNewToolCallFromRawToolCall_EmptyArguments(t *testing.T) {
 	t.Parallel()
-	raw := RawToolCall(`{"id":"call_2","McpCallToolParams":{"name":"no_args","arguments":{}}}`)
+	raw := RawToolCall(`{"id":"call_2","name":"no_args","arguments":{}}`)
 	tc, err := NewToolCallFromRawToolCall(raw)
 	require.NoError(t, err)
 	require.NotNil(t, tc)

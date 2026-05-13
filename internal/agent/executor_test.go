@@ -9,7 +9,6 @@ import (
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/harvard-cns/orla/internal/model"
 	orlaTesting "github.com/harvard-cns/orla/internal/testing"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -224,7 +223,7 @@ func TestExecutor_Execute_Streaming(t *testing.T) {
 	chunks := []string{"Hello", " ", "world", "!"}
 
 	streamCh := make(chan model.StreamEvent, len(chunks))
-	provider := model.NewMockProvider().WithChatFunc(func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
+	provider := model.NewMockProvider().WithChatFunc(func(ctx context.Context, messages []model.Message, tools []*model.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
 		if opts.Stream {
 			go func() {
 				for _, chunk := range chunks {
@@ -234,7 +233,7 @@ func TestExecutor_Execute_Streaming(t *testing.T) {
 			}()
 			return &model.Response{
 				Content:   "Hello world!",
-				ToolCalls: []model.ToolCallWithID{},
+				ToolCalls: []model.ToolCall{},
 			}, streamCh, nil
 		}
 		return &model.Response{Content: "test"}, nil, nil
@@ -260,14 +259,14 @@ func TestExecutor_Execute_StreamingError(t *testing.T) {
 	cfg := &config.OrlaConfig{Streaming: true}
 
 	streamCh := make(chan model.StreamEvent, 1)
-	provider := model.NewMockProvider().WithChatFunc(func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
+	provider := model.NewMockProvider().WithChatFunc(func(ctx context.Context, messages []model.Message, tools []*model.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
 		go func() {
 			streamCh <- &model.ContentEvent{Content: "chunk"}
 			close(streamCh)
 		}()
 		return &model.Response{
 			Content:   "test",
-			ToolCalls: []model.ToolCallWithID{},
+			ToolCalls: []model.ToolCall{},
 		}, streamCh, nil
 	}).Build()
 
@@ -297,7 +296,7 @@ func TestExecutor_Execute_NilResponse(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.OrlaConfig{Streaming: false}
 
-	provider := model.NewMockProvider().WithChatFunc(func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
+	provider := model.NewMockProvider().WithChatFunc(func(ctx context.Context, messages []model.Message, tools []*model.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
 		return nil, nil, nil
 	}).Build()
 
@@ -343,10 +342,10 @@ func TestExecutor_Execute_StreamChannelNil(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.OrlaConfig{Streaming: true}
 
-	provider := model.NewMockProvider().WithChatFunc(func(ctx context.Context, messages []model.Message, tools []*mcp.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
+	provider := model.NewMockProvider().WithChatFunc(func(ctx context.Context, messages []model.Message, tools []*model.Tool, opts model.InferenceOptions) (*model.Response, <-chan model.StreamEvent, error) {
 		return &model.Response{
 			Content:   "test",
-			ToolCalls: []model.ToolCallWithID{},
+			ToolCalls: []model.ToolCall{},
 		}, nil, nil
 	}).Build()
 
