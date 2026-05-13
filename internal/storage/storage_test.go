@@ -12,15 +12,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// migrationsApplied checks that a domain table from a migration exists,
+// which is the strongest available proof that goose ran the up migrations.
+func migrationsApplied(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	var name string
+	err := db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name='stages'`).Scan(&name)
+	require.NoError(t, err)
+	require.Equal(t, "stages", name)
+}
+
 func TestOpen_MemorySucceedsAndMigrates(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { core.LogDeferredError(store.Close) })
 
-	var count int
-	require.NoError(t, store.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&count))
-	assert.Greater(t, count, 0, "at least one migration should have run")
+	migrationsApplied(t, ctx, store.DB())
 }
 
 func TestOpen_FileBackedWALMode(t *testing.T) {
@@ -35,22 +43,19 @@ func TestOpen_FileBackedWALMode(t *testing.T) {
 	assert.Equal(t, "wal", mode)
 }
 
-func TestOpen_AppliesEachMigrationOnce(t *testing.T) {
+func TestOpen_ReopenIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "orla.db")
 
 	store1, err := Open(ctx, path)
 	require.NoError(t, err)
-	var first int
-	require.NoError(t, store1.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&first))
+	migrationsApplied(t, ctx, store1.DB())
 	require.NoError(t, store1.Close())
 
 	store2, err := Open(ctx, path)
 	require.NoError(t, err)
 	t.Cleanup(func() { core.LogDeferredError(store2.Close) })
-	var second int
-	require.NoError(t, store2.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&second))
-	assert.Equal(t, first, second, "re-opening should not re-apply migrations")
+	migrationsApplied(t, ctx, store2.DB())
 }
 
 func TestOpen_EmptyPathErrors(t *testing.T) {
@@ -98,28 +103,4 @@ func TestTx_RollsBackOnError(t *testing.T) {
 	var count int
 	require.NoError(t, store.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM t`).Scan(&count))
 	assert.Equal(t, 0, count, "transaction should have rolled back")
-}
-
-func TestParseMigrationVersion(t *testing.T) {
-	cases := []struct {
-		name   string
-		input  string
-		want   int
-		err    bool
-	}{
-		{name: "standard", input: "0001_init.sql", want: 1},
-		{name: "no underscore", input: "0042.sql", want: 42},
-		{name: "non-numeric prefix", input: "init.sql", err: true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got, err := parseMigrationVersion(c.input)
-			if c.err {
-				assert.Error(t, err)
-				return
-			}
-			assert.NoError(t, err)
-			assert.Equal(t, c.want, got)
-		})
-	}
 }

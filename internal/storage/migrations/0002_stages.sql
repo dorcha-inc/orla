@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE stages (
     id                          TEXT PRIMARY KEY,
     backend                     TEXT NOT NULL DEFAULT '',
@@ -13,3 +14,6 @@ CREATE TABLE stages (
     created_at                  INTEGER NOT NULL,
     updated_at                  INTEGER NOT NULL
 );
+
+-- +goose Down
+DROP TABLE stages;

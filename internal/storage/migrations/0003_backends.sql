@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE backends (
     name              TEXT PRIMARY KEY,
     endpoint          TEXT NOT NULL,
@@ -11,3 +12,6 @@ CREATE TABLE backends (
     created_at        INTEGER NOT NULL,
     updated_at        INTEGER NOT NULL
 );
+
+-- +goose Down
+DROP TABLE backends;
