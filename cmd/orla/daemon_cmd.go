@@ -11,6 +11,8 @@ import (
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/harvard-cns/orla/internal/serving"
 	servingapi "github.com/harvard-cns/orla/internal/serving/api"
+	"github.com/harvard-cns/orla/internal/stages"
+	"github.com/harvard-cns/orla/internal/storage"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -47,15 +49,27 @@ func newServeCmd() *cobra.Command {
 				listenAddress = listenAddr
 			}
 
-			layer := serving.NewAgenticLayer()
+			storagePath, err := cfg.ResolveStoragePath()
+			if err != nil {
+				zap.L().Fatal("Failed to resolve storage path", zap.Error(err))
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			store, err := storage.Open(ctx, storagePath)
+			if err != nil {
+				zap.L().Fatal("Failed to open storage", zap.String("path", storagePath), zap.Error(err))
+			}
+			defer core.LogDeferredError(store.Close)
+			zap.L().Info("Storage opened", zap.String("path", storagePath))
+
+			stageRegistry := stages.NewRegistry(store.DB())
+			layer := serving.NewAgenticLayer(stageRegistry)
 
 			apiServer := servingapi.NewAgenticServer(layer, listenAddress, &servingapi.ServerOptions{
 				RateLimitRPS: cfg.RateLimitRPS,
 			})
-
-			// Set up signal handling for graceful shutdown
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
 
 			layer.StartPressureMonitor(ctx)
 

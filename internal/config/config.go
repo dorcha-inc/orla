@@ -4,6 +4,8 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/spf13/viper"
@@ -70,6 +72,7 @@ type OrlaConfig struct {
 	// Service only
 	ListenAddress string `yaml:"listen_address,omitempty" mapstructure:"listen_address"` // address to bind (e.g. "localhost:8081", ":8081")
 	RateLimitRPS  int    `yaml:"rate_limit_rps,omitempty" mapstructure:"rate_limit_rps"`   // max requests/sec for execute and backends; 0 = disabled
+	StoragePath   string `yaml:"storage_path,omitempty" mapstructure:"storage_path"`       // path to the embedded SQLite database file; ":memory:" for ephemeral
 	// Common to both service and agent
 	LogFormat OrlaLogFormat `yaml:"log_format,omitempty" mapstructure:"log_format"` // the log format, "pretty" or "json"
 	LogLevel  string        `yaml:"log_level,omitempty" mapstructure:"log_level"`   // the log level, "debug", "info", "warn", "error", "fatal"
@@ -112,6 +115,30 @@ func setViperDefaults() {
 	viper.SetDefault("output_format", "auto")
 	viper.SetDefault("show_thinking", false)
 	viper.SetDefault("show_progress", false)
+}
+
+// ResolveStoragePath returns the storage path to use for the embedded SQLite
+// database. If the config sets a path explicitly it is honored verbatim.
+// Otherwise we use $XDG_DATA_HOME/orla/orla.db (Linux) or ~/.orla/orla.db,
+// creating the parent directory if needed.
+func (c *OrlaConfig) ResolveStoragePath() (string, error) {
+	if c.StoragePath != "" {
+		return c.StoragePath, nil
+	}
+	var dir string
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		dir = filepath.Join(xdg, "orla")
+	} else {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home directory for default storage path: %w", err)
+		}
+		dir = filepath.Join(home, ".orla")
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // G703 false positive; dir is from $XDG_DATA_HOME or os.UserHomeDir(), both controlled sources.
+		return "", fmt.Errorf("create storage directory %q: %w", dir, err)
+	}
+	return filepath.Join(dir, "orla.db"), nil
 }
 
 // LoadConfig loads configuration from a single file path. If configPath is empty,

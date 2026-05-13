@@ -119,6 +119,12 @@ func (s *AgenticServer) registerRoutes(rateLimitRPS int) {
 	s.mux.HandleFunc("GET /api/v1/policies", s.handleListPolicies)
 	s.mux.HandleFunc("DELETE /api/v1/policies/{name}", s.handleRemovePolicy)
 
+	s.mux.HandleFunc("PUT /api/v1/stages/{id}", s.handleUpsertStage)
+	s.mux.HandleFunc("PATCH /api/v1/stages/{id}", s.handlePatchStage)
+	s.mux.HandleFunc("GET /api/v1/stages/{id}", s.handleGetStage)
+	s.mux.HandleFunc("GET /api/v1/stages", s.handleListStages)
+	s.mux.HandleFunc("DELETE /api/v1/stages/{id}", s.handleDeleteStage)
+
 	s.mux.HandleFunc("POST /api/v1/access/check", s.handleAccessCheck)
 }
 

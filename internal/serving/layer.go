@@ -10,6 +10,7 @@ import (
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/harvard-cns/orla/internal/serving/access"
 	"github.com/harvard-cns/orla/internal/serving/memory"
+	"github.com/harvard-cns/orla/internal/stages"
 	"go.uber.org/zap"
 )
 
@@ -19,11 +20,14 @@ type AgenticLayer struct {
 	MemoryManager     *memory.DefaultManager
 	WorkflowManager   *core.WorkflowManager
 	PolicyStore       *access.Store
+	StageRegistry     *stages.Registry
 	policyEvaluator   *access.Evaluator
 }
 
-// NewAgenticLayer creates a new serving layer.
-func NewAgenticLayer() *AgenticLayer {
+// NewAgenticLayer creates a new serving layer. stageRegistry may be nil in
+// tests that do not exercise stage configuration; production code should
+// always pass a registry backed by storage.Store.
+func NewAgenticLayer(stageRegistry *stages.Registry) *AgenticLayer {
 	wm := core.NewWorkflowManager()
 	mm := memory.NewDefaultManager(memory.DefaultManagerConfig{}, wm)
 	ps := access.NewStore()
@@ -32,6 +36,7 @@ func NewAgenticLayer() *AgenticLayer {
 		MemoryManager:     mm,
 		WorkflowManager:   wm,
 		PolicyStore:       ps,
+		StageRegistry:     stageRegistry,
 		policyEvaluator:   access.NewEvaluator(ps),
 	}
 }

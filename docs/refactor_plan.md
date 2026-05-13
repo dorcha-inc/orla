@@ -2,6 +2,8 @@
 
 Status: **in progress**. Last updated 2026-05-13.
 
+**Completed so far:** A (revert), A.5a (mcp.Tool removal), A.5b (openai-go SDK), B.0 (storage + batchWriter), B (stage registry + REST). Phase 0 coverage tooling and the codecov upload also landed.
+
 ## Goal
 
 Reshape Orla around two clearly separated personas:

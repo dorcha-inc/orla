@@ -224,6 +224,11 @@ The `orla serve` daemon exposes an HTTP API for inference and backend management
 | `/api/v1/policies` | POST | Add an access control policy |
 | `/api/v1/policies` | GET | List all access control policies |
 | `/api/v1/policies/{name}` | DELETE | Remove an access control policy |
+| `/api/v1/stages/{id}` | PUT | Create or replace a stage record |
+| `/api/v1/stages/{id}` | PATCH | Partially update a stage record |
+| `/api/v1/stages/{id}` | GET | Read a stage record |
+| `/api/v1/stages` | GET | List all stage records |
+| `/api/v1/stages/{id}` | DELETE | Remove a stage record |
 | `/api/v1/access/check` | POST | Validate access control policies without executing |
 | `/api/v1/workflow/complete` | POST | Notify workflow completion for memory tracking |
 | `/metrics` | GET | Prometheus metrics |
@@ -256,7 +261,26 @@ The daemon includes production hardening:
 - **Retry with backoff**: Provider calls retry on 5xx, 429, and network errors (up to 3 attempts, exponential backoff).
 - **Rate limiting**: Optional `rate_limit_rps` in config limits execute and backends endpoints; 0 disables.
 
-Config options for `orla serve` (in `OrlaConfig`): `listen_address`, `rate_limit_rps`, `log_format`, `log_level`.
+Config options for `orla serve` (in `OrlaConfig`): `listen_address`, `rate_limit_rps`, `log_format`, `log_level`, `storage_path`.
+
+## Storage
+
+The daemon persists stage configuration (and later, completion records and feedback) in an embedded SQLite database via the `internal/storage` package.
+
+- **Driver**: `modernc.org/sqlite` (pure-Go, statically linkable, no CGo).
+- **Path**: `storage_path` config option. Defaults to `$XDG_DATA_HOME/orla/orla.db` or `~/.orla/orla.db`. Use `:memory:` for ephemeral in-process databases (tests).
+- **Pragmas**: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000`.
+- **Migrations**: Embedded `.sql` files under `internal/storage/migrations/`, applied in numeric order, tracked in the `schema_migrations` table.
+- **Helpers**: `Store.Tx(ctx, fn)` runs `fn` in a transaction; `storage.BatchWriter[T]` is a generic async batched writer used for high-volume telemetry (Phase F onwards).
+
+## Stages
+
+Stage configuration is owned by the platform engineer (or an external mapper). The `internal/stages` package persists stage records in SQLite with an in-memory read cache.
+
+- **Stage record**: `id`, `backend`, scheduling policy + priority knobs, `max_concurrency`, `reasoning_effort`, `flush_on_complete`, `reasoning_hint` (developer-supplied), free-form `labels`.
+- **Auto-create**: `GetOrCreate(ctx, id)` inserts a default row on miss, so a stage exists as soon as a developer first uses its id.
+- **REST API** is listed in the Daemon API table above. PUT replaces the whole record; PATCH updates only the fields present in the request body (clear nullable fields by re-PUTting without them).
+- **Phase B scope**: registry + CRUD only. Phase C wires the proxy to consult `StageRegistry.Get(stage)` for backend selection and inference options; Phase D applies stage-scoped scheduling and per-stage concurrency.
 
 ## Access Control
 

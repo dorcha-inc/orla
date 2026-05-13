@@ -23,7 +23,7 @@ func newProxyTestServer(t *testing.T) (*AgenticServer, *model.MockLLMServer) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer()
+	layer := serving.NewAgenticLayer(nil)
 	layer.AddLLMBackend("cheap", &core.LLMBackend{
 		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:m")
@@ -125,7 +125,7 @@ func TestChatCompletions_AccessDeniedByPolicy(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer()
+	layer := serving.NewAgenticLayer(nil)
 	layer.AddLLMBackend("strong", &core.LLMBackend{
 		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:m")
@@ -154,7 +154,7 @@ func TestChatCompletions_DataLabelDenied(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer()
+	layer := serving.NewAgenticLayer(nil)
 	layer.AddLLMBackend("ext", &core.LLMBackend{
 		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:m")
@@ -185,7 +185,7 @@ func TestChatCompletions_ToolsRoundtrip(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer()
+	layer := serving.NewAgenticLayer(nil)
 	layer.AddLLMBackend("cheap", &core.LLMBackend{
 		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:m")
@@ -241,7 +241,7 @@ func TestChatCompletions_Streaming(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer()
+	layer := serving.NewAgenticLayer(nil)
 	layer.AddLLMBackend("cheap", &core.LLMBackend{
 		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:m")
@@ -368,7 +368,7 @@ func TestChatCompletions_WorkflowLabelPropagation(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "k")
 
-	layer := serving.NewAgenticLayer()
+	layer := serving.NewAgenticLayer(nil)
 	layer.AddLLMBackend("ext", &core.LLMBackend{
 		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:m")

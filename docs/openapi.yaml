@@ -243,6 +243,86 @@ paths:
         "404":
           description: Policy not found
 
+  /api/v1/stages:
+    get:
+      summary: List stages
+      operationId: listStages
+      responses:
+        "200":
+          description: All stage records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListStagesResponse"
+
+  /api/v1/stages/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: Create or replace a stage record
+      operationId: upsertStage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StageRequest"
+      responses:
+        "200":
+          description: Stage record after upsert
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stage"
+    patch:
+      summary: Partially update a stage record
+      description: Only fields present in the request body are updated. To clear a nullable field, re-PUT the stage without it.
+      operationId: patchStage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StageRequest"
+      responses:
+        "200":
+          description: Stage record after patch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stage"
+        "404":
+          description: Stage not found
+    get:
+      summary: Read a stage record
+      operationId: getStage
+      responses:
+        "200":
+          description: Stage record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stage"
+        "404":
+          description: Stage not found
+    delete:
+      summary: Delete a stage record
+      operationId: deleteStage
+      responses:
+        "200":
+          description: Stage removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
   /api/v1/access/check:
     post:
       summary: Validate access control
@@ -845,6 +925,90 @@ components:
                 items:
                   type: string
           description: Stages that strip specific labels from propagation
+
+    StageRequest:
+      type: object
+      description: Stage configuration sent to PUT or PATCH /api/v1/stages/{id}.
+      properties:
+        backend:
+          type: string
+          description: Backend the stage routes to. Empty means unmapped.
+        scheduling_policy:
+          type: string
+          enum: [fcfs, priority]
+        request_scheduling_policy:
+          type: string
+          enum: [fcfs, priority]
+        priority:
+          type: integer
+          nullable: true
+        request_priority:
+          type: integer
+          nullable: true
+        max_concurrency:
+          type: integer
+          nullable: true
+          description: Per-stage concurrency cap.
+        reasoning_effort:
+          type: string
+          enum: [low, medium, high]
+        flush_on_complete:
+          type: boolean
+          description: Flush this stage's KV cache region when its workflow run completes.
+        reasoning_hint:
+          type: string
+          description: Developer-supplied hint; does not affect inference directly.
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+
+    Stage:
+      type: object
+      required: [id, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        backend:
+          type: string
+        scheduling_policy:
+          type: string
+        request_scheduling_policy:
+          type: string
+        priority:
+          type: integer
+          nullable: true
+        request_priority:
+          type: integer
+          nullable: true
+        max_concurrency:
+          type: integer
+          nullable: true
+        reasoning_effort:
+          type: string
+        flush_on_complete:
+          type: boolean
+        reasoning_hint:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ListStagesResponse:
+      type: object
+      required: [stages]
+      properties:
+        stages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Stage"
 
     AccessCheckRequest:
       type: object

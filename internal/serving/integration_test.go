@@ -24,7 +24,7 @@ func TestIntegration_Execute_EndToEnd(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer()
+	layer := NewAgenticLayer(nil)
 	layer.AddLLMBackend("integration-backend", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
@@ -47,7 +47,7 @@ func TestIntegration_ExecuteStream_EndToEnd(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer()
+	layer := NewAgenticLayer(nil)
 	layer.AddLLMBackend("integration-backend", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
@@ -80,7 +80,7 @@ func TestIntegration_Execute_WithToolCalls(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer()
+	layer := NewAgenticLayer(nil)
 	layer.AddLLMBackend("integration-backend", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
@@ -98,7 +98,7 @@ func TestIntegration_Execute_WithToolCalls(t *testing.T) {
 }
 
 func TestIntegration_Execute_BackendNotFound(t *testing.T) {
-	layer := NewAgenticLayer()
+	layer := NewAgenticLayer(nil)
 	ctx := context.Background()
 
 	_, err := layer.Execute(ctx, "nonexistent-backend", "", []model.Message{
@@ -115,7 +115,7 @@ func TestIntegration_Execute_MultipleBackends(t *testing.T) {
 	t.Cleanup(srv2.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer()
+	layer := NewAgenticLayer(nil)
 	layer.AddLLMBackend("backend-1", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv1.URL() + "/v1",
@@ -151,7 +151,7 @@ func TestIntegration_Execute_InvalidAPIKey(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "") // Explicitly empty so provider fails
-	layer := NewAgenticLayer()
+	layer := NewAgenticLayer(nil)
 	layer.AddLLMBackend("backend", &core.LLMBackend{
 		Type:         core.LLMInferenceAPITypeOpenAI,
 		Endpoint:     srv.URL() + "/v1",
