@@ -1,57 +1,83 @@
 package core
 
 import (
+	"context"
 	"fmt"
-
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"log/slog"
+	"os"
+	"strings"
 )
 
-// InitLogger initializes zap's global logger.
-// pretty: use development (pretty) format when true, production JSON when false.
-// level: "debug", "info", "warn", "error", "fatal"; empty means "info".
-// Output is stderr to avoid interfering with tool stdout (critical for stdio/MCP).
+// InitLogger initializes the global structured logger.
+//   - pretty=true uses a human-friendly text handler with colors-via-level-names;
+//     pretty=false uses JSON for machine ingestion.
+//   - level is one of "debug", "info", "warn", "error"; empty means "info".
+//
+// All output goes to stderr so it doesn't collide with tool stdout (MCP/stdio).
 func InitLogger(pretty bool, level string) error {
-	var config zap.Config
-
-	if pretty {
-		config = zap.NewDevelopmentConfig()
-		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	} else {
-		config = zap.NewProductionConfig()
-		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	}
-
-	if level != "" {
-		var l zapcore.Level
-		if err := l.UnmarshalText([]byte(level)); err != nil {
-			return fmt.Errorf("invalid log level %q: %w", level, err)
-		}
-		config.Level = zap.NewAtomicLevelAt(l)
-	}
-
-	config.OutputPaths = []string{"stderr"}
-	config.ErrorOutputPaths = []string{"stderr"}
-
-	logger, err := config.Build()
+	lvl, err := parseLevel(level)
 	if err != nil {
-		return fmt.Errorf("failed to build logger: %w", err)
+		return err
 	}
-
-	zap.ReplaceGlobals(logger)
+	opts := &slog.HandlerOptions{Level: lvl}
+	var handler slog.Handler
+	if pretty {
+		handler = slog.NewTextHandler(os.Stderr, opts)
+	} else {
+		handler = slog.NewJSONHandler(os.Stderr, opts)
+	}
+	slog.SetDefault(slog.New(handler))
 	return nil
 }
 
-// LogDeferredError takes a function that returns an error, calls it, and logs the error if it is not nil
+func parseLevel(level string) (slog.Level, error) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "", "info":
+		return slog.LevelInfo, nil
+	case "debug":
+		return slog.LevelDebug, nil
+	case "warn", "warning":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	case "fatal":
+		// slog has no Fatal; map to Error and rely on Fatal() helper for os.Exit.
+		return slog.LevelError, nil
+	}
+	return 0, fmt.Errorf("invalid log level %q", level)
+}
+
+// Fatal logs at error level and exits with status 1. Use sparingly — most error
+// paths should return the error to the caller.
+func Fatal(msg string, args ...any) {
+	slog.LogAttrs(context.Background(), slog.LevelError, msg, asAttrs(args)...)
+	os.Exit(1)
+}
+
+func asAttrs(args []any) []slog.Attr {
+	out := make([]slog.Attr, 0, len(args)/2)
+	for i := 0; i+1 < len(args); i += 2 {
+		k, ok := args[i].(string)
+		if !ok {
+			continue
+		}
+		out = append(out, slog.Any(k, args[i+1]))
+	}
+	return out
+}
+
+// LogDeferredError takes a function that returns an error, calls it, and logs
+// the error if it is not nil.
 func LogDeferredError(fn func() error) {
 	if err := fn(); err != nil {
-		zap.L().Error("Deferred error", zap.Error(err), zap.Stack("stack_trace"))
+		slog.Error("Deferred error", "error", err)
 	}
 }
 
-// LogDeferredError1 takes a function that returns an error, calls it with the given argument, and logs the error if it is not nil
+// LogDeferredError1 takes a function that returns an error, calls it with the
+// given argument, and logs the error if it is not nil.
 func LogDeferredError1[T any](fn func(T) error, arg T) {
 	if err := fn(arg); err != nil {
-		zap.L().Error("Deferred error", zap.Error(err), zap.Stack("stack_trace"))
+		slog.Error("Deferred error", "error", err)
 	}
 }

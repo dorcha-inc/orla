@@ -16,7 +16,7 @@ import (
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/harvard-cns/orla/internal/tui"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // Executor handles agent execution with proper setup and teardown
@@ -59,9 +59,9 @@ func (e *Executor) Execute(ctx context.Context, prompt string, messages []model.
 		})
 	}
 
-	zap.L().Debug("Agent execute",
-		zap.String("prompt", prompt),
-		zap.Int("message_count", len(conversation)))
+	slog.Debug("Agent execute",
+		"prompt", prompt,
+		"message_count", len(conversation))
 
 	tui.Progress("Processing request")
 
@@ -205,7 +205,7 @@ func createStreamHandler(cfg *config.OrlaConfig) StreamHandler {
 			// ENOTTY or EINVAL, often wrapped in *fs.PathError.
 			var errno syscall.Errno
 			if !errors.As(syncErr, &errno) || (errno != syscall.ENOTTY && errno != syscall.EINVAL) {
-				zap.L().Error("failed to flush stdout", zap.Error(syncErr))
+				slog.Error("failed to flush stdout", "error", syncErr)
 			}
 		}
 		return nil
@@ -332,7 +332,7 @@ func ExecuteAgentPrompt(prompt string, modelOverride string, configPath string) 
 	}
 
 	if response.Content == "" {
-		zap.L().Warn("did not receive a response from the model")
+		slog.Warn("did not receive a response from the model")
 		return nil
 	}
 
@@ -341,7 +341,7 @@ func ExecuteAgentPrompt(prompt string, modelOverride string, configPath string) 
 	// Try to render as markdown if it looks like markdown
 	rendered, err := tui.RenderMarkdown(response.Content, 80)
 	if err != nil {
-		zap.L().Warn("failed to render markdown, falling back to plain text", zap.Error(err))
+		slog.Warn("failed to render markdown, falling back to plain text", "error", err)
 		fmt.Println(response.Content)
 		return nil
 	}

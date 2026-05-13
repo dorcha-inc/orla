@@ -37,7 +37,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/jonboulle/clockwork"
-	"go.uber.org/zap"
+	"log/slog"
 	"golang.org/x/term"
 )
 
@@ -295,7 +295,7 @@ func (u *UI) ProgressSuccess(message string) {
 	}
 
 	if u.currentSpinner == nil {
-		zap.L().Error("ProgressSuccess called without a spinner")
+		slog.Error("ProgressSuccess called without a spinner")
 		return
 	}
 

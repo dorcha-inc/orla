@@ -1,14 +1,15 @@
 package tui
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest/observer"
 
 	orlaTesting "github.com/harvard-cns/orla/internal/testing"
 )
@@ -310,24 +311,20 @@ func TestUI_ProgressSuccess_WithoutSpinner(t *testing.T) {
 			ui.enabled = tt.enabled
 			ui.showProgress = tt.enabled
 
-			// Set up observer to capture logs
-			core, logs := observer.New(zap.ErrorLevel)
-			logger := zap.New(core)
-			zap.ReplaceGlobals(logger)
-			defer zap.ReplaceGlobals(zap.NewNop()) // Restore default logger
+			// Capture slog output to verify error logging
+			buf := &bytes.Buffer{}
+			old := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelError})))
+			defer slog.SetDefault(old)
 
 			// ProgressSuccess without a spinner should not crash
 			ui.ProgressSuccess("test")
 
-			// Verify behavior based on enabled state
 			if ui.enabled {
-				require.GreaterOrEqual(t, logs.Len(), 1, "Should log error when UI is enabled and no spinner exists")
-				entry := logs.All()[0]
-				assert.Equal(t, "ProgressSuccess called without a spinner", entry.Message)
-				assert.Equal(t, zap.ErrorLevel, entry.Level)
+				require.True(t, strings.Contains(buf.String(), "ProgressSuccess called without a spinner"),
+					"expected error log; got %q", buf.String())
 			} else {
-				// If UI is disabled, ProgressSuccess returns early and doesn't log
-				assert.Equal(t, 0, logs.Len(), "Should not log when UI is disabled")
+				assert.Empty(t, buf.String(), "Should not log when UI is disabled")
 			}
 		})
 	}

@@ -2,18 +2,17 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/harvard-cns/orla/internal/serving"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 const (
@@ -239,7 +238,7 @@ func (s *AgenticServer) streamChatCompletion(
 	w.WriteHeader(http.StatusOK)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		zap.L().Error("flusher not supported")
+		slog.Error("flusher not supported")
 		return
 	}
 
@@ -263,7 +262,7 @@ func (s *AgenticServer) streamChatCompletion(
 			case *model.ToolCallEvent:
 				argsBytes, err := json.Marshal(e.Arguments)
 				if err != nil {
-					zap.L().Error("failed to marshal tool call arguments", zap.Error(err))
+					slog.Error("failed to marshal tool call arguments", "error", err)
 					continue
 				}
 				idx := toolIdx
@@ -288,7 +287,7 @@ func (s *AgenticServer) streamChatCompletion(
 		Choices: []chatChunkChoice{{Index: 0, Delta: chatDelta{}, FinishReason: &finish}},
 	})
 	if _, err := fmt.Fprint(w, "data: [DONE]\n\n"); err != nil {
-		zap.L().Error("failed to write SSE DONE", zap.Error(err))
+		slog.Error("failed to write SSE DONE", "error", err)
 	}
 	flusher.Flush()
 }
@@ -448,21 +447,17 @@ func finishReason(resp *model.Response) string {
 }
 
 func newCompletionID() string {
-	var buf [12]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return "chatcmpl-" + fmt.Sprintf("%d", time.Now().UnixNano())
-	}
-	return "chatcmpl-" + hex.EncodeToString(buf[:])
+	return "chatcmpl-" + uuid.NewString()
 }
 
 func writeOpenAISSE(w http.ResponseWriter, flusher http.Flusher, chunk chatCompletionChunk) {
 	payload, err := json.Marshal(chunk)
 	if err != nil {
-		zap.L().Error("failed to marshal chat chunk", zap.Error(err))
+		slog.Error("failed to marshal chat chunk", "error", err)
 		return
 	}
 	if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
-		zap.L().Error("failed to write chat chunk", zap.Error(err))
+		slog.Error("failed to write chat chunk", "error", err)
 		return
 	}
 	if flusher != nil {

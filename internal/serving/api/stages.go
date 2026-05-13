@@ -8,7 +8,7 @@ import (
 
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/harvard-cns/orla/internal/stages"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // stageRequestBody is the wire shape for PUT /api/v1/stages/{id}. Pointer
@@ -75,7 +75,7 @@ func (s *AgenticServer) handleUpsertStage(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	zap.L().Info("Upserted stage", zap.String("id", id), zap.String("backend", loaded.Backend))
+	slog.Info("Upserted stage", "id", id, "backend", loaded.Backend)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -115,7 +115,7 @@ func (s *AgenticServer) handlePatchStage(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	zap.L().Info("Patched stage", zap.String("id", id))
+	slog.Info("Patched stage", "id", id)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -182,7 +182,7 @@ func (s *AgenticServer) handleDeleteStage(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	zap.L().Info("Deleted stage", zap.String("id", id))
+	slog.Info("Deleted stage", "id", id)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

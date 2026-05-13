@@ -9,7 +9,7 @@ import (
 
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/spf13/viper"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 const (
@@ -91,7 +91,7 @@ func setupViper(configPath string) error {
 	setViperDefaults()
 
 	if configPath == "" {
-		zap.L().Debug("no config path provided, using defaults")
+		slog.Debug("no config path provided, using defaults")
 		return nil
 	}
 

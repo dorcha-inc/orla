@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // BatchWriterConfig configures a BatchWriter.
@@ -96,10 +96,10 @@ func (w *BatchWriter[T]) run(ctx context.Context) {
 			return
 		}
 		if err := w.flush(ctx, buf); err != nil {
-			zap.L().Error("batch writer flush failed",
-				zap.String("name", w.name),
-				zap.Int("batch_size", len(buf)),
-				zap.Error(err))
+			slog.Error("batch writer flush failed",
+				"name", w.name,
+				"batch_size", len(buf),
+				"error", err)
 		}
 		buf = buf[:0]
 	}

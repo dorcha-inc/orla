@@ -23,6 +23,7 @@ linters:
     gosec:
       excludes:
         - G204  # subprocess launched with variable - intentional for tool paths
+        - G706  # log injection via taint - slog's structured kv logging escapes values safely
     goconst:
       min-len: 3
       min-occurrences: 3

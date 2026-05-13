@@ -1,91 +1,88 @@
 package core
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest/observer"
 )
 
-// TestInit_PrettyLog tests logger initialization with pretty logging
-func TestInit_PrettyLog(t *testing.T) {
-	err := InitLogger(true, "")
-	require.NoError(t, err)
-
-	// Verify logger is initialized
-	logger := zap.L()
-	assert.NotNil(t, logger)
-
-	// Test that we can log
-	logger.Info("Test message")
+func TestInitLogger_PrettyMode(t *testing.T) {
+	require.NoError(t, InitLogger(true, ""))
+	slog.Info("test message", "k", "v")
 }
 
-// TestInit_Error tests logger initialization error handling
-// Note: It's difficult to trigger config.Build() failure in normal circumstances,
-// but we can verify the error path exists by checking the error message format
-func TestInit_Error(t *testing.T) {
-	// This test verifies that Init handles errors correctly
-	// In practice, config.Build() rarely fails, but the error path is there
-	// We'll test with valid inputs and verify error handling structure
-
-	// Test that Init succeeds with valid inputs
-	err := InitLogger(false, "")
-	require.NoError(t, err)
-
-	// The error path (config.Build() failure) is hard to trigger without
-	// mocking or invalid system state, but the code path exists for error handling
+func TestInitLogger_JSONMode(t *testing.T) {
+	require.NoError(t, InitLogger(false, ""))
+	slog.Info("test message", "k", "v")
 }
 
-// TestInit_JSONLog tests logger initialization with JSON logging
-func TestInit_JSONLog(t *testing.T) {
-	err := InitLogger(false, "")
-	require.NoError(t, err)
-
-	// Verify logger is initialized
-	logger := zap.L()
-	assert.NotNil(t, logger)
-
-	// Test that we can log
-	logger.Info("Test message")
+func TestInitLogger_InvalidLevelErrors(t *testing.T) {
+	require.Error(t, InitLogger(false, "bogus"))
 }
 
-// TestLogDeferredError_WithError tests LogDeferredError when function returns an error
+func TestInitLogger_Levels(t *testing.T) {
+	for _, l := range []string{"debug", "info", "warn", "error", "fatal", ""} {
+		require.NoError(t, InitLogger(false, l))
+	}
+}
+
+// captureSlog installs a JSON handler writing to buf as the default logger.
+// Returns a restore function.
+func captureSlog(t *testing.T) (*bytes.Buffer, func()) {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	return buf, func() { slog.SetDefault(old) }
+}
+
 func TestLogDeferredError_WithError(t *testing.T) {
-	// Set up observer to capture logs
-	core, logs := observer.New(zap.ErrorLevel)
-	logger := zap.New(core)
-	zap.ReplaceGlobals(logger)
+	buf, restore := captureSlog(t)
+	t.Cleanup(restore)
 
-	testErr := errors.New("deferred error")
-	LogDeferredError(func() error {
-		return testErr
-	})
+	LogDeferredError(func() error { return errors.New("deferred error") })
 
-	// Verify log was written
-	require.Equal(t, 1, logs.Len())
-	entry := logs.All()[0]
-	assert.Equal(t, "Deferred error", entry.Message)
-	assert.Equal(t, zap.ErrorLevel, entry.Level)
-	// Error field should be present
-	assert.NotNil(t, entry.ContextMap()["error"])
-	// Stack trace is logged but may not be in ContextMap, verify entry exists
-	assert.NotEmpty(t, entry.Message)
+	assert.Contains(t, buf.String(), "Deferred error")
+	assert.Contains(t, buf.String(), `"error"`)
 }
 
-// TestLogDeferredError_NoError tests LogDeferredError when function returns no error
 func TestLogDeferredError_NoError(t *testing.T) {
-	// Set up observer to capture logs
-	core, logs := observer.New(zap.ErrorLevel)
-	logger := zap.New(core)
-	zap.ReplaceGlobals(logger)
+	buf, restore := captureSlog(t)
+	t.Cleanup(restore)
 
-	LogDeferredError(func() error {
-		return nil
-	})
+	LogDeferredError(func() error { return nil })
 
-	// Verify no log was written (no error means no log)
-	assert.Equal(t, 0, logs.Len())
+	assert.Empty(t, buf.String())
+}
+
+func TestLogDeferredError1_PropagatesArg(t *testing.T) {
+	buf, restore := captureSlog(t)
+	t.Cleanup(restore)
+
+	called := ""
+	LogDeferredError1(func(s string) error {
+		called = s
+		return errors.New("boom")
+	}, "hello")
+
+	assert.Equal(t, "hello", called)
+	assert.Contains(t, buf.String(), "Deferred error")
+}
+
+func TestFatal_LogsErrorLevel(t *testing.T) {
+	// We can't actually call core.Fatal in a unit test (it would os.Exit).
+	// Instead, exercise the same path via slog.LogAttrs with asAttrs to make
+	// sure the attribute conversion is correct.
+	buf, restore := captureSlog(t)
+	t.Cleanup(restore)
+
+	slog.LogAttrs(context.Background(), slog.LevelError, "fatal-like", asAttrs([]any{"key", "value"})...)
+
+	assert.Contains(t, buf.String(), "fatal-like")
+	assert.Contains(t, buf.String(), `"key":"value"`)
 }

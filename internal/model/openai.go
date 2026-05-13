@@ -13,7 +13,7 @@ import (
 	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/packages/respjson"
 	"github.com/openai/openai-go/shared"
-	"go.uber.org/zap"
+	"log/slog"
 
 	"github.com/harvard-cns/orla/internal/core"
 )
@@ -55,8 +55,8 @@ func getOpenAICompatibleEndpoint(llmBackend *core.LLMBackend) (string, string, e
 		return "", "", fmt.Errorf("llm_backend.endpoint is required")
 	}
 	if llmBackend.APIKeyEnvVar == "" {
-		zap.L().Debug("llm_backend.api_key_env_var is not set, skipping authentication for OpenAI-compatible API",
-			zap.String("llm_backend.endpoint", llmBackend.Endpoint))
+		slog.Debug("llm_backend.api_key_env_var is not set, skipping authentication for OpenAI-compatible API",
+			"llm_backend.endpoint", llmBackend.Endpoint)
 		return llmBackend.Endpoint, "", nil
 	}
 	apiKey := core.GetEnv(llmBackend.APIKeyEnvVar)
@@ -161,7 +161,7 @@ func (p *OpenAIProvider) handleNonStreaming(ctx context.Context, params openai.C
 			return nil, nil, err
 		}
 		response.ToolCalls = toolCalls
-		zap.L().Debug("Parsed tool calls", zap.Int("count", len(toolCalls)))
+		slog.Debug("Parsed tool calls", "count", len(toolCalls))
 	}
 
 	return response, nil, nil
@@ -226,7 +226,7 @@ func (p *OpenAIProvider) handleStreaming(ctx context.Context, params openai.Chat
 			for _, tcDelta := range delta.ToolCalls {
 				idx := int(tcDelta.Index)
 				if idx < 0 {
-					zap.L().Error("Invalid tool call index (negative)", zap.Int("index", idx))
+					slog.Error("Invalid tool call index (negative)", "index", idx)
 					continue
 				}
 				for len(accumulated) <= idx {
@@ -244,7 +244,7 @@ func (p *OpenAIProvider) handleStreaming(ctx context.Context, params openai.Chat
 			}
 		}
 		if err := stream.Err(); err != nil && !errors.Is(err, io.EOF) {
-			zap.L().Error("Error reading stream", zap.Error(err))
+			slog.Error("Error reading stream", "error", err)
 		}
 
 		// Finalize tool calls.
@@ -252,7 +252,7 @@ func (p *OpenAIProvider) handleStreaming(ctx context.Context, params openai.Chat
 			response.ToolCalls = make([]ToolCall, 0, len(accumulated))
 			for i, c := range accumulated {
 				if c.id == "" {
-					zap.L().Error("stream tool call missing id", zap.Int("index", i), zap.String("name", c.name))
+					slog.Error("stream tool call missing id", "index", i, "name", c.name)
 					continue
 				}
 				tc := ToolCall{ID: c.id, Name: c.name}
@@ -296,7 +296,7 @@ func convertMessagesToOpenAI(messages []Message) ([]openai.ChatCompletionMessage
 			out = append(out, openai.SystemMessage(msg.Content))
 		case MessageRoleTool:
 			if msg.ToolCallID == "" {
-				zap.L().Warn("Tool message missing ToolCallID", zap.String("tool_name", msg.ToolName))
+				slog.Warn("Tool message missing ToolCallID", "tool_name", msg.ToolName)
 			}
 			out = append(out, openai.ToolMessage(msg.Content, msg.ToolCallID))
 		case MessageRoleAssistant:

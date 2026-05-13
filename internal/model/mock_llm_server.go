@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"sync"
 
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // MockLLMServer is an HTTP server that speaks the OpenAI-compatible chat API.
@@ -128,20 +128,20 @@ func (s *MockLLMServer) LastRequestBody() []byte {
 
 func (s *MockLLMServer) handleChat(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/chat/completions" && r.URL.Path != "/v1/chat/completions" {
-		zap.L().Error("mock server: not found", zap.String("path", r.URL.Path))
+		slog.Error("mock server: not found", "path", r.URL.Path)
 		http.NotFound(w, r)
 		return
 	}
 
 	if r.Method != http.MethodPost {
-		zap.L().Error("mock server: method not allowed", zap.String("method", r.Method))
+		slog.Error("mock server: method not allowed", "method", r.Method)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		zap.L().Error("mock server: failed to read request body", zap.Error(err))
+		slog.Error("mock server: failed to read request body", "error", err)
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 		return
 	}
@@ -153,7 +153,7 @@ func (s *MockLLMServer) handleChat(w http.ResponseWriter, r *http.Request) {
 		Stream bool `json:"stream"`
 	}
 	if err := json.Unmarshal(body, &reqBody); err != nil {
-		zap.L().Error("mock server: failed to unmarshal request body", zap.Error(err))
+		slog.Error("mock server: failed to unmarshal request body", "error", err)
 		reqBody.Stream = false
 	}
 
@@ -186,7 +186,7 @@ func (s *MockLLMServer) serveNoChoices(w http.ResponseWriter) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		zap.L().Error("mock server: failed to encode no-choices response", zap.Error(err))
+		slog.Error("mock server: failed to encode no-choices response", "error", err)
 		return
 	}
 }
@@ -233,7 +233,7 @@ func (s *MockLLMServer) serveJSON(w http.ResponseWriter, cfg mockLLMServerConfig
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		zap.L().Error("mock server: failed to encode JSON response", zap.Error(err))
+		slog.Error("mock server: failed to encode JSON response", "error", err)
 		return
 	}
 }
@@ -258,11 +258,11 @@ func (s *MockLLMServer) serveStream(w http.ResponseWriter, cfg mockLLMServerConf
 		}
 		data, err := json.Marshal(evt)
 		if err != nil {
-			zap.L().Error("mock server: failed to marshal stream chunk", zap.Error(err))
+			slog.Error("mock server: failed to marshal stream chunk", "error", err)
 			return
 		}
 		if _, err := w.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
-			zap.L().Error("mock server: failed to write stream chunk", zap.Error(err))
+			slog.Error("mock server: failed to write stream chunk", "error", err)
 			return
 		}
 		if flusher, ok := w.(http.Flusher); ok {
@@ -281,15 +281,15 @@ func (s *MockLLMServer) serveStream(w http.ResponseWriter, cfg mockLLMServerConf
 	}
 	data, err := json.Marshal(finishEvt)
 	if err != nil {
-		zap.L().Error("mock server: failed to marshal stream finish event", zap.Error(err))
+		slog.Error("mock server: failed to marshal stream finish event", "error", err)
 		return
 	}
 	if _, err := w.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
-		zap.L().Error("mock server: failed to write stream finish event", zap.Error(err))
+		slog.Error("mock server: failed to write stream finish event", "error", err)
 		return
 	}
 	if _, err := w.Write([]byte("data: [DONE]\n\n")); err != nil {
-		zap.L().Error("mock server: failed to write stream done marker", zap.Error(err))
+		slog.Error("mock server: failed to write stream done marker", "error", err)
 		return
 	}
 }
@@ -317,11 +317,11 @@ func (s *MockLLMServer) serveStreamWithToolCalls(w http.ResponseWriter, cfg *str
 		}
 		data, err := json.Marshal(evt)
 		if err != nil {
-			zap.L().Error("mock server: failed to marshal stream content chunk", zap.Error(err))
+			slog.Error("mock server: failed to marshal stream content chunk", "error", err)
 			return
 		}
 		if _, err := w.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
-			zap.L().Error("mock server: failed to write stream content chunk", zap.Error(err))
+			slog.Error("mock server: failed to write stream content chunk", "error", err)
 			return
 		}
 		if flusher, ok := w.(http.Flusher); ok {
@@ -354,11 +354,11 @@ func (s *MockLLMServer) serveStreamWithToolCalls(w http.ResponseWriter, cfg *str
 		}
 		data, err := json.Marshal(evt)
 		if err != nil {
-			zap.L().Error("mock server: failed to marshal stream tool-calls chunk", zap.Error(err))
+			slog.Error("mock server: failed to marshal stream tool-calls chunk", "error", err)
 			return
 		}
 		if _, err := w.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
-			zap.L().Error("mock server: failed to write stream tool-calls chunk", zap.Error(err))
+			slog.Error("mock server: failed to write stream tool-calls chunk", "error", err)
 			return
 		}
 		if flusher, ok := w.(http.Flusher); ok {
@@ -378,15 +378,15 @@ func (s *MockLLMServer) serveStreamWithToolCalls(w http.ResponseWriter, cfg *str
 	}
 	data, err := json.Marshal(finishEvt)
 	if err != nil {
-		zap.L().Error("mock server: failed to marshal stream-with-tool-calls finish event", zap.Error(err))
+		slog.Error("mock server: failed to marshal stream-with-tool-calls finish event", "error", err)
 		return
 	}
 	if _, err := w.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
-		zap.L().Error("mock server: failed to write stream-with-tool-calls finish event", zap.Error(err))
+		slog.Error("mock server: failed to write stream-with-tool-calls finish event", "error", err)
 		return
 	}
 	if _, err := w.Write([]byte("data: [DONE]\n\n")); err != nil {
-		zap.L().Error("mock server: failed to write stream-with-tool-calls done marker", zap.Error(err))
+		slog.Error("mock server: failed to write stream-with-tool-calls done marker", "error", err)
 		return
 	}
 }

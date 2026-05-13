@@ -6,7 +6,7 @@ import (
 
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/spf13/cobra"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 var (
@@ -18,11 +18,11 @@ var (
 
 func applyVersionDefaults() {
 	if version == "" {
-		zap.L().Warn("version is not set, using default dev version")
+		slog.Warn("version is not set, using default dev version")
 		version = "dev"
 	}
 	if buildDate == "" {
-		zap.L().Warn("buildDate is not set, using default unknown build date")
+		slog.Warn("buildDate is not set, using default unknown build date")
 		buildDate = "unknown"
 	}
 }
@@ -47,6 +47,6 @@ func main() {
 	rootCmd.AddCommand(newAgentCmd())
 
 	if err := rootCmd.Execute(); err != nil {
-		zap.L().Fatal("Error executing root command", zap.Error(err))
+		core.Fatal("Error executing root command", "error", err)
 	}
 }

@@ -9,7 +9,7 @@ import (
 
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/openai/openai-go"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 const (
@@ -64,11 +64,11 @@ func chatWithRetry(ctx context.Context, provider model.Provider, messages []mode
 			return nil, nil, err
 		}
 		delay := retryBaseDelay * (1 << attempt)
-		zap.L().Warn("Retrying provider Chat after transient error",
-			zap.Error(err),
-			zap.Int("attempt", attempt+1),
-			zap.Int("max_attempts", retryMaxAttempts),
-			zap.Duration("delay", delay))
+		slog.Warn("Retrying provider Chat after transient error",
+			"error", err,
+			"attempt", attempt+1,
+			"max_attempts", retryMaxAttempts,
+			"delay", delay)
 		select {
 		case <-ctx.Done():
 			return nil, nil, ctx.Err()

@@ -14,7 +14,7 @@ import (
 	"github.com/harvard-cns/orla/internal/stages"
 	"github.com/harvard-cns/orla/internal/storage"
 	"github.com/spf13/cobra"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // newServeCmd creates the serve command that runs the agent engine as a service
@@ -30,7 +30,7 @@ func newServeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, loadConfigErr := config.LoadConfig(configPath)
 			if loadConfigErr != nil {
-				zap.L().Fatal("Failed to load config", zap.Error(loadConfigErr))
+				core.Fatal("Failed to load config", "error", loadConfigErr)
 			}
 
 			// Resolve logging format: CLI flag wins; otherwise config
@@ -38,7 +38,7 @@ func newServeCmd() *cobra.Command {
 
 			coreInitErr := core.InitLogger(resolvedPrettyLog, cfg.LogLevel)
 			if coreInitErr != nil {
-				zap.L().Fatal("Failed to initialize logger", zap.Error(coreInitErr))
+				core.Fatal("Failed to initialize logger", "error", coreInitErr)
 			}
 
 			listenAddress := cfg.ListenAddress
@@ -51,7 +51,7 @@ func newServeCmd() *cobra.Command {
 
 			storagePath, err := cfg.ResolveStoragePath()
 			if err != nil {
-				zap.L().Fatal("Failed to resolve storage path", zap.Error(err))
+				core.Fatal("Failed to resolve storage path", "error", err)
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -59,10 +59,10 @@ func newServeCmd() *cobra.Command {
 
 			store, err := storage.Open(ctx, storagePath)
 			if err != nil {
-				zap.L().Fatal("Failed to open storage", zap.String("path", storagePath), zap.Error(err))
+				core.Fatal("Failed to open storage", "path", storagePath, "error", err)
 			}
 			defer core.LogDeferredError(store.Close)
-			zap.L().Info("Storage opened", zap.String("path", storagePath))
+			slog.Info("Storage opened", "path", storagePath)
 
 			stageRegistry := stages.NewRegistry(store.DB())
 			layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{
@@ -70,7 +70,7 @@ func newServeCmd() *cobra.Command {
 				DB:            store.DB(),
 			})
 			if err := layer.LoadPersistedBackends(ctx); err != nil {
-				zap.L().Fatal("Failed to load persisted backends", zap.Error(err))
+				core.Fatal("Failed to load persisted backends", "error", err)
 			}
 
 			apiServer := servingapi.NewAgenticServer(layer, listenAddress, &servingapi.ServerOptions{
@@ -93,16 +93,16 @@ func newServeCmd() *cobra.Command {
 			// Wait for signal or error
 			select {
 			case sig := <-sigChan:
-				zap.L().Info("Received signal, shutting down",
-					zap.String("signal", sig.String()))
+				slog.Info("Received signal, shutting down",
+					"signal", sig.String())
 				if err := apiServer.Shutdown(ctx); err != nil {
 					return fmt.Errorf("failed to shutdown server: %w", err)
 				}
 			case err := <-errChan:
 				if err != nil {
-					zap.L().Error("Server error, shutting down", zap.Error(err))
+					slog.Error("Server error, shutting down", "error", err)
 					if shutdownErr := apiServer.Shutdown(ctx); shutdownErr != nil {
-						zap.L().Error("Shutdown failed", zap.Error(shutdownErr))
+						slog.Error("Shutdown failed", "error", shutdownErr)
 						return fmt.Errorf("server error: %w", err)
 					}
 					return fmt.Errorf("server error: %w", err)

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/harvard-cns/orla/internal/core"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // CacheController is an optional interface that LLM providers can implement
@@ -102,13 +102,13 @@ func (m *DefaultManager) getCacheController(backend string) CacheController {
 // RegisterWorkflow initializes tracking for a new workflow execution.
 func (m *DefaultManager) RegisterWorkflow(workflowID string) {
 	m.tracker.RegisterWorkflow(workflowID)
-	zap.L().Debug("Memory manager: registered workflow", zap.String("workflow_id", workflowID))
+	slog.Debug("Memory manager: registered workflow", "workflow_id", workflowID)
 }
 
 // DeregisterWorkflow removes a workflow from tracking.
 func (m *DefaultManager) DeregisterWorkflow(workflowID string) {
 	m.tracker.DeregisterWorkflow(workflowID)
-	zap.L().Debug("Memory manager: deregistered workflow", zap.String("workflow_id", workflowID))
+	slog.Debug("Memory manager: deregistered workflow", "workflow_id", workflowID)
 }
 
 // RecordInflight marks a request as in-flight.
@@ -177,10 +177,10 @@ func (m *DefaultManager) OnMemoryPressure(_ context.Context, backend string, pre
 	actions := m.pressurePolicy.EvaluatePressure(backend, pressure, m.tracker)
 	for _, action := range actions {
 		m.tracker.MarkBackendFlushed(action.WorkflowID, action.Backend)
-		zap.L().Info("Memory manager: pressure flush",
-			zap.String("workflow_id", action.WorkflowID),
-			zap.String("backend", action.Backend),
-			zap.Float64("pressure", pressure))
+		slog.Info("Memory manager: pressure flush",
+			"workflow_id", action.WorkflowID,
+			"backend", action.Backend,
+			"pressure", pressure)
 	}
 	return actions
 }
@@ -197,25 +197,25 @@ func (m *DefaultManager) executeFlush(ctx context.Context, action CacheAction) {
 	inflightWFs := m.tracker.InflightWorkflowsOnBackend(action.Backend)
 	delete(inflightWFs, action.WorkflowID)
 	if len(inflightWFs) > 0 {
-		zap.L().Debug("Memory manager: skipping hard flush, other workflows in-flight",
-			zap.String("backend", action.Backend),
-			zap.Int("other_inflight", len(inflightWFs)))
+		slog.Debug("Memory manager: skipping hard flush, other workflows in-flight",
+			"backend", action.Backend,
+			"other_inflight", len(inflightWFs))
 		return
 	}
 	if err := cc.FlushPrefix(ctx, action.WorkflowID); err != nil {
-		zap.L().Warn("Memory manager: flush failed",
-			zap.String("backend", action.Backend),
-			zap.Error(err))
+		slog.Warn("Memory manager: flush failed",
+			"backend", action.Backend,
+			"error", err)
 	}
 }
 
 func (m *DefaultManager) logAction(signal StageTransition, action CacheAction) {
-	zap.L().Debug("Memory manager: cache action",
-		zap.String("workflow_id", signal.WorkflowID),
-		zap.String("stage_id", signal.StageID),
-		zap.String("transition", string(signal.TransitionType)),
-		zap.String("action", string(action.Type)),
-		zap.String("reason", action.Reason))
+	slog.Debug("Memory manager: cache action",
+		"workflow_id", signal.WorkflowID,
+		"stage_id", signal.StageID,
+		"transition", string(signal.TransitionType),
+		"action", string(action.Type),
+		"reason", action.Reason)
 }
 
 // StartPressureMonitor launches a loop that periodically queries backends
@@ -224,7 +224,7 @@ func (m *DefaultManager) logAction(signal StageTransition, action CacheAction) {
 // so dynamically registered backends are picked up automatically.
 func (m *DefaultManager) StartPressureMonitor(ctx context.Context, backendsFn func() []string, interval time.Duration) {
 	if interval <= 0 {
-		zap.L().Warn("Memory manager: pressure monitor interval is less than or equal to 0, setting to 2 seconds")
+		slog.Warn("Memory manager: pressure monitor interval is less than or equal to 0, setting to 2 seconds")
 		interval = 2 * time.Second
 	}
 	ticker := time.NewTicker(interval)
@@ -247,9 +247,9 @@ func (m *DefaultManager) pollPressure(ctx context.Context, backends []string) {
 		}
 		stats, err := cc.MemoryUsage(ctx)
 		if err != nil {
-			zap.L().Debug("Memory manager: failed to query memory usage",
-				zap.String("backend", backend),
-				zap.Error(err))
+			slog.Debug("Memory manager: failed to query memory usage",
+				"backend", backend,
+				"error", err)
 			continue
 		}
 		if stats.Pressure >= m.pressurePolicy.PressureThreshold {

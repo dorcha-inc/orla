@@ -150,11 +150,19 @@ Strip the per-call knobs that were added under the previous (incorrect) design a
 - **Does not affect inference directly.** Only `ReasoningEffort` (platform-engineer-set) does. The split is what enables persona separation.
 - Test: hint header populates the right field; doesn't leak into `InferenceOptions`.
 
-### Phase H — Delete old paths *(~2-3h)*
+### Phase H — Delete old paths *(~3-4h)*
 - Delete `handleExecute`, `handleExecuteStream`, `ExecuteRequest`, `ExecuteResponse`, route registration, related tests
 - Delete `pkg/api/` entirely
 - Delete `examples/` Go directory entirely (per user direction — pyorla covers examples now)
+- **Delete `orla agent` (the one-shot CLI):**
+  - `cmd/orla/agent_cmd.go`
+  - `internal/agent/` (agent loop + one-shot executor)
+  - `internal/tui/` (Bubbletea terminal UI)
+  - Agent-only config fields: `Streaming`, `OutputFormat`, `ShowThinking`, `ShowProgress`, `LLMBackend`, `Model` from `OrlaConfig`
+  - Drop the `OrlaConfig` "service vs agent" TODO — config becomes daemon-only
+  - Drop `github.com/charmbracelet/*` (bubbletea, lipgloss, termenv) deps from `go.mod`
 - Update AGENTS.md and openapi.yaml to remove `/api/v1/execute`
+- Update root CLI in `cmd/orla/main.go` to drop the `agent` subcommand
 - Verify daemon still serves only `/v1/chat/completions` + control plane
 
 ### Phase I — Slim pyorla to control-plane SDK *(~4h)*

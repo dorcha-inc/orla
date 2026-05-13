@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // IsFinite reports whether f is neither NaN nor +-Inf.
@@ -36,7 +36,7 @@ func JoinMapKeys[T comparable](m map[T]struct{}) string {
 func WriteJSONResponse(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		zap.L().Error("failed to encode JSON response", zap.Error(err))
+		slog.Error("failed to encode JSON response", "error", err)
 		http.Error(w, "Failed to encode JSON response", http.StatusInternalServerError)
 	}
 }
@@ -47,11 +47,11 @@ func WriteJSONResponse(w http.ResponseWriter, v any) {
 func WriteSSEResponse(w http.ResponseWriter, flusher http.Flusher, event string, data any) {
 	payload, err := json.Marshal(data)
 	if err != nil {
-		zap.L().Error("failed to marshal SSE event", zap.Error(err))
+		slog.Error("failed to marshal SSE event", "error", err)
 		return
 	}
 	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, payload); err != nil {
-		zap.L().Error("failed to write SSE event", zap.Error(err))
+		slog.Error("failed to write SSE event", "error", err)
 		return
 	}
 	if flusher != nil {

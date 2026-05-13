@@ -11,7 +11,7 @@ import (
 	"github.com/harvard-cns/orla/internal/core"
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/harvard-cns/orla/internal/serving/memory"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 type backendEntry struct {
@@ -123,7 +123,7 @@ func (m *LLMBackendManager) registerLocked(name string, backend *core.LLMBackend
 		baseURL := strings.TrimSuffix(strings.TrimRight(backend.Endpoint, "/"), "/v1")
 		cc := memory.NewSGLangCacheController(baseURL)
 		m.memoryManager.RegisterCacheController(name, cc)
-		zap.L().Debug("Registered SGLang cache controller for backend", zap.String("backend", name))
+		slog.Debug("Registered SGLang cache controller for backend", "backend", name)
 	}
 }
 
@@ -276,9 +276,9 @@ func (m *LLMBackendManager) GetModelProvider(ctx context.Context, backendName st
 
 	m.providers[backendName] = provider
 
-	zap.L().Debug("Created and cached a model provider for LLM backend",
-		zap.String("backend_name", backendName),
-		zap.String("model", entry.modelID))
+	slog.Debug("Created and cached a model provider for LLM backend",
+		"backend_name", backendName,
+		"model", entry.modelID)
 
 	return provider, nil
 }

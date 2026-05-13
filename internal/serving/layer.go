@@ -12,7 +12,7 @@ import (
 	"github.com/harvard-cns/orla/internal/serving/access"
 	"github.com/harvard-cns/orla/internal/serving/memory"
 	"github.com/harvard-cns/orla/internal/stages"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // AgenticLayer is the serving layer that manages LLM backends and executes inference.
@@ -80,9 +80,9 @@ func (l *AgenticLayer) Execute(ctx context.Context, serverName, stageName string
 	if err != nil {
 		return nil, fmt.Errorf("inference failed on server '%s': %w", serverName, err)
 	}
-	zap.L().Debug("Executed inference",
-		zap.String("server", serverName),
-		zap.Int("response_length", len(response.Content)))
+	slog.Debug("Executed inference",
+		"server", serverName,
+		"response_length", len(response.Content))
 	return response, nil
 }
 

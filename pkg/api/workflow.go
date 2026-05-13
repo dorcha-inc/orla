@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/docker/docker/pkg/namesgenerator"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // Workflow is a DAG of Stages with dependency-aware scheduling.
@@ -101,9 +101,9 @@ func (w *Workflow) notifyWorkflowComplete(ctx context.Context, workflowID string
 		backendList = append(backendList, b)
 	}
 	if err := w.client.WorkflowComplete(ctx, workflowID, backendList); err != nil {
-		zap.L().Debug("Memory manager: workflow complete notification failed",
-			zap.String("workflow_id", workflowID),
-			zap.Error(err))
+		slog.Debug("Memory manager: workflow complete notification failed",
+			"workflow_id", workflowID,
+			"error", err)
 	}
 }
 

@@ -13,7 +13,7 @@ import (
 	"github.com/harvard-cns/orla/internal/serving"
 	"github.com/harvard-cns/orla/internal/serving/access"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/zap"
+	"log/slog"
 	"golang.org/x/time/rate"
 )
 
@@ -83,7 +83,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				zap.L().Error("handler panic", zap.Any("panic", err), zap.Stack("stack"))
+				slog.Error("handler panic", "panic", err)
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}
 		}()
@@ -141,8 +141,8 @@ func rateLimitMiddleware(limiter *rate.Limiter, next http.Handler) http.Handler 
 
 // Start starts the HTTP server
 func (s *AgenticServer) Start() error {
-	zap.L().Info("Starting daemon API server",
-		zap.String("address", s.httpServer.Addr))
+	slog.Info("Starting daemon API server",
+		"address", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
 }
 
@@ -267,9 +267,9 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	zap.L().Debug("Executed inference via API",
-		zap.String("backend", req.Backend),
-		zap.Int("response_length", len(response.Content)))
+	slog.Debug("Executed inference via API",
+		"backend", req.Backend,
+		"response_length", len(response.Content))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -294,7 +294,7 @@ func (s *AgenticServer) handleExecuteStream(w http.ResponseWriter, ctx context.C
 	w.WriteHeader(http.StatusOK)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		zap.L().Error("flusher not supported", zap.String("backend", backend))
+		slog.Error("flusher not supported", "backend", backend)
 		http.Error(w, "flusher not supported", http.StatusInternalServerError)
 		return
 	}
@@ -397,13 +397,13 @@ func (s *AgenticServer) handleRegisterBackend(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	zap.L().Info("Registered LLM backend",
-		zap.String("name", req.Name),
-		zap.String("endpoint", req.Endpoint),
-		zap.String("model_id", req.ModelID),
-		zap.Int("max_concurrency", backend.EffectiveMaxConcurrency()),
-		zap.Int("queue_capacity", backend.EffectiveQueueCapacity()),
-		zap.Float64p("quality", backend.Quality))
+	slog.Info("Registered LLM backend",
+		"name", req.Name,
+		"endpoint", req.Endpoint,
+		"model_id", req.ModelID,
+		"max_concurrency", backend.EffectiveMaxConcurrency(),
+		"queue_capacity", backend.EffectiveQueueCapacity(),
+		"quality", backend.Quality)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -447,11 +447,11 @@ func (s *AgenticServer) handleUpdateBackend(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	zap.L().Info("Updated backend",
-		zap.String("name", name),
-		zap.Bool("cost_model_changed", update.CostModel != nil),
-		zap.Bool("quality_changed", update.Quality != nil),
-		zap.Bool("max_concurrency_changed", update.MaxConcurrency != nil))
+	slog.Info("Updated backend",
+		"name", name,
+		"cost_model_changed", update.CostModel != nil,
+		"quality_changed", update.Quality != nil,
+		"max_concurrency_changed", update.MaxConcurrency != nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -480,7 +480,7 @@ func (s *AgenticServer) handleDeleteBackend(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	zap.L().Info("Removed LLM backend", zap.String("name", name))
+	slog.Info("Removed LLM backend", "name", name)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	core.WriteJSONResponse(w, map[string]bool{"success": true})
@@ -512,9 +512,9 @@ func (s *AgenticServer) handleWorkflowComplete(w http.ResponseWriter, r *http.Re
 
 	s.layer.NotifyWorkflowComplete(r.Context(), req.WorkflowID, req.Backends)
 
-	zap.L().Debug("Workflow complete notification",
-		zap.String("workflow_id", req.WorkflowID),
-		zap.Strings("backends", req.Backends))
+	slog.Debug("Workflow complete notification",
+		"workflow_id", req.WorkflowID,
+		"backends", req.Backends)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -550,11 +550,11 @@ func (s *AgenticServer) handleAddPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	zap.L().Info("Added access control policy",
-		zap.String("name", p.Name),
-		zap.String("action", string(p.Action)),
-		zap.Strings("subjects", p.Subjects),
-		zap.Strings("resources", p.Resources))
+	slog.Info("Added access control policy",
+		"name", p.Name,
+		"action", string(p.Action),
+		"subjects", p.Subjects,
+		"resources", p.Resources)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -584,7 +584,7 @@ func (s *AgenticServer) handleRemovePolicy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	zap.L().Info("Removed access control policy", zap.String("name", name))
+	slog.Info("Removed access control policy", "name", name)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -648,10 +648,10 @@ func (s *AgenticServer) handleRegisterWorkflow(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	zap.L().Debug("Registered workflow DAG",
-		zap.String("workflow_id", req.WorkflowID),
-		zap.Int("edges", len(edges)),
-		zap.Int("declassifications", len(req.Declassifications)))
+	slog.Debug("Registered workflow DAG",
+		"workflow_id", req.WorkflowID,
+		"edges", len(edges),
+		"declassifications", len(req.Declassifications))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

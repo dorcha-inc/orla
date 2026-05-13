@@ -12,7 +12,7 @@ import (
 	"github.com/harvard-cns/orla/internal/serving/cost"
 	"github.com/harvard-cns/orla/internal/serving/memory"
 	"github.com/harvard-cns/orla/internal/serving/metrics"
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 type scheduledRequest struct {
@@ -194,7 +194,7 @@ func (e *backendExecutor) worker() {
 				response.Metrics.PromptTokens, response.Metrics.CompletionTokens,
 				e.manager.GetCostModel(req.backend))
 			if err != nil {
-				zap.L().Warn("cost estimation failed", zap.String("backend", req.backend), zap.Error(err))
+				slog.Warn("cost estimation failed", "backend", req.backend, "error", err)
 			}
 			response.Metrics.EstimatedCostUSD = estCost
 			if estCost != nil {
@@ -248,7 +248,7 @@ func (e *backendExecutor) worker() {
 				response.Metrics.PromptTokens, response.Metrics.CompletionTokens,
 				e.manager.GetCostModel(req.backend))
 			if costErr != nil {
-				zap.L().Warn("cost estimation failed", zap.String("backend", req.backend), zap.Error(costErr))
+				slog.Warn("cost estimation failed", "backend", req.backend, "error", costErr)
 			}
 			response.Metrics.EstimatedCostUSD = estCost
 			if estCost != nil {
