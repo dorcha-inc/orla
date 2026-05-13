@@ -24,12 +24,11 @@ func TestIntegration_Execute_EndToEnd(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer(nil)
-	layer.AddLLMBackend("integration-backend", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := NewAgenticLayer(AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("integration-backend", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:test-model")
+	}, "openai:test-model"))
 
 	ctx := context.Background()
 	response, err := layer.Execute(ctx, "integration-backend", "default", []model.Message{
@@ -47,12 +46,11 @@ func TestIntegration_ExecuteStream_EndToEnd(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer(nil)
-	layer.AddLLMBackend("integration-backend", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := NewAgenticLayer(AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("integration-backend", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:test-model")
+	}, "openai:test-model"))
 
 	ctx := context.Background()
 	response, ch, err := layer.ExecuteStream(ctx, "integration-backend", "default", []model.Message{
@@ -80,12 +78,11 @@ func TestIntegration_Execute_WithToolCalls(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer(nil)
-	layer.AddLLMBackend("integration-backend", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := NewAgenticLayer(AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("integration-backend", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:test-model")
+	}, "openai:test-model"))
 
 	ctx := context.Background()
 	response, err := layer.Execute(ctx, "integration-backend", "default", []model.Message{
@@ -98,7 +95,7 @@ func TestIntegration_Execute_WithToolCalls(t *testing.T) {
 }
 
 func TestIntegration_Execute_BackendNotFound(t *testing.T) {
-	layer := NewAgenticLayer(nil)
+	layer := NewAgenticLayer(AgenticLayerOptions{})
 	ctx := context.Background()
 
 	_, err := layer.Execute(ctx, "nonexistent-backend", "", []model.Message{
@@ -115,17 +112,15 @@ func TestIntegration_Execute_MultipleBackends(t *testing.T) {
 	t.Cleanup(srv2.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer(nil)
-	layer.AddLLMBackend("backend-1", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv1.URL() + "/v1",
+	layer := NewAgenticLayer(AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("backend-1", &core.LLMBackend{
+				Endpoint:     srv1.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:model-a")
-	layer.AddLLMBackend("backend-2", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv2.URL() + "/v1",
+	}, "openai:model-a"))
+	require.NoError(t, layer.AddLLMBackend("backend-2", &core.LLMBackend{
+				Endpoint:     srv2.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:model-b")
+	}, "openai:model-b"))
 
 	ctx := context.Background()
 
@@ -151,12 +146,11 @@ func TestIntegration_Execute_InvalidAPIKey(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "") // Explicitly empty so provider fails
-	layer := NewAgenticLayer(nil)
-	layer.AddLLMBackend("backend", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := NewAgenticLayer(AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("backend", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:model")
+	}, "openai:model"))
 
 	ctx := context.Background()
 	_, err := layer.Execute(ctx, "backend", "", []model.Message{

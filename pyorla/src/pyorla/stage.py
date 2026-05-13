@@ -89,8 +89,6 @@ class Stage:
         self.cache_hints: CacheHints | None = None
 
         self.stream: bool = False
-        self.accuracy: float | None = None
-        self.accuracy_policy: str = ""
 
         self._workflow_id: str = ""
         self.tags: dict[str, str] = {}
@@ -147,12 +145,6 @@ class Stage:
     def set_stream(self, enabled: bool) -> None:
         self.stream = enabled
 
-    def set_accuracy(self, score: float) -> None:
-        self.accuracy = score
-
-    def set_accuracy_policy(self, policy: str) -> None:
-        self.accuracy_policy = policy
-
     def set_workflow_id(self, wf_id: str) -> None:
         self._workflow_id = wf_id
 
@@ -198,8 +190,6 @@ class Stage:
         req.cache_policy = self.cache_policy
         req.cache_hints = self.cache_hints
         req.workflow_id = self._workflow_id
-        req.accuracy = self.accuracy
-        req.accuracy_policy = self.accuracy_policy
         req.tags = self.tags
         req.data_labels = self.data_labels
 

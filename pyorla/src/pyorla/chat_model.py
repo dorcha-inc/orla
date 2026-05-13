@@ -57,7 +57,6 @@ class ChatOrla(BaseChatModel):
             auto_backend = LLMBackend(
                 name=backend or "default",
                 endpoint="",
-                type="openai",
                 model_id=backend or "default",
             )
             auto_stage = Stage("default", auto_backend)

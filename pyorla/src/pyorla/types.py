@@ -15,11 +15,11 @@ class CostModel:
 
 @dataclass
 class LLMBackend:
-    """Registered LLM backend (OpenAI-compatible or SGLang)."""
+    """Registered LLM backend. The provider implementation is selected by the
+    prefix on ``model_id`` (e.g. ``openai:gpt-4o``, ``sglang:Qwen/Qwen3-4B``)."""
 
     name: str
     endpoint: str
-    type: str  # "openai" | "sglang"
     model_id: str
     api_key_env_var: str = ""
     max_concurrency: int = 1
@@ -108,8 +108,6 @@ class ExecuteRequest:
     cache_policy: str = ""
     cache_hints: CacheHints | None = None
     reasoning_effort: str = ""
-    accuracy: float | None = None
-    accuracy_policy: str = ""
     tags: dict[str, str] = field(default_factory=dict)
     data_labels: list[str] = field(default_factory=list)
 
@@ -166,10 +164,6 @@ class ExecuteRequest:
                 d["cache_hints"] = ch
         if self.reasoning_effort:
             d["reasoning_effort"] = self.reasoning_effort
-        if self.accuracy is not None:
-            d["accuracy"] = self.accuracy
-        if self.accuracy_policy:
-            d["accuracy_policy"] = self.accuracy_policy
         if self.tags:
             d["tags"] = self.tags
         if self.data_labels:
@@ -236,8 +230,6 @@ CACHE_POLICY_FLUSH = "flush"
 CACHE_POLICY_AUTO = "auto"
 
 # Accuracy policy constants
-ACCURACY_POLICY_PREFER = "prefer"
-ACCURACY_POLICY_STRICT = "strict"
 
 # Execution mode constants
 EXECUTION_MODE_SINGLE_SHOT = "single_shot"

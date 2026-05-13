@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/harvard-cns/orla/internal/core"
@@ -15,40 +14,22 @@ import (
 // ErrNotFound is returned when a stage lookup misses.
 var ErrNotFound = errors.New("stage not found")
 
-// Registry stores stage records in SQLite with an in-memory read cache.
-// Reads served from cache; writes go through to disk synchronously then
-// invalidate.
+// Registry stores stage records in SQLite. Reads go straight to disk;
+// SQLite WAL handles concurrent readers fine and a primary-key lookup is
+// fast enough that there's no value in caching.
 type Registry struct {
 	db *sql.DB
-
-	mu    sync.RWMutex
-	cache map[string]*Stage
 }
 
 // NewRegistry returns a Registry backed by db. The caller is responsible for
 // having run migrations beforehand.
 func NewRegistry(db *sql.DB) *Registry {
-	return &Registry{db: db, cache: make(map[string]*Stage)}
+	return &Registry{db: db}
 }
 
 // Get returns the stage with id, or ErrNotFound if absent.
 func (r *Registry) Get(ctx context.Context, id string) (*Stage, error) {
-	r.mu.RLock()
-	if s, ok := r.cache[id]; ok {
-		r.mu.RUnlock()
-		return s.clone(), nil
-	}
-	r.mu.RUnlock()
-
-	s, err := r.loadFromDB(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	r.mu.Lock()
-	r.cache[id] = s
-	r.mu.Unlock()
-	return s.clone(), nil
+	return r.loadFromDB(ctx, id)
 }
 
 // GetOrCreate returns the stage with id, creating a default record on miss.
@@ -114,10 +95,6 @@ func (r *Registry) Upsert(ctx context.Context, s *Stage) error {
 	if err != nil {
 		return fmt.Errorf("upsert stage %q: %w", s.ID, err)
 	}
-
-	r.mu.Lock()
-	delete(r.cache, s.ID)
-	r.mu.Unlock()
 	return nil
 }
 
@@ -207,9 +184,6 @@ func (r *Registry) Delete(ctx context.Context, id string) error {
 	if _, err := r.db.ExecContext(ctx, `DELETE FROM stages WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("delete stage %q: %w", id, err)
 	}
-	r.mu.Lock()
-	delete(r.cache, id)
-	r.mu.Unlock()
 	return nil
 }
 

@@ -12,7 +12,6 @@ import (
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/harvard-cns/orla/internal/serving"
 	"github.com/harvard-cns/orla/internal/serving/access"
-	"github.com/harvard-cns/orla/internal/serving/metrics"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
@@ -112,6 +111,7 @@ func (s *AgenticServer) registerRoutes(rateLimitRPS int) {
 
 	s.mux.HandleFunc("GET /api/v1/backends", s.handleListBackends)
 	s.mux.HandleFunc("PATCH /api/v1/backends/{name}", s.handleUpdateBackend)
+	s.mux.HandleFunc("DELETE /api/v1/backends/{name}", s.handleDeleteBackend)
 	s.mux.HandleFunc("POST /api/v1/workflows", s.handleRegisterWorkflow)
 	s.mux.HandleFunc("POST /api/v1/workflow/complete", s.handleWorkflowComplete)
 
@@ -188,35 +188,6 @@ func (s *AgenticServer) handleExecute(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("failed to decode request: %v", err), http.StatusBadRequest)
 		return
-	}
-
-	if req.AccuracyPolicy != "" && req.AccuracyPolicy != model.AccuracyPolicyPrefer && req.AccuracyPolicy != model.AccuracyPolicyStrict {
-		http.Error(w, fmt.Sprintf("accuracy_policy must be \"prefer\" or \"strict\"; got %q", req.AccuracyPolicy), http.StatusBadRequest)
-		return
-	}
-
-	if req.Accuracy != nil {
-		a := *req.Accuracy
-		if !(a >= 0 && a <= 1) {
-			http.Error(w, fmt.Sprintf("accuracy must be in [0.0, 1.0]; got %v", a), http.StatusBadRequest)
-			return
-		}
-		policy := req.AccuracyPolicy
-		if policy == "" {
-			policy = model.AccuracyPolicyPrefer
-		}
-		selected, err := s.layer.SelectBackendByAccuracy(a, policy, req.Backend)
-		if err != nil {
-			metrics.AccuracyRoutingTotal.WithLabelValues("", "no_match").Inc()
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if selected != req.Backend {
-			metrics.AccuracyRoutingTotal.WithLabelValues(selected, "ok").Inc()
-		} else {
-			metrics.AccuracyRoutingTotal.WithLabelValues(selected, "fallback").Inc()
-		}
-		req.Backend = selected
 	}
 
 	if req.Backend == "" {
@@ -354,16 +325,17 @@ type CostModelRequest struct {
 }
 
 // RegisterBackendRequest is the request body for registering an LLM backend.
+// The provider implementation is selected by the model_id prefix (e.g. "openai:",
+// "sglang:"); see internal/model for the registered factories.
 type RegisterBackendRequest struct {
-	Name           string            `json:"name"`                      // backend name (used as "backend" in execute requests)
-	Endpoint       string            `json:"endpoint"`                  // e.g. "http://vllm:8000/v1", "http://localhost:11434"
-	Type           string            `json:"type"`                      // "openai" or "sglang"
-	ModelID        string            `json:"model_id"`                  // full model identifier e.g. "openai:Qwen/Qwen3-4B-Instruct-2507", "openai:llama3"
-	APIKeyEnvVar   string            `json:"api_key_env_var,omitempty"` // optional env var name for API key (for openai-type backends)
+	Name           string            `json:"name"`                      // backend name (used as "model" in chat completion requests)
+	Endpoint       string            `json:"endpoint"`                  // e.g. "http://vllm:8000/v1", "http://localhost:11434/v1"
+	ModelID        string            `json:"model_id"`                  // provider-prefixed model identifier, e.g. "openai:gpt-4o", "sglang:Qwen/Qwen3-4B"
+	APIKeyEnvVar   string            `json:"api_key_env_var,omitempty"` // optional env var name holding the API key
 	MaxConcurrency *int              `json:"max_concurrency,omitempty"` // max concurrent requests (nil = default 1)
-	QueueCapacity  *int              `json:"queue_capacity,omitempty"`  // max queued requests (nil = default 4096)
+	QueueCapacity  *int              `json:"queue_capacity,omitempty"`  // max queued requests (nil = default)
 	CostModel      *CostModelRequest `json:"cost_model,omitempty"`      // optional token pricing
-	Quality        *float64          `json:"quality,omitempty"`         // relative capability score in [0.0, 1.0]
+	Quality        *float64          `json:"quality,omitempty"`         // platform-engineer-supplied capability prior in [0.0, 1.0]
 }
 
 // RegisterBackendResponse is the response body for register backend.
@@ -388,26 +360,8 @@ func (s *AgenticServer) handleRegisterBackend(w http.ResponseWriter, r *http.Req
 		http.Error(w, "endpoint is required", http.StatusBadRequest)
 		return
 	}
-	if req.Type == "" {
-		http.Error(w, "type is required", http.StatusBadRequest)
-		return
-	}
 	if req.ModelID == "" {
 		http.Error(w, "model_id is required", http.StatusBadRequest)
-		return
-	}
-
-	backendType := core.LLMInferenceAPIType(req.Type)
-	switch backendType {
-	case core.LLMInferenceAPITypeOpenAI, core.LLMInferenceAPITypeSGLang:
-		// supported
-	default:
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		core.WriteJSONResponse(w, RegisterBackendResponse{
-			Success: false,
-			Error:   fmt.Sprintf("type must be one of: openai, sglang; got %q", req.Type),
-		})
 		return
 	}
 
@@ -427,7 +381,6 @@ func (s *AgenticServer) handleRegisterBackend(w http.ResponseWriter, r *http.Req
 
 	backend := &core.LLMBackend{
 		Endpoint:       req.Endpoint,
-		Type:           backendType,
 		APIKeyEnvVar:   req.APIKeyEnvVar,
 		MaxConcurrency: req.MaxConcurrency,
 		QueueCapacity:  req.QueueCapacity,
@@ -439,7 +392,10 @@ func (s *AgenticServer) handleRegisterBackend(w http.ResponseWriter, r *http.Req
 			OutputCostPerMToken: req.CostModel.OutputCostPerMToken,
 		}
 	}
-	s.layer.AddLLMBackend(req.Name, backend, req.ModelID)
+	if err := s.layer.AddLLMBackend(req.Name, backend, req.ModelID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	zap.L().Info("Registered LLM backend",
 		zap.String("name", req.Name),
@@ -512,6 +468,22 @@ func (s *AgenticServer) handleListBackends(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	core.WriteJSONResponse(w, ListBackendsResponse{Backends: names})
+}
+
+func (s *AgenticServer) handleDeleteBackend(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		http.Error(w, "backend name is required in URL path", http.StatusBadRequest)
+		return
+	}
+	if err := s.layer.RemoveLLMBackend(name); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	zap.L().Info("Removed LLM backend", zap.String("name", name))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	core.WriteJSONResponse(w, map[string]bool{"success": true})
 }
 
 // WorkflowCompleteRequest is the request body for the workflow/complete endpoint.

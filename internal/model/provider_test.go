@@ -80,7 +80,7 @@ func TestNewProvider(t *testing.T) {
 			name: "valid openai config",
 			cfg: &config.OrlaConfig{
 				Model:      "openai:llama3",
-				LLMBackend: &core.LLMBackend{Type: core.LLMInferenceAPITypeOpenAI, Endpoint: "http://localhost:11434/v1"},
+				LLMBackend: &core.LLMBackend{Endpoint: "http://localhost:11434/v1"},
 			},
 			expectedErr: false,
 		},
@@ -138,7 +138,7 @@ func TestRegisterProviderFactory(t *testing.T) {
 
 	cfg := &config.OrlaConfig{
 		Model:      "custom:demo",
-		LLMBackend: &core.LLMBackend{Type: core.LLMInferenceAPITypeOpenAI, Endpoint: "http://example"},
+		LLMBackend: &core.LLMBackend{Endpoint: "http://example"},
 	}
 	provider, err := NewProvider(cfg)
 	require.NoError(t, err)

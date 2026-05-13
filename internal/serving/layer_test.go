@@ -13,17 +13,16 @@ import (
 )
 
 func TestLayer_NewLayer(t *testing.T) {
-	layer := NewAgenticLayer(nil)
+	layer := NewAgenticLayer(AgenticLayerOptions{})
 	require.NotNil(t, layer)
 	assert.Empty(t, layer.ListLLMBackends())
 }
 
 func TestLayer_AddServer(t *testing.T) {
-	layer := NewAgenticLayer(nil)
-	layer.AddLLMBackend("test-server", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: "http://localhost:11434/v1",
-	}, "openai:test-model")
+	layer := NewAgenticLayer(AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("test-server", &core.LLMBackend{
+				Endpoint: "http://localhost:11434/v1",
+	}, "openai:test-model"))
 	assert.Contains(t, layer.ListLLMBackends(), "test-server")
 }
 
@@ -32,12 +31,11 @@ func TestLayer_Execute_WithMaxTokens(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer(nil)
-	layer.AddLLMBackend("test-server", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := NewAgenticLayer(AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("test-server", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:test-model")
+	}, "openai:test-model"))
 
 	response, err := layer.Execute(context.Background(), "test-server", "test", []model.Message{
 		{Role: model.MessageRoleUser, Content: "test prompt"},
@@ -58,12 +56,11 @@ func TestLayer_Execute_WithoutMaxTokens(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer(nil)
-	layer.AddLLMBackend("test-server", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := NewAgenticLayer(AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("test-server", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:test-model")
+	}, "openai:test-model"))
 
 	response, err := layer.Execute(context.Background(), "test-server", "test", []model.Message{
 		{Role: model.MessageRoleUser, Content: "test prompt"},
@@ -79,7 +76,7 @@ func TestLayer_Execute_WithoutMaxTokens(t *testing.T) {
 }
 
 func TestLayer_Execute_ServerNotFound(t *testing.T) {
-	layer := NewAgenticLayer(nil)
+	layer := NewAgenticLayer(AgenticLayerOptions{})
 	_, err := layer.Execute(context.Background(), "nonexistent", "", nil, nil, model.InferenceOptions{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
@@ -90,12 +87,11 @@ func TestLayer_Execute_RejectsStream(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer(nil)
-	layer.AddLLMBackend("test-server", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := NewAgenticLayer(AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("test-server", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:test-model")
+	}, "openai:test-model"))
 
 	_, err := layer.Execute(context.Background(), "test-server", "test", []model.Message{
 		{Role: model.MessageRoleUser, Content: "test"},
@@ -109,12 +105,11 @@ func TestLayer_ExecuteStream(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	t.Setenv(testAPIKeyEnvVar, "test-key")
-	layer := NewAgenticLayer(nil)
-	layer.AddLLMBackend("test-server", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := NewAgenticLayer(AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("test-server", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:test-model")
+	}, "openai:test-model"))
 
 	response, ch, err := layer.ExecuteStream(context.Background(), "test-server", "test", []model.Message{
 		{Role: model.MessageRoleUser, Content: "test"},
@@ -129,13 +124,13 @@ func TestLayer_ExecuteStream(t *testing.T) {
 // ---- ValidateAccess tests ----
 
 func TestValidateAccess_NoTags(t *testing.T) {
-	layer := NewAgenticLayer(nil)
+	layer := NewAgenticLayer(AgenticLayerOptions{})
 	d := layer.ValidateAccess(nil, "cheap", nil, nil)
 	assert.True(t, d.Allowed)
 }
 
 func TestValidateAccess_BackendAllowed(t *testing.T) {
-	layer := NewAgenticLayer(nil)
+	layer := NewAgenticLayer(AgenticLayerOptions{})
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name: "eng-allow", Subjects: []string{"tenant:engineering"}, Resources: []string{"backend:cheap"}, Action: access.ActionAllow,
 	}))
@@ -144,7 +139,7 @@ func TestValidateAccess_BackendAllowed(t *testing.T) {
 }
 
 func TestValidateAccess_BackendDenied(t *testing.T) {
-	layer := NewAgenticLayer(nil)
+	layer := NewAgenticLayer(AgenticLayerOptions{})
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name: "intern-allow-cheap", Subjects: []string{"tenant:interns"}, Resources: []string{"backend:cheap"}, Action: access.ActionAllow,
 	}))
@@ -154,7 +149,7 @@ func TestValidateAccess_BackendDenied(t *testing.T) {
 }
 
 func TestValidateAccess_ToolDenied(t *testing.T) {
-	layer := NewAgenticLayer(nil)
+	layer := NewAgenticLayer(AgenticLayerOptions{})
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name: "allow-tools", Subjects: []string{"tenant:eng"}, Resources: []string{"tool:*"}, Action: access.ActionAllow,
 	}))
@@ -167,7 +162,7 @@ func TestValidateAccess_ToolDenied(t *testing.T) {
 }
 
 func TestValidateAccess_DataLabelDenied(t *testing.T) {
-	layer := NewAgenticLayer(nil)
+	layer := NewAgenticLayer(AgenticLayerOptions{})
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name: "pii-deny", Subjects: []string{"backend:ext"}, Resources: []string{"data:pii"}, Action: access.ActionDeny,
 	}))
@@ -177,7 +172,7 @@ func TestValidateAccess_DataLabelDenied(t *testing.T) {
 }
 
 func TestValidateAccess_HappyPath(t *testing.T) {
-	layer := NewAgenticLayer(nil)
+	layer := NewAgenticLayer(AgenticLayerOptions{})
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name: "eng-all", Subjects: []string{"tenant:engineering"}, Resources: []string{"backend:*"}, Action: access.ActionAllow,
 	}))

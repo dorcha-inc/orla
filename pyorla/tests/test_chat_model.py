@@ -14,7 +14,7 @@ def _bound_lc_tool(x: str) -> str:
 
 
 def _backend() -> LLMBackend:
-    return LLMBackend(name="be", endpoint="http://x", type="openai", model_id="m1")
+    return LLMBackend(name="be", endpoint="http://x", model_id="m1")
 
 
 def test_chat_orla_from_stage():

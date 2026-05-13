@@ -10,7 +10,7 @@ import (
 )
 
 func TestNewLLMServerManager(t *testing.T) {
-	manager := NewLLMBackendManager(nil)
+	manager := NewLLMBackendManager(nil, nil)
 	require.NotNil(t, manager)
 	assert.NotNil(t, manager.backends)
 	assert.NotNil(t, manager.providers)
@@ -18,11 +18,10 @@ func TestNewLLMServerManager(t *testing.T) {
 }
 
 func TestLLMServerManager_AddServer(t *testing.T) {
-	manager := NewLLMBackendManager(nil)
-	manager.AddLLMBackend("server1", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: "http://localhost:11434/v1",
-	}, "openai:test-model")
+	manager := NewLLMBackendManager(nil, nil)
+	require.NoError(t, manager.AddLLMBackend("server1", &core.LLMBackend{
+				Endpoint: "http://localhost:11434/v1",
+	}, "openai:test-model"))
 
 	servers := manager.ListLLMBackends()
 	require.Len(t, servers, 1)
@@ -30,10 +29,10 @@ func TestLLMServerManager_AddServer(t *testing.T) {
 }
 
 func TestLLMServerManager_ListServers(t *testing.T) {
-	manager := NewLLMBackendManager(nil)
-	manager.AddLLMBackend("server1", &core.LLMBackend{Type: core.LLMInferenceAPITypeOpenAI, Endpoint: "http://localhost:11434/v1"}, "openai:m1")
-	manager.AddLLMBackend("server2", &core.LLMBackend{Type: core.LLMInferenceAPITypeOpenAI, Endpoint: "http://localhost:11434/v1"}, "openai:m2")
-	manager.AddLLMBackend("server3", &core.LLMBackend{Type: core.LLMInferenceAPITypeOpenAI, Endpoint: "http://localhost:11434/v1"}, "openai:m3")
+	manager := NewLLMBackendManager(nil, nil)
+	require.NoError(t, manager.AddLLMBackend("server1", &core.LLMBackend{Endpoint: "http://localhost:11434/v1"}, "openai:m1"))
+	require.NoError(t, manager.AddLLMBackend("server2", &core.LLMBackend{Endpoint: "http://localhost:11434/v1"}, "openai:m2"))
+	require.NoError(t, manager.AddLLMBackend("server3", &core.LLMBackend{Endpoint: "http://localhost:11434/v1"}, "openai:m3"))
 
 	servers := manager.ListLLMBackends()
 	require.Len(t, servers, 3)
@@ -43,17 +42,16 @@ func TestLLMServerManager_ListServers(t *testing.T) {
 }
 
 func TestLLMServerManager_ListServers_Empty(t *testing.T) {
-	manager := NewLLMBackendManager(nil)
+	manager := NewLLMBackendManager(nil, nil)
 	servers := manager.ListLLMBackends()
 	assert.Len(t, servers, 0)
 }
 
 func TestLLMServerManager_GetProvider(t *testing.T) {
-	manager := NewLLMBackendManager(nil)
-	manager.AddLLMBackend("server1", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: "http://localhost:11434/v1",
-	}, "openai:test-model")
+	manager := NewLLMBackendManager(nil, nil)
+	require.NoError(t, manager.AddLLMBackend("server1", &core.LLMBackend{
+				Endpoint: "http://localhost:11434/v1",
+	}, "openai:test-model"))
 
 	ctx := context.Background()
 	provider, err := manager.GetModelProvider(ctx, "server1")
@@ -68,7 +66,7 @@ func TestLLMServerManager_GetProvider(t *testing.T) {
 }
 
 func TestLLMServerManager_GetProvider_NotFound(t *testing.T) {
-	manager := NewLLMBackendManager(nil)
+	manager := NewLLMBackendManager(nil, nil)
 
 	ctx := context.Background()
 	provider, err := manager.GetModelProvider(ctx, "nonexistent")
@@ -78,7 +76,7 @@ func TestLLMServerManager_GetProvider_NotFound(t *testing.T) {
 }
 
 func TestLLMServerManager_GetHealthStatus_NotFound(t *testing.T) {
-	manager := NewLLMBackendManager(nil)
+	manager := NewLLMBackendManager(nil, nil)
 
 	ctx := context.Background()
 	status, err := manager.GetHealthStatus(ctx, "nonexistent")
@@ -90,11 +88,10 @@ func TestLLMServerManager_GetHealthStatus_NotFound(t *testing.T) {
 func TestLLMServerManager_GetHealthStatus_ProviderError(t *testing.T) {
 	// OpenAI provider's EnsureReady is a no-op (no health check), so it returns healthy.
 	// Connection errors surface on first inference request instead.
-	manager := NewLLMBackendManager(nil)
-	manager.AddLLMBackend("server1", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: "http://invalid-host:99999/v1",
-	}, "openai:test-model")
+	manager := NewLLMBackendManager(nil, nil)
+	require.NoError(t, manager.AddLLMBackend("server1", &core.LLMBackend{
+				Endpoint: "http://invalid-host:99999/v1",
+	}, "openai:test-model"))
 
 	ctx := context.Background()
 	status, err := manager.GetHealthStatus(ctx, "server1")
@@ -103,11 +100,10 @@ func TestLLMServerManager_GetHealthStatus_ProviderError(t *testing.T) {
 }
 
 func TestLLMServerManager_ConcurrentAccess(t *testing.T) {
-	manager := NewLLMBackendManager(nil)
-	manager.AddLLMBackend("server1", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: "http://localhost:11434/v1",
-	}, "openai:test-model")
+	manager := NewLLMBackendManager(nil, nil)
+	require.NoError(t, manager.AddLLMBackend("server1", &core.LLMBackend{
+				Endpoint: "http://localhost:11434/v1",
+	}, "openai:test-model"))
 
 	done := make(chan bool, 10)
 	for i := 0; i < 10; i++ {

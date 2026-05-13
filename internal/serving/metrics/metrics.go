@@ -70,21 +70,11 @@ var (
 		},
 		[]string{"backend"},
 	)
-
-	// AccuracyRoutingTotal counts accuracy-based routing attempts.
-	AccuracyRoutingTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Name:      "accuracy_routing_total",
-			Help:      "Total accuracy-based routing attempts by selected backend and status",
-		},
-		[]string{"selected_backend", "status"},
-	)
 )
 
 func init() {
 	prometheus.MustRegister(
 		RequestsTotal, QueueWaitSeconds, BackendLatencySeconds, QueueDepth,
-		EstimatedCostTotal, EstimatedCostPerRequest, AccuracyRoutingTotal,
+		EstimatedCostTotal, EstimatedCostPerRequest,
 	)
 }

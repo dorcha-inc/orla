@@ -11,7 +11,7 @@ from pyorla.types import (
 
 
 def test_llm_backend_defaults():
-    b = LLMBackend(name="b1", endpoint="http://x", type="openai", model_id="m1")
+    b = LLMBackend(name="b1", endpoint="http://x", model_id="m1")
     assert b.max_concurrency == 1
     assert b.queue_capacity == 0
     b.set_max_concurrency(4)

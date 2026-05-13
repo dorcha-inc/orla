@@ -481,7 +481,6 @@ def _backend_to_dict(b: LLMBackend) -> dict[str, Any]:
     d: dict[str, Any] = {
         "name": b.name,
         "endpoint": b.endpoint,
-        "type": b.type,
         "model_id": b.model_id,
     }
     if b.api_key_env_var:

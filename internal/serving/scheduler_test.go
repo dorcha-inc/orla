@@ -186,10 +186,10 @@ func (p *delayProvider) Chat(_ context.Context, _ []model.Message, _ []*model.To
 func (p *delayProvider) EnsureReady(_ context.Context) error { return nil }
 
 func TestBackendExecutor_DefaultConcurrencyIsSerial(t *testing.T) {
-	manager := NewLLMBackendManager(nil)
-	manager.AddLLMBackend("b", &core.LLMBackend{
-		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: "http://localhost:11434/v1",
-	}, "openai:m")
+	manager := NewLLMBackendManager(nil, nil)
+	require.NoError(t, manager.AddLLMBackend("b", &core.LLMBackend{
+		Endpoint: "http://localhost:11434/v1",
+	}, "openai:m"))
 
 	dp := &delayProvider{delay: 50 * time.Millisecond}
 	manager.mu.Lock()
@@ -214,11 +214,11 @@ func TestBackendExecutor_DefaultConcurrencyIsSerial(t *testing.T) {
 
 func TestBackendExecutor_ConcurrencyRespected(t *testing.T) {
 	const concurrency = 3
-	manager := NewLLMBackendManager(nil)
-	manager.AddLLMBackend("b", &core.LLMBackend{
-		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: "http://localhost:11434/v1",
+	manager := NewLLMBackendManager(nil, nil)
+	require.NoError(t, manager.AddLLMBackend("b", &core.LLMBackend{
+		Endpoint: "http://localhost:11434/v1",
 		MaxConcurrency: core.Ptr(concurrency),
-	}, "openai:m")
+	}, "openai:m"))
 
 	dp := &delayProvider{delay: 100 * time.Millisecond}
 	manager.mu.Lock()

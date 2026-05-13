@@ -162,19 +162,7 @@ type InferenceOptions struct {
 	SchedulingHints *SchedulingHints `json:"scheduling_hints,omitempty"`
 	// ReasoningEffort controls thinking for reasoning-capable models ("high", "medium", "low", "none").
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	// Accuracy requests cost-optimized backend selection. When set to a value in [0.0, 1.0],
-	// the daemon picks the cheapest backend whose Quality >= this value.
-	Accuracy *float64 `json:"accuracy,omitempty"`
-	// AccuracyPolicy controls fallback when no backend meets the Accuracy threshold.
-	// "prefer" (default): fall back to the cheapest backend with a cost model.
-	// "strict": fail the request if no backend qualifies.
-	AccuracyPolicy string `json:"accuracy_policy,omitempty"`
 }
-
-const (
-	AccuracyPolicyPrefer = "prefer"
-	AccuracyPolicyStrict = "strict"
-)
 
 // GetSchedulingPolicy returns the configured scheduling policy or the FCFS default.
 func (o InferenceOptions) GetSchedulingPolicy() SchedulingPolicy {

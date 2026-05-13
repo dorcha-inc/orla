@@ -3,6 +3,7 @@ package serving
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"maps"
 
@@ -24,26 +25,43 @@ type AgenticLayer struct {
 	policyEvaluator   *access.Evaluator
 }
 
-// NewAgenticLayer creates a new serving layer. stageRegistry may be nil in
-// tests that do not exercise stage configuration; production code should
-// always pass a registry backed by storage.Store.
-func NewAgenticLayer(stageRegistry *stages.Registry) *AgenticLayer {
+// AgenticLayerOptions configures a layer. Both fields are optional; tests that
+// don't exercise persistence or stages pass an empty struct.
+type AgenticLayerOptions struct {
+	StageRegistry *stages.Registry
+	DB            *sql.DB
+}
+
+// NewAgenticLayer creates a new serving layer.
+func NewAgenticLayer(opts AgenticLayerOptions) *AgenticLayer {
 	wm := core.NewWorkflowManager()
 	mm := memory.NewDefaultManager(memory.DefaultManagerConfig{}, wm)
 	ps := access.NewStore()
 	return &AgenticLayer{
-		llmBackendManager: NewLLMBackendManager(mm),
+		llmBackendManager: NewLLMBackendManager(mm, opts.DB),
 		MemoryManager:     mm,
 		WorkflowManager:   wm,
 		PolicyStore:       ps,
-		StageRegistry:     stageRegistry,
+		StageRegistry:     opts.StageRegistry,
 		policyEvaluator:   access.NewEvaluator(ps),
 	}
 }
 
-// AddLLMBackend registers an LLM backend by name.
-func (l *AgenticLayer) AddLLMBackend(name string, backend *core.LLMBackend, modelID string) {
-	l.llmBackendManager.AddLLMBackend(name, backend, modelID)
+// AddLLMBackend registers an LLM backend by name. Returns an error only if
+// persistence to the backing store fails.
+func (l *AgenticLayer) AddLLMBackend(name string, backend *core.LLMBackend, modelID string) error {
+	return l.llmBackendManager.AddLLMBackend(name, backend, modelID)
+}
+
+// RemoveLLMBackend removes a registered backend and tears down runtime state.
+// Returns an error only if removal from the backing store fails.
+func (l *AgenticLayer) RemoveLLMBackend(name string) error {
+	return l.llmBackendManager.RemoveLLMBackend(name)
+}
+
+// LoadPersistedBackends rehydrates backends from the database. No-op if no DB.
+func (l *AgenticLayer) LoadPersistedBackends(ctx context.Context) error {
+	return l.llmBackendManager.LoadPersisted(ctx)
 }
 
 // GetModelProvider returns the model provider for a named LLM backend.
@@ -92,12 +110,6 @@ func (l *AgenticLayer) GetLLMBackendHealth(ctx context.Context, serverName strin
 // ListLLMBackends returns all registered LLM backend names.
 func (l *AgenticLayer) ListLLMBackends() []string {
 	return l.llmBackendManager.ListLLMBackends()
-}
-
-// SelectBackendByAccuracy picks the cheapest backend whose Quality >= accuracy.
-// Policy controls fallback behavior (see AccuracyPolicyPrefer, AccuracyPolicyStrict).
-func (l *AgenticLayer) SelectBackendByAccuracy(accuracy float64, policy string, defaultBackend string) (string, error) {
-	return l.llmBackendManager.SelectBackendByAccuracy(accuracy, policy, defaultBackend)
 }
 
 // UpdateBackend applies a partial update to a registered backend.

@@ -2,8 +2,8 @@ package serving
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -27,23 +27,87 @@ type LLMBackendManager struct {
 	providers     map[string]model.Provider
 	executors     map[string]*backendExecutor
 	memoryManager *memory.DefaultManager
+	db            *sql.DB // nil disables persistence (tests)
 	mu            sync.RWMutex
 }
 
-// NewLLMBackendManager creates a new LLM backend manager.
-func NewLLMBackendManager(mm *memory.DefaultManager) *LLMBackendManager {
+// NewLLMBackendManager creates a new LLM backend manager. db may be nil; when
+// non-nil, backend records are persisted across daemon restarts.
+func NewLLMBackendManager(mm *memory.DefaultManager, db *sql.DB) *LLMBackendManager {
 	return &LLMBackendManager{
 		backends:      make(map[string]*backendEntry),
 		providers:     make(map[string]model.Provider),
 		executors:     make(map[string]*backendExecutor),
 		memoryManager: mm,
+		db:            db,
 	}
 }
 
-// AddLLMBackend registers an LLM backend by name.
-func (m *LLMBackendManager) AddLLMBackend(name string, backend *core.LLMBackend, modelID string) {
+// LoadPersisted reads backend records from SQLite and rehydrates the in-memory
+// runtime state. Providers are created lazily on first use. No-op when db is nil.
+func (m *LLMBackendManager) LoadPersisted(ctx context.Context) error {
+	if m.db == nil {
+		return nil
+	}
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT name, endpoint, model_id, api_key_env_var,
+			max_concurrency, queue_capacity,
+			input_cost_per_mtoken, output_cost_per_mtoken, quality
+		FROM backends`)
+	if err != nil {
+		return fmt.Errorf("load backends: %w", err)
+	}
+	defer core.LogDeferredError(rows.Close)
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for rows.Next() {
+		var (
+			name, endpoint, modelID, apiKey string
+			maxConc, qCap                   sql.NullInt64
+			inCost, outCost, quality        sql.NullFloat64
+		)
+		if err := rows.Scan(&name, &endpoint, &modelID, &apiKey, &maxConc, &qCap, &inCost, &outCost, &quality); err != nil {
+			return fmt.Errorf("scan backend row: %w", err)
+		}
+		b := &core.LLMBackend{Endpoint: endpoint, APIKeyEnvVar: apiKey}
+		if maxConc.Valid {
+			v := int(maxConc.Int64)
+			b.MaxConcurrency = &v
+		}
+		if qCap.Valid {
+			v := int(qCap.Int64)
+			b.QueueCapacity = &v
+		}
+		if inCost.Valid && outCost.Valid {
+			b.CostModel = &core.CostModel{InputCostPerMToken: inCost.Float64, OutputCostPerMToken: outCost.Float64}
+		}
+		if quality.Valid {
+			v := quality.Float64
+			b.Quality = &v
+		}
+		m.registerLocked(name, b, modelID)
+	}
+	return rows.Err()
+}
+
+// AddLLMBackend registers an LLM backend by name. Persists to the database
+// when configured.
+func (m *LLMBackendManager) AddLLMBackend(name string, backend *core.LLMBackend, modelID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.db != nil {
+		if err := m.persistLocked(name, backend, modelID); err != nil {
+			return err
+		}
+	}
+	m.registerLocked(name, backend, modelID)
+	return nil
+}
+
+// registerLocked installs the in-memory runtime state for a backend.
+// Caller must hold m.mu.
+func (m *LLMBackendManager) registerLocked(name string, backend *core.LLMBackend, modelID string) {
 	m.backends[name] = &backendEntry{
 		backend:        backend,
 		modelID:        modelID,
@@ -55,13 +119,77 @@ func (m *LLMBackendManager) AddLLMBackend(name string, backend *core.LLMBackend,
 		exec.close()
 		delete(m.executors, name)
 	}
-
-	if m.memoryManager != nil && backend.Type == core.LLMInferenceAPITypeSGLang {
+	if m.memoryManager != nil && strings.HasPrefix(modelID, "sglang:") {
 		baseURL := strings.TrimSuffix(strings.TrimRight(backend.Endpoint, "/"), "/v1")
 		cc := memory.NewSGLangCacheController(baseURL)
 		m.memoryManager.RegisterCacheController(name, cc)
 		zap.L().Debug("Registered SGLang cache controller for backend", zap.String("backend", name))
 	}
+}
+
+func (m *LLMBackendManager) persistLocked(name string, backend *core.LLMBackend, modelID string) error {
+	now := time.Now().Unix()
+	var maxConc, qCap any
+	if backend.MaxConcurrency != nil {
+		maxConc = int64(*backend.MaxConcurrency)
+	}
+	if backend.QueueCapacity != nil {
+		qCap = int64(*backend.QueueCapacity)
+	}
+	var inCost, outCost any
+	if backend.CostModel != nil {
+		inCost = backend.CostModel.InputCostPerMToken
+		outCost = backend.CostModel.OutputCostPerMToken
+	}
+	var quality any
+	if backend.Quality != nil {
+		quality = *backend.Quality
+	}
+	_, err := m.db.Exec(`
+		INSERT INTO backends (
+			name, endpoint, model_id, api_key_env_var,
+			max_concurrency, queue_capacity,
+			input_cost_per_mtoken, output_cost_per_mtoken, quality,
+			created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(name) DO UPDATE SET
+			endpoint=excluded.endpoint,
+			model_id=excluded.model_id,
+			api_key_env_var=excluded.api_key_env_var,
+			max_concurrency=excluded.max_concurrency,
+			queue_capacity=excluded.queue_capacity,
+			input_cost_per_mtoken=excluded.input_cost_per_mtoken,
+			output_cost_per_mtoken=excluded.output_cost_per_mtoken,
+			quality=excluded.quality,
+			updated_at=excluded.updated_at;
+	`,
+		name, backend.Endpoint, modelID, backend.APIKeyEnvVar,
+		maxConc, qCap, inCost, outCost, quality,
+		now, now,
+	)
+	if err != nil {
+		return fmt.Errorf("persist backend %q: %w", name, err)
+	}
+	return nil
+}
+
+// RemoveLLMBackend deletes a backend's record and tears down runtime state.
+// No error if the backend wasn't registered.
+func (m *LLMBackendManager) RemoveLLMBackend(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.db != nil {
+		if _, err := m.db.Exec(`DELETE FROM backends WHERE name = ?`, name); err != nil {
+			return fmt.Errorf("delete backend %q: %w", name, err)
+		}
+	}
+	delete(m.backends, name)
+	delete(m.providers, name)
+	if exec, ok := m.executors[name]; ok {
+		exec.close()
+		delete(m.executors, name)
+	}
+	return nil
 }
 
 // BackendUpdate holds the optional fields that can be live-updated on a registered backend.
@@ -90,6 +218,11 @@ func (m *LLMBackendManager) UpdateBackend(name string, update BackendUpdate) err
 	if update.MaxConcurrency != nil {
 		entry.backend.MaxConcurrency = update.MaxConcurrency
 		entry.maxConcurrency = entry.backend.EffectiveMaxConcurrency()
+	}
+	if m.db != nil {
+		if err := m.persistLocked(name, entry.backend, entry.modelID); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -253,89 +386,6 @@ func (m *LLMBackendManager) GetHealthStatus(ctx context.Context, backendName str
 	}
 
 	return HealthStatusHealthy, nil
-}
-
-type backendCandidate struct {
-	name string
-	cm   *core.CostModel
-}
-
-// sortBackendCandidates sorts backend candidates by output cost, then input cost, then name.
-// The intuition is that we want to pick the cheapest backend that is still good enough for the accuracy threshold.
-// Typically, output costs are much higher than input costs, so we want to prioritize them.
-// If all else is equal, we want to pick the backend with the lowest name lexicographically to have a deterministic result.
-func sortBackendCandidates(c []backendCandidate) {
-	sort.Slice(c, func(i, j int) bool {
-		if c[i].cm.OutputCostPerMToken != c[j].cm.OutputCostPerMToken {
-			return c[i].cm.OutputCostPerMToken < c[j].cm.OutputCostPerMToken
-		}
-		if c[i].cm.InputCostPerMToken != c[j].cm.InputCostPerMToken {
-			return c[i].cm.InputCostPerMToken < c[j].cm.InputCostPerMToken
-		}
-		return c[i].name < c[j].name
-	})
-}
-
-// SelectBackendByAccuracy returns the cheapest registered backend whose Quality >= accuracy
-// and that has a CostModel set. Ties are broken by ascending output cost, then input cost,
-// then backend name.
-//
-// The policy parameter controls fallback behavior when no backend meets the threshold:
-//   - "strict": return an error.
-//   - "prefer" (or empty, the default): fall back to the cheapest costed backend,
-//     or defaultBackend if no backends have cost models.
-func (m *LLMBackendManager) SelectBackendByAccuracy(accuracy float64, policy string, defaultBackend string) (string, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	var qualified, costed []backendCandidate
-	for name, entry := range m.backends {
-		b := entry.backend
-		if b.CostModel == nil {
-			continue
-		}
-		costed = append(costed, backendCandidate{name: name, cm: b.CostModel})
-		if b.Quality != nil && *b.Quality >= accuracy {
-			qualified = append(qualified, backendCandidate{name: name, cm: b.CostModel})
-		}
-	}
-
-	if len(qualified) > 0 {
-		sortBackendCandidates(qualified)
-		return qualified[0].name, nil
-	}
-
-	if policy == model.AccuracyPolicyStrict {
-		return "", fmt.Errorf("no backend with quality >= %v and a cost model; registered backends: %s",
-			accuracy, m.describeBackendsLocked())
-	}
-
-	// "prefer" fallback: cheapest backend with a cost model, regardless of quality.
-	// If no backends have cost models, return the default backend.
-	if len(costed) == 0 {
-		return defaultBackend, nil
-	}
-	sortBackendCandidates(costed)
-	return costed[0].name, nil
-}
-
-// describeBackendsLocked returns a human-readable summary of registered backends.
-// Caller must hold at least m.mu.RLock().
-func (m *LLMBackendManager) describeBackendsLocked() string {
-	if len(m.backends) == 0 {
-		return "(none)"
-	}
-	parts := make([]string, 0, len(m.backends))
-	for name, entry := range m.backends {
-		hasCost := entry.backend.CostModel != nil
-		qStr := "unscored"
-		if entry.backend.Quality != nil {
-			qStr = fmt.Sprintf("%.2f", *entry.backend.Quality)
-		}
-		parts = append(parts, fmt.Sprintf("%s(quality=%s, has_cost=%v)", name, qStr, hasCost))
-	}
-	sort.Strings(parts)
-	return strings.Join(parts, ", ")
 }
 
 // ListLLMBackends returns a list of all LLM backend names

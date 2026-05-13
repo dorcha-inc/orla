@@ -11,7 +11,7 @@ from pyorla.types import (
 
 
 def _backend() -> LLMBackend:
-    return LLMBackend(name="test-be", endpoint="http://x", type="openai", model_id="m1")
+    return LLMBackend(name="test-be", endpoint="http://x", model_id="m1")
 
 
 def test_stage_defaults():

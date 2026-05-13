@@ -86,32 +86,8 @@ func TestGetOpenAICompatibleEndpoint_Validation(t *testing.T) {
 	_, _, err := getOpenAICompatibleEndpoint(nil)
 	require.Error(t, err)
 
-	_, _, err = getOpenAICompatibleEndpoint(nil)
-	require.Error(t, err)
-
-	_, _, err = getOpenAICompatibleEndpoint(
-		&core.LLMBackend{
-			Endpoint: "http://example",
-			Type:     "",
-		},
-	)
-	require.Error(t, err)
-
-	_, _, err = getOpenAICompatibleEndpoint(
-		&core.LLMBackend{
-			Endpoint: "http://example",
-			Type:     core.LLMInferenceAPITypeOpenAI,
-		},
-	)
+	_, _, err = getOpenAICompatibleEndpoint(&core.LLMBackend{Endpoint: "http://example"})
 	require.NoError(t, err)
-
-	_, _, err = getOpenAICompatibleEndpoint(
-		&core.LLMBackend{
-			Endpoint: "http://example",
-			Type:     "unsupported_backend",
-		},
-	)
-	require.Error(t, err)
 }
 
 func TestNewOpenAIProvider_RequiresAPIKeyEnvVarValue(t *testing.T) {
@@ -120,8 +96,7 @@ func TestNewOpenAIProvider_RequiresAPIKeyEnvVarValue(t *testing.T) {
 	// API key env var is not set => should error.
 	llmBackend := &core.LLMBackend{
 		Endpoint:     "http://example",
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
+				APIKeyEnvVar: testAPIKeyEnvVar,
 	}
 
 	_, err := NewOpenAIProvider("model", llmBackend)
@@ -138,8 +113,7 @@ func TestOpenAIProvider_Chat_NonStreaming_BasicAndToolCalls(t *testing.T) {
 	t.Setenv("ORLA_TEST_OPENAI_KEY", "k")
 	llmBackend := &core.LLMBackend{
 		Endpoint:     srv.URL(),
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
+				APIKeyEnvVar: testAPIKeyEnvVar,
 	}
 
 	p, err := NewOpenAIProvider("m", llmBackend)
@@ -165,8 +139,7 @@ func TestOpenAIProvider_Chat_Streaming_Content(t *testing.T) {
 	t.Setenv("ORLA_TEST_OPENAI_KEY", "k")
 	llmBackend := &core.LLMBackend{
 		Endpoint:     srv.URL(),
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
+				APIKeyEnvVar: testAPIKeyEnvVar,
 	}
 
 	p, err := NewOpenAIProvider("m", llmBackend)
@@ -192,8 +165,7 @@ func TestOpenAIProvider_Chat_WithMaxTokens(t *testing.T) {
 	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
 	llmBackend := &core.LLMBackend{
 		Endpoint:     srv.URL(),
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
+				APIKeyEnvVar: testAPIKeyEnvVar,
 	}
 
 	p, err := NewOpenAIProvider("test-model", llmBackend)
@@ -221,8 +193,7 @@ func TestOpenAIProvider_Chat_WithoutMaxTokens(t *testing.T) {
 	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
 	llmBackend := &core.LLMBackend{
 		Endpoint:     srv.URL(),
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
+				APIKeyEnvVar: testAPIKeyEnvVar,
 	}
 
 	p, err := NewOpenAIProvider("test-model", llmBackend)
@@ -250,8 +221,7 @@ func TestOpenAIProvider_Chat_WithMaxTokensZero(t *testing.T) {
 	t.Setenv("ORLA_TEST_OPENAI_KEY", "test-key")
 	llmBackend := &core.LLMBackend{
 		Endpoint:     srv.URL(),
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
+				APIKeyEnvVar: testAPIKeyEnvVar,
 	}
 
 	p, err := NewOpenAIProvider("test-model", llmBackend)
@@ -281,8 +251,7 @@ func TestOpenAIProvider_Chat_Streaming_WithToolCalls(t *testing.T) {
 
 	llmBackend := &core.LLMBackend{
 		Endpoint:     srv.URL(),
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
+				APIKeyEnvVar: testAPIKeyEnvVar,
 	}
 
 	p, err := NewOpenAIProvider("m", llmBackend)
@@ -311,8 +280,7 @@ func TestOpenAIProvider_Chat_NonStreaming_NoChoices(t *testing.T) {
 
 	llmBackend := &core.LLMBackend{
 		Endpoint:     srv.URL(),
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
+				APIKeyEnvVar: testAPIKeyEnvVar,
 	}
 
 	p, err := NewOpenAIProvider("m", llmBackend)
@@ -329,8 +297,7 @@ func TestGetOpenAICompatibleEndpoint_MissingEndpoint(t *testing.T) {
 	_, _, err := getOpenAICompatibleEndpoint(
 		&core.LLMBackend{
 			Endpoint: "",
-			Type:     core.LLMInferenceAPITypeOpenAI,
-		})
+					})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "endpoint is required")
 }
@@ -343,8 +310,7 @@ func TestOpenAIProvider_Chat_WithResponseFormat_NonStreaming(t *testing.T) {
 	t.Setenv("ORLA_TEST_OPENAI_KEY", "k")
 	llmBackend := &core.LLMBackend{
 		Endpoint:     srv.URL(),
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
+				APIKeyEnvVar: testAPIKeyEnvVar,
 	}
 
 	p, err := NewOpenAIProvider("m", llmBackend)
@@ -394,8 +360,7 @@ func TestOpenAIProvider_Chat_WithoutResponseFormat_RequestOmitsResponseFormat(t 
 	t.Setenv("ORLA_TEST_OPENAI_KEY", "k")
 	llmBackend := &core.LLMBackend{
 		Endpoint:     srv.URL(),
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		APIKeyEnvVar: testAPIKeyEnvVar,
+				APIKeyEnvVar: testAPIKeyEnvVar,
 	}
 
 	p, err := NewOpenAIProvider("m", llmBackend)

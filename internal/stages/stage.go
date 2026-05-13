@@ -43,31 +43,3 @@ type Stage struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
-
-// clone returns a deep copy of s. Used by the cache so callers can't mutate
-// the cached pointer.
-func (s *Stage) clone() *Stage {
-	if s == nil {
-		return nil
-	}
-	out := *s
-	if s.Priority != nil {
-		v := *s.Priority
-		out.Priority = &v
-	}
-	if s.RequestPriority != nil {
-		v := *s.RequestPriority
-		out.RequestPriority = &v
-	}
-	if s.MaxConcurrency != nil {
-		v := *s.MaxConcurrency
-		out.MaxConcurrency = &v
-	}
-	if len(s.Labels) > 0 {
-		out.Labels = make(map[string]string, len(s.Labels))
-		for k, v := range s.Labels {
-			out.Labels[k] = v
-		}
-	}
-	return &out
-}

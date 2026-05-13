@@ -12,7 +12,7 @@ from pyorla.types import LLMBackend
 
 
 def _backend(name: str = "be") -> LLMBackend:
-    return LLMBackend(name=name, endpoint="http://x", type="openai", model_id="m1")
+    return LLMBackend(name=name, endpoint="http://x", model_id="m1")
 
 
 def test_explicit_mapping_valid():

@@ -1,18 +1,6 @@
 // Package core implements the core functionality for orla that is shared across all components.
 package core
 
-// LLMInferenceAPIType represents the type of LLM inference API
-type LLMInferenceAPIType string
-
-const (
-	// LLMInferenceAPITypeOpenAI represents any inference server that has an
-	// OpenAI-compatible API (including Ollama via /v1/chat/completions).
-	LLMInferenceAPITypeOpenAI LLMInferenceAPIType = "openai"
-	// LLMInferenceAPITypeSGLang represents SGLang, which provides an OpenAI-compatible
-	// API for inference and a separate /flush_cache endpoint for cache control.
-	LLMInferenceAPITypeSGLang LLMInferenceAPIType = "sglang"
-)
-
 // DefaultBackendQueueCapacity is the queue size used when QueueCapacity is nil or <= 0.
 const DefaultBackendQueueCapacity = 4096
 
@@ -22,28 +10,27 @@ type CostModel struct {
 	OutputCostPerMToken float64 `yaml:"output_cost_per_mtoken,omitempty" mapstructure:"output_cost_per_mtoken"`
 }
 
-// LLMBackend represents an LLM inference server. This allows configuring
-// remote Ollama servers, OpenAI-compatible APIs, and other LLM inference servers.
+// LLMBackend represents an LLM inference server. The provider implementation
+// (and any provider-specific behavior like SGLang's cache flush) is selected
+// by the prefix on the backend's model identifier — see internal/model.
 type LLMBackend struct {
 	// Endpoint is the URL of the LLM inference server.
 	Endpoint string `yaml:"endpoint,omitempty" mapstructure:"endpoint"`
-	// Type is the type of the LLM inference API.
-	Type LLMInferenceAPIType `yaml:"type,omitempty" mapstructure:"type"`
 	// APIKeyEnvVar is the *ENVIRONMENT VARIABLE* storing the API key for the LLM inference API.
 	// Orla *does not* allow you to store the API key in the config file. You must use an environment variable.
 	APIKeyEnvVar string `yaml:"api_key_env_var,omitempty" mapstructure:"api_key_env_var"`
 	// MaxConcurrency is the maximum number of concurrent inference requests dispatched
 	// to this backend. nil means use default (1 — serial dispatch).
-	// Use EffectiveMaxConcurrency() to get the resolved value.
 	MaxConcurrency *int `yaml:"max_concurrency,omitempty" mapstructure:"max_concurrency"`
 	// QueueCapacity is the maximum number of requests that may be queued for this backend.
 	// nil means use default (DefaultBackendQueueCapacity).
-	// Use EffectiveQueueCapacity() to get the resolved value.
 	QueueCapacity *int `yaml:"queue_capacity,omitempty" mapstructure:"queue_capacity"`
-	// CostModel holds optional token pricing for cost estimation and accuracy-based routing.
+	// CostModel holds optional token pricing. Used by the platform engineer's
+	// optimizer as a cost prior; persisted with the backend record.
 	CostModel *CostModel `yaml:"cost_model,omitempty" mapstructure:"cost_model"`
-	// Quality is a relative capability score in [0.0, 1.0] used for accuracy-based routing.
-	// nil means unscored (backend will not participate in accuracy-based selection).
+	// Quality is a relative capability score in [0.0, 1.0]. Used by the
+	// platform engineer's optimizer as a capability prior; persisted with the
+	// backend record.
 	Quality *float64 `yaml:"quality,omitempty" mapstructure:"quality"`
 }
 

@@ -85,7 +85,13 @@ func newProviderForModel(modelID string, backend *core.LLMBackend, cfg *config.O
 }
 
 func init() {
-	RegisterProviderFactory(string(core.LLMInferenceAPITypeOpenAI), func(modelName string, _ *core.LLMBackend, cfg *config.OrlaConfig) (Provider, error) {
+	// SGLang exposes the same OpenAI-compatible Chat Completions surface, so
+	// both prefixes route to the OpenAI provider. The SGLang-specific cache
+	// flush is wired separately by the backend manager when it sees a
+	// "sglang:" prefix on the model identifier.
+	openaiFactory := func(modelName string, _ *core.LLMBackend, cfg *config.OrlaConfig) (Provider, error) {
 		return NewOpenAIProvider(modelName, cfg.LLMBackend)
-	})
+	}
+	RegisterProviderFactory("openai", openaiFactory)
+	RegisterProviderFactory("sglang", openaiFactory)
 }

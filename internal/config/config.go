@@ -109,8 +109,6 @@ func setViperDefaults() {
 	viper.SetDefault("log_format", "json")
 	viper.SetDefault("log_level", "info")
 	viper.SetDefault("model", DefaultModel)
-	viper.SetDefault("auto_start_ollama", true)
-	viper.SetDefault("auto_configure_ollama_service", false)
 	viper.SetDefault("streaming", true)
 	viper.SetDefault("output_format", "auto")
 	viper.SetDefault("show_thinking", false)
@@ -157,10 +155,7 @@ func LoadConfig(configPath string) (*OrlaConfig, error) {
 
 	// Default LLMBackend for local Ollama when using default model
 	if cfg.LLMBackend == nil && cfg.Model == DefaultModel {
-		cfg.LLMBackend = &core.LLMBackend{
-			Endpoint: "http://localhost:11434/v1",
-			Type:     core.LLMInferenceAPITypeOpenAI,
-		}
+		cfg.LLMBackend = &core.LLMBackend{Endpoint: "http://localhost:11434/v1"}
 	}
 
 	validateConfigErr := validateConfig(cfg)

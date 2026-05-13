@@ -184,6 +184,26 @@ paths:
           description: Validation error
         "404":
           description: Backend not found
+    delete:
+      summary: Delete backend
+      description: Remove a registered backend and tear down its runtime state.
+      operationId: deleteBackend
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Backend removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
 
   /api/v1/policies:
     post:
@@ -622,23 +642,6 @@ components:
           type: string
         cache_policy:
           type: string
-        accuracy:
-          type: number
-          format: double
-          minimum: 0
-          maximum: 1
-          nullable: true
-          description: >
-            Requests cost-optimized backend selection. When set, the daemon picks
-            the cheapest backend whose quality >= this value.
-        accuracy_policy:
-          type: string
-          enum: [prefer, strict]
-          default: prefer
-          description: >
-            Controls fallback when no backend meets the accuracy threshold.
-            "prefer" (default) falls back to the cheapest costed backend;
-            "strict" fails the request.
         tags:
           type: object
           additionalProperties:
@@ -759,23 +762,24 @@ components:
 
     RegisterBackendRequest:
       type: object
-      required: [name, endpoint, type, model_id]
+      required: [name, endpoint, model_id]
       properties:
         name:
           type: string
-          description: Backend name (used as "backend" in execute)
+          description: Backend name; used as `model` in chat completion requests.
         endpoint:
           type: string
           example: "http://vllm:8000/v1"
-        type:
-          type: string
-          enum: [openai, sglang]
         model_id:
           type: string
+          description: |
+            Provider-prefixed model identifier. The prefix selects the provider
+            factory; both `openai:` and `sglang:` route to the OpenAI-compatible
+            provider, and `sglang:` additionally enables cache-flush wiring.
           example: "openai:Qwen/Qwen3-4B-Instruct-2507"
         api_key_env_var:
           type: string
-          description: Env var name for API key (openai-type)
+          description: Environment variable name holding the API key.
         max_concurrency:
           type: integer
           default: 1
@@ -789,7 +793,9 @@ components:
           format: double
           minimum: 0
           maximum: 1
-          description: Relative capability score in [0.0, 1.0] for accuracy-based routing
+          description: |
+            Platform-engineer-supplied capability prior in [0.0, 1.0]. Persisted
+            with the backend record; the external optimizer may read and update it.
 
     RegisterBackendResponse:
       type: object

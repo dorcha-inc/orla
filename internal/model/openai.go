@@ -54,15 +54,6 @@ func getOpenAICompatibleEndpoint(llmBackend *core.LLMBackend) (string, string, e
 	if llmBackend.Endpoint == "" {
 		return "", "", fmt.Errorf("llm_backend.endpoint is required")
 	}
-	if llmBackend.Type == "" {
-		return "", "", fmt.Errorf("llm_backend.type is required if llm_backend is set")
-	}
-	switch llmBackend.Type {
-	case core.LLMInferenceAPITypeOpenAI, core.LLMInferenceAPITypeSGLang:
-		// Both expose an OpenAI-compatible /v1/chat/completions endpoint.
-	default:
-		return "", "", fmt.Errorf("[BUG] llm_backend.type must be %s or %s, got '%s': we should not be using this function for non-openai-compatible inference servers", core.LLMInferenceAPITypeOpenAI, core.LLMInferenceAPITypeSGLang, llmBackend.Type)
-	}
 	if llmBackend.APIKeyEnvVar == "" {
 		zap.L().Debug("llm_backend.api_key_env_var is not set, skipping authentication for OpenAI-compatible API",
 			zap.String("llm_backend.endpoint", llmBackend.Endpoint))

@@ -126,34 +126,15 @@ func TestRegistry_List(t *testing.T) {
 	assert.Equal(t, []string{"a", "b", "c"}, ids)
 }
 
-func TestRegistry_CachedReadReflectsLatestWrite(t *testing.T) {
+func TestRegistry_UpsertOverwrites(t *testing.T) {
 	r := newTestRegistry(t)
 	ctx := context.Background()
 	require.NoError(t, r.Upsert(ctx, &Stage{ID: "x", Backend: "v1"}))
-	first, err := r.Get(ctx, "x") // populates cache
-	require.NoError(t, err)
-	assert.Equal(t, "v1", first.Backend)
-
 	require.NoError(t, r.Upsert(ctx, &Stage{ID: "x", Backend: "v2"}))
-	second, err := r.Get(ctx, "x")
-	require.NoError(t, err)
-	assert.Equal(t, "v2", second.Backend, "Upsert should invalidate cache so the next Get returns v2")
-}
-
-func TestRegistry_GetReturnsClone(t *testing.T) {
-	r := newTestRegistry(t)
-	ctx := context.Background()
-	require.NoError(t, r.Upsert(ctx, &Stage{ID: "x", Labels: map[string]string{"k": "v"}}))
 
 	got, err := r.Get(ctx, "x")
 	require.NoError(t, err)
-	got.Labels["k"] = "mutated"
-	got.Backend = "mutated"
-
-	fresh, err := r.Get(ctx, "x")
-	require.NoError(t, err)
-	assert.Equal(t, "v", fresh.Labels["k"], "mutating returned stage must not affect cache")
-	assert.Empty(t, fresh.Backend)
+	assert.Equal(t, "v2", got.Backend)
 }
 
 func TestRegistry_ConcurrentReadsSafe(t *testing.T) {

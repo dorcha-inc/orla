@@ -220,6 +220,7 @@ The `orla serve` daemon exposes an HTTP API for inference and backend management
 | `/api/v1/backends` | GET | List registered backends |
 | `/api/v1/backends` | POST | Register an LLM backend |
 | `/api/v1/backends/{name}` | PATCH | Live-update backend cost_model, quality, or max_concurrency |
+| `/api/v1/backends/{name}` | DELETE | Remove a registered backend and tear down its runtime state |
 | `/api/v1/workflows` | POST | Register a workflow DAG for data label propagation |
 | `/api/v1/policies` | POST | Add an access control policy |
 | `/api/v1/policies` | GET | List all access control policies |
@@ -265,13 +266,23 @@ Config options for `orla serve` (in `OrlaConfig`): `listen_address`, `rate_limit
 
 ## Storage
 
-The daemon persists stage configuration (and later, completion records and feedback) in an embedded SQLite database via the `internal/storage` package.
+The daemon persists backend configuration, stage configuration (and later, completion records and feedback) in an embedded SQLite database via the `internal/storage` package.
 
 - **Driver**: `modernc.org/sqlite` (pure-Go, statically linkable, no CGo).
 - **Path**: `storage_path` config option. Defaults to `$XDG_DATA_HOME/orla/orla.db` or `~/.orla/orla.db`. Use `:memory:` for ephemeral in-process databases (tests).
 - **Pragmas**: `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `busy_timeout=5000`.
 - **Migrations**: Embedded `.sql` files under `internal/storage/migrations/`, applied in numeric order, tracked in the `schema_migrations` table.
 - **Helpers**: `Store.Tx(ctx, fn)` runs `fn` in a transaction; `storage.BatchWriter[T]` is a generic async batched writer used for high-volume telemetry (Phase F onwards).
+
+## Backends
+
+LLM backend definitions are platform-engineer-owned state, persisted alongside stages.
+
+- **Backend record**: `name`, `endpoint`, `model_id` (provider-prefixed, e.g. `openai:gpt-4o` or `sglang:Qwen/Qwen3-4B`), `api_key_env_var`, `max_concurrency`, `queue_capacity`, `cost_model`, `quality`.
+- **Provider selection**: the prefix on `model_id` picks the provider factory. Both `openai:` and `sglang:` route to the OpenAI-compatible provider; the `sglang:` prefix additionally wires up the SGLang `/flush_cache` cache controller.
+- **In-memory state**: provider clients, scheduler queues, and concurrency semaphores live in `LLMBackendManager` and are reconstructed lazily on first use. The records themselves come from SQLite.
+- **Rehydration**: the daemon calls `AgenticLayer.LoadPersistedBackends` on startup so all previously-registered backends come back without re-pushing.
+- **REST API**: see the Daemon API table above. `POST /api/v1/backends` creates; `PATCH /api/v1/backends/{name}` updates cost_model/quality/max_concurrency in place; `DELETE /api/v1/backends/{name}` removes both the record and runtime state.
 
 ## Stages
 

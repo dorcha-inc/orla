@@ -23,10 +23,10 @@ func newProxyTestServer(t *testing.T) (*AgenticServer, *model.MockLLMServer) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("cheap", &core.LLMBackend{
-		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:m")
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("cheap", &core.LLMBackend{
+		Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
+	}, "openai:m"))
 	return NewAgenticServer(layer, ":0", nil), srv
 }
 
@@ -125,10 +125,10 @@ func TestChatCompletions_AccessDeniedByPolicy(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("strong", &core.LLMBackend{
-		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:m")
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("strong", &core.LLMBackend{
+		Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
+	}, "openai:m"))
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name: "intern-cheap-only", Subjects: []string{"tenant:interns"}, Resources: []string{"backend:cheap"}, Action: access.ActionAllow,
 	}))
@@ -154,10 +154,10 @@ func TestChatCompletions_DataLabelDenied(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("ext", &core.LLMBackend{
-		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:m")
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("ext", &core.LLMBackend{
+		Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
+	}, "openai:m"))
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name: "no-pii-ext", Subjects: []string{"backend:ext"}, Resources: []string{"data:pii"}, Action: access.ActionDeny,
 	}))
@@ -185,10 +185,10 @@ func TestChatCompletions_ToolsRoundtrip(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("cheap", &core.LLMBackend{
-		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:m")
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("cheap", &core.LLMBackend{
+		Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
+	}, "openai:m"))
 	server := NewAgenticServer(layer, ":0", nil)
 
 	resp := doChatCompletion(t, server,
@@ -241,10 +241,10 @@ func TestChatCompletions_Streaming(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("cheap", &core.LLMBackend{
-		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:m")
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("cheap", &core.LLMBackend{
+		Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
+	}, "openai:m"))
 	server := NewAgenticServer(layer, ":0", nil)
 
 	body, err := json.Marshal(chatCompletionRequest{
@@ -368,10 +368,10 @@ func TestChatCompletions_WorkflowLabelPropagation(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "k")
 
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("ext", &core.LLMBackend{
-		Type: core.LLMInferenceAPITypeOpenAI, Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:m")
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("ext", &core.LLMBackend{
+		Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
+	}, "openai:m"))
 
 	// Register a workflow: stage-a → stage-b.
 	layer.WorkflowManager.Register("wf-1")

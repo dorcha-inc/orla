@@ -65,7 +65,13 @@ func newServeCmd() *cobra.Command {
 			zap.L().Info("Storage opened", zap.String("path", storagePath))
 
 			stageRegistry := stages.NewRegistry(store.DB())
-			layer := serving.NewAgenticLayer(stageRegistry)
+			layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{
+				StageRegistry: stageRegistry,
+				DB:            store.DB(),
+			})
+			if err := layer.LoadPersistedBackends(ctx); err != nil {
+				zap.L().Fatal("Failed to load persisted backends", zap.Error(err))
+			}
 
 			apiServer := servingapi.NewAgenticServer(layer, listenAddress, &servingapi.ServerOptions{
 				RateLimitRPS: cfg.RateLimitRPS,

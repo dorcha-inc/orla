@@ -22,7 +22,7 @@ func newStageTestServer(t *testing.T) *AgenticServer {
 	require.NoError(t, err)
 	t.Cleanup(func() { core.LogDeferredError(store.Close) })
 	reg := stages.NewRegistry(store.DB())
-	layer := serving.NewAgenticLayer(reg)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{StageRegistry: reg})
 	return NewAgenticServer(layer, ":0", nil)
 }
 
@@ -157,7 +157,7 @@ func TestStages_Delete(t *testing.T) {
 }
 
 func TestStages_ServiceUnavailableWhenRegistryNil(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	resp := doStageRequest(t, server, http.MethodGet, "/api/v1/stages/x", nil)

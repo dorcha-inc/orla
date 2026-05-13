@@ -170,7 +170,7 @@ func TestNewExecutor(t *testing.T) {
 			name: "valid config",
 			cfg: &config.OrlaConfig{
 				Model:      "openai:llama3",
-				LLMBackend: &core.LLMBackend{Type: core.LLMInferenceAPITypeOpenAI, Endpoint: "http://localhost:11434/v1"},
+				LLMBackend: &core.LLMBackend{Endpoint: "http://localhost:11434/v1"},
 			},
 			expectedErr: false,
 		},

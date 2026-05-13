@@ -1,4 +1,8 @@
-"""Convenience constructors for :class:`~pyorla.types.LLMBackend`."""
+"""Convenience constructors for :class:`~pyorla.types.LLMBackend`.
+
+The provider implementation is selected by the prefix on ``model_id``
+(e.g. ``openai:gpt-4o``, ``sglang:Qwen/Qwen3-4B``).
+"""
 
 from __future__ import annotations
 
@@ -7,9 +11,6 @@ import string
 
 from pyorla.types import LLMBackend
 
-_BACKEND_TYPE_OPENAI = "openai"
-_BACKEND_TYPE_SGLANG = "sglang"
-
 
 def _random_backend_name() -> str:
     return "".join(random.choices(string.ascii_lowercase, k=4)) + "-" + "".join(
@@ -17,27 +18,22 @@ def _random_backend_name() -> str:
     )
 
 
-def _model_id_for_backend_type(backend_type: str, model_id: str) -> str:
-    return f"{backend_type}:{model_id}"
-
-
 def new_vllm_backend(model_id: str, endpoint: str) -> LLMBackend:
     """Create a vLLM backend (OpenAI-compatible API)."""
     return LLMBackend(
         name=_random_backend_name(),
         endpoint=endpoint,
-        type=_BACKEND_TYPE_OPENAI,
-        model_id=_model_id_for_backend_type(_BACKEND_TYPE_OPENAI, model_id),
+        model_id=f"openai:{model_id}",
     )
 
 
 def new_sglang_backend(model_id: str, endpoint: str) -> LLMBackend:
-    """Create an SGLang backend."""
+    """Create an SGLang backend. The ``sglang:`` prefix triggers the daemon's
+    SGLang-specific cache flush wiring."""
     return LLMBackend(
         name=_random_backend_name(),
         endpoint=endpoint,
-        type=_BACKEND_TYPE_SGLANG,
-        model_id=_model_id_for_backend_type(_BACKEND_TYPE_OPENAI, model_id),
+        model_id=f"sglang:{model_id}",
     )
 
 
@@ -50,6 +46,5 @@ def new_ollama_backend(model_id: str, endpoint: str) -> LLMBackend:
     return LLMBackend(
         name=_random_backend_name(),
         endpoint=endpoint.rstrip("/") + "/v1",
-        type=_BACKEND_TYPE_OPENAI,
-        model_id=_model_id_for_backend_type(_BACKEND_TYPE_OPENAI, model_id),
+        model_id=f"openai:{model_id}",
     )

@@ -22,7 +22,7 @@ const (
 )
 
 func TestServer_HandleExecute_RequestBodyTooLarge(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	// Valid JSON body that exceeds maxRequestBodyBytes (10MB)
@@ -52,7 +52,7 @@ func TestRecoveryMiddleware_RecoversPanic(t *testing.T) {
 }
 
 func TestServer_HandleHealth(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	resp := httptest.NewRecorder()
@@ -71,12 +71,11 @@ func TestServer_HandleMetrics(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("metrics-backend", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("metrics-backend", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:test-model")
+	}, "openai:test-model"))
 	server := NewAgenticServer(layer, ":0", nil)
 
 	// Execute a request to populate orla_ metrics
@@ -94,7 +93,7 @@ func TestServer_HandleMetrics(t *testing.T) {
 }
 
 func TestServer_HandleExecute_NoBackend(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	reqBody := ExecuteRequest{
@@ -111,7 +110,7 @@ func TestServer_HandleExecute_NoBackend(t *testing.T) {
 }
 
 func TestServer_HandleExecute_InvalidJSON(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	resp := httptest.NewRecorder()
@@ -122,7 +121,7 @@ func TestServer_HandleExecute_InvalidJSON(t *testing.T) {
 }
 
 func TestServer_HandleExecute_BackendNotFound(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	reqBody := ExecuteRequest{
@@ -145,7 +144,7 @@ func TestServer_HandleExecute_BackendNotFound(t *testing.T) {
 }
 
 func TestServer_HandleExecute_InvalidSchedulingPolicy(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	reqBody := ExecuteRequest{
@@ -166,7 +165,7 @@ func TestServer_HandleExecute_InvalidSchedulingPolicy(t *testing.T) {
 }
 
 func TestServer_HandleExecute_InvalidRequestSchedulingPolicy(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	reqBody := ExecuteRequest{
@@ -187,13 +186,12 @@ func TestServer_HandleExecute_InvalidRequestSchedulingPolicy(t *testing.T) {
 }
 
 func TestServer_HandleRegisterBackend(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	reqBody := RegisterBackendRequest{
 		Name:     "vllm",
 		Endpoint: "http://localhost:8000/v1",
-		Type:     "openai",
 		ModelID:  "openai:Qwen/Qwen3-4B",
 	}
 	body, err := json.Marshal(reqBody)
@@ -220,8 +218,25 @@ func TestServer_HandleRegisterBackend(t *testing.T) {
 	assert.Equal(t, []string{"vllm"}, listResult.Backends)
 }
 
+func TestServer_HandleDeleteBackend(t *testing.T) {
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("be", &core.LLMBackend{Endpoint: "http://x"}, "openai:m"))
+	server := NewAgenticServer(layer, ":0", nil)
+
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, httptest.NewRequest("DELETE", "/api/v1/backends/be", nil))
+	require.Equal(t, http.StatusOK, resp.Code)
+
+	listResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(listResp, httptest.NewRequest("GET", "/api/v1/backends", nil))
+	require.Equal(t, http.StatusOK, listResp.Code)
+	var listResult ListBackendsResponse
+	require.NoError(t, json.Unmarshal(listResp.Body.Bytes(), &listResult))
+	assert.Empty(t, listResult.Backends)
+}
+
 func TestServer_RateLimit_Returns429WhenExceeded(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", &ServerOptions{RateLimitRPS: 1})
 
 	reqBody := ExecuteRequest{Backend: "x", Prompt: "hi"}
@@ -246,7 +261,7 @@ func TestServer_RateLimit_Returns429WhenExceeded(t *testing.T) {
 }
 
 func TestServer_HandleRegisterBackend_Validation(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	negQuality := -0.5
@@ -258,16 +273,14 @@ func TestServer_HandleRegisterBackend_Validation(t *testing.T) {
 		req  RegisterBackendRequest
 		want int
 	}{
-		{"missing name", RegisterBackendRequest{Endpoint: "http://x", Type: "openai", ModelID: "openai:m"}, http.StatusBadRequest},
-		{"missing endpoint", RegisterBackendRequest{Name: "v", Type: "openai", ModelID: "openai:m"}, http.StatusBadRequest},
-		{"missing type", RegisterBackendRequest{Name: "v", Endpoint: "http://x", ModelID: "openai:m"}, http.StatusBadRequest},
-		{"missing model_id", RegisterBackendRequest{Name: "v", Endpoint: "http://x", Type: "openai"}, http.StatusBadRequest},
-		{"invalid type", RegisterBackendRequest{Name: "v", Endpoint: "http://x", Type: "invalid", ModelID: "openai:m"}, http.StatusBadRequest},
-		{"negative quality", RegisterBackendRequest{Name: "v", Endpoint: "http://x", Type: "openai", ModelID: "openai:m", Quality: &negQuality}, http.StatusBadRequest},
-		{"quality > 1", RegisterBackendRequest{Name: "v", Endpoint: "http://x", Type: "openai", ModelID: "openai:m", Quality: &overQuality}, http.StatusBadRequest},
-		{"negative cost rate", RegisterBackendRequest{Name: "v", Endpoint: "http://x", Type: "openai", ModelID: "openai:m", CostModel: &CostModelRequest{InputCostPerMToken: -1}}, http.StatusBadRequest},
+		{"missing name", RegisterBackendRequest{Endpoint: "http://x", ModelID: "openai:m"}, http.StatusBadRequest},
+		{"missing endpoint", RegisterBackendRequest{Name: "v", ModelID: "openai:m"}, http.StatusBadRequest},
+		{"missing model_id", RegisterBackendRequest{Name: "v", Endpoint: "http://x"}, http.StatusBadRequest},
+		{"negative quality", RegisterBackendRequest{Name: "v", Endpoint: "http://x", ModelID: "openai:m", Quality: &negQuality}, http.StatusBadRequest},
+		{"quality > 1", RegisterBackendRequest{Name: "v", Endpoint: "http://x", ModelID: "openai:m", Quality: &overQuality}, http.StatusBadRequest},
+		{"negative cost rate", RegisterBackendRequest{Name: "v", Endpoint: "http://x", ModelID: "openai:m", CostModel: &CostModelRequest{InputCostPerMToken: -1}}, http.StatusBadRequest},
 		{"valid with cost+quality", RegisterBackendRequest{
-			Name: "v", Endpoint: "http://x", Type: "openai", ModelID: "openai:m",
+			Name: "v", Endpoint: "http://x", ModelID: "openai:m",
 			Quality:   &goodQuality,
 			CostModel: &CostModelRequest{InputCostPerMToken: 0.25, OutputCostPerMToken: 1.25},
 		}, http.StatusOK},
@@ -284,136 +297,12 @@ func TestServer_HandleRegisterBackend_Validation(t *testing.T) {
 	}
 }
 
-func TestServer_HandleExecute_AccuracyRouting(t *testing.T) {
-	srv := model.NewMockLLMServer().ReturnContent("routed").Start()
-	t.Cleanup(srv.Close)
-	t.Setenv(testAPIKeyEnvVar2, "k")
-
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("expensive", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: srv.URL() + "/v1",
-		Quality:  core.Ptr(0.9),
-		CostModel: &core.CostModel{
-			InputCostPerMToken:  5.0,
-			OutputCostPerMToken: 20.0,
-		},
-		APIKeyEnvVar: testAPIKeyEnvVar2,
-	}, "openai:big")
-	layer.AddLLMBackend("cheap", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: srv.URL() + "/v1",
-		Quality:  core.Ptr(0.5),
-		CostModel: &core.CostModel{
-			InputCostPerMToken:  0.1,
-			OutputCostPerMToken: 0.5,
-		},
-		APIKeyEnvVar: testAPIKeyEnvVar2,
-	}, "openai:small")
-
-	server := NewAgenticServer(layer, ":0", nil)
-
-	accuracy := 0.4
-	reqBody := ExecuteRequest{
-		Prompt: "hi",
-		InferenceOptions: model.InferenceOptions{
-			Accuracy: &accuracy,
-		},
-	}
-	body, err := json.Marshal(reqBody)
-	require.NoError(t, err)
-	resp := httptest.NewRecorder()
-	server.mux.ServeHTTP(resp, httptest.NewRequest("POST", "/api/v1/execute", bytes.NewReader(body)))
-
-	require.Equal(t, http.StatusOK, resp.Code)
-	var result ExecuteResponse
-	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &result))
-	assert.True(t, result.Success)
-	assert.Equal(t, "routed", result.Response.Content)
-}
-
-func TestServer_HandleExecute_AccuracyNoneQualify_Strict(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("weak", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: "http://x",
-		Quality:  core.Ptr(0.3),
-		CostModel: &core.CostModel{
-			InputCostPerMToken:  0.1,
-			OutputCostPerMToken: 0.5,
-		},
-	}, "openai:tiny")
-
-	server := NewAgenticServer(layer, ":0", nil)
-
-	accuracy := 0.9
-	reqBody := ExecuteRequest{
-		Backend: "weak",
-		Prompt:  "hi",
-		InferenceOptions: model.InferenceOptions{
-			Accuracy:       &accuracy,
-			AccuracyPolicy: model.AccuracyPolicyStrict,
-		},
-	}
-	body, err := json.Marshal(reqBody)
-	require.NoError(t, err)
-	resp := httptest.NewRecorder()
-	server.mux.ServeHTTP(resp, httptest.NewRequest("POST", "/api/v1/execute", bytes.NewReader(body)))
-
-	require.Equal(t, http.StatusBadRequest, resp.Code)
-	assert.Contains(t, resp.Body.String(), "no backend with quality")
-}
-
-func TestServer_HandleExecute_AccuracyPolicyInvalid(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
-	server := NewAgenticServer(layer, ":0", nil)
-
-	accuracy := 0.5
-	reqBody := ExecuteRequest{
-		Backend: "b",
-		Prompt:  "hi",
-		InferenceOptions: model.InferenceOptions{
-			Accuracy:       &accuracy,
-			AccuracyPolicy: "bogus",
-		},
-	}
-	body, err := json.Marshal(reqBody)
-	require.NoError(t, err)
-	resp := httptest.NewRecorder()
-	server.mux.ServeHTTP(resp, httptest.NewRequest("POST", "/api/v1/execute", bytes.NewReader(body)))
-
-	require.Equal(t, http.StatusBadRequest, resp.Code)
-	assert.Contains(t, resp.Body.String(), "accuracy_policy must be")
-}
-
-func TestServer_HandleExecute_AccuracyOutOfRange(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
-	server := NewAgenticServer(layer, ":0", nil)
-
-	accuracy := 1.5
-	reqBody := ExecuteRequest{
-		Backend: "x",
-		Prompt:  "hi",
-		InferenceOptions: model.InferenceOptions{
-			Accuracy: &accuracy,
-		},
-	}
-	body, err := json.Marshal(reqBody)
-	require.NoError(t, err)
-	resp := httptest.NewRecorder()
-	server.mux.ServeHTTP(resp, httptest.NewRequest("POST", "/api/v1/execute", bytes.NewReader(body)))
-
-	require.Equal(t, http.StatusBadRequest, resp.Code)
-	assert.Contains(t, resp.Body.String(), "accuracy must be in [0.0, 1.0]")
-}
-
 func TestServer_HandleUpdateBackend_Success(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("test-be", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: "http://x",
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("test-be", &core.LLMBackend{
+				Endpoint: "http://x",
 		Quality:  core.Ptr(0.5),
-	}, "openai:m")
+	}, "openai:m"))
 
 	server := NewAgenticServer(layer, ":0", nil)
 
@@ -439,7 +328,7 @@ func TestServer_HandleUpdateBackend_Success(t *testing.T) {
 }
 
 func TestServer_HandleUpdateBackend_NotFound(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	quality := 0.5
@@ -454,11 +343,10 @@ func TestServer_HandleUpdateBackend_NotFound(t *testing.T) {
 }
 
 func TestServer_HandleUpdateBackend_InvalidQuality(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("be", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: "http://x",
-	}, "openai:m")
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("be", &core.LLMBackend{
+				Endpoint: "http://x",
+	}, "openai:m"))
 
 	server := NewAgenticServer(layer, ":0", nil)
 
@@ -476,7 +364,7 @@ func TestServer_HandleUpdateBackend_InvalidQuality(t *testing.T) {
 // Tests for Access Control
 
 func TestServer_PolicyCRUD(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	// Add a policy.
@@ -514,7 +402,7 @@ func TestServer_PolicyCRUD(t *testing.T) {
 }
 
 func TestServer_PolicyAdd_Validation(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	addBody, err := json.Marshal(AddPolicyRequest{
@@ -530,7 +418,7 @@ func TestServer_PolicyAdd_Validation(t *testing.T) {
 }
 
 func TestServer_PolicyRemove_NotFound(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	resp := httptest.NewRecorder()
@@ -543,12 +431,11 @@ func TestServer_HandleExecute_BackendAccessDenied(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("gpt4o", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("gpt4o", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:gpt-4o")
+	}, "openai:gpt-4o"))
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name:      "deny-interns-gpt4o",
 		Subjects:  []string{"tenant:interns"},
@@ -581,11 +468,10 @@ func TestServer_HandleExecute_BackendAccessDenied(t *testing.T) {
 }
 
 func TestServer_HandleExecute_ToolAccessDenied(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("be", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: "http://x",
-	}, "openai:m")
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("be", &core.LLMBackend{
+				Endpoint: "http://x",
+	}, "openai:m"))
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name:      "deny-shell",
 		Subjects:  []string{"tenant:untrusted"},
@@ -612,11 +498,10 @@ func TestServer_HandleExecute_ToolAccessDenied(t *testing.T) {
 }
 
 func TestServer_HandleExecute_DataLabelDenied(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("ext-openai", &core.LLMBackend{
-		Type:     core.LLMInferenceAPITypeOpenAI,
-		Endpoint: "http://x",
-	}, "openai:gpt-4o")
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("ext-openai", &core.LLMBackend{
+				Endpoint: "http://x",
+	}, "openai:gpt-4o"))
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name:      "pii-no-external",
 		Subjects:  []string{"backend:ext-*"},
@@ -641,7 +526,7 @@ func TestServer_HandleExecute_DataLabelDenied(t *testing.T) {
 }
 
 func TestServer_HandleRegisterWorkflow(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	wfBody, err := json.Marshal(RegisterWorkflowRequest{
@@ -655,7 +540,7 @@ func TestServer_HandleRegisterWorkflow(t *testing.T) {
 }
 
 func TestServer_HandleRegisterWorkflow_MissingID(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	server := NewAgenticServer(layer, ":0", nil)
 
 	wfBody, err := json.Marshal(RegisterWorkflowRequest{
@@ -668,7 +553,7 @@ func TestServer_HandleRegisterWorkflow_MissingID(t *testing.T) {
 }
 
 func TestServer_HandleAccessCheck_Allowed(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name: "eng-allow-cheap", Subjects: []string{"tenant:engineering"}, Resources: []string{"backend:cheap"}, Action: access.ActionAllow,
 	}))
@@ -688,7 +573,7 @@ func TestServer_HandleAccessCheck_Allowed(t *testing.T) {
 }
 
 func TestServer_HandleAccessCheck_Denied(t *testing.T) {
-	layer := serving.NewAgenticLayer(nil)
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
 		Name: "intern-allow-cheap", Subjects: []string{"tenant:interns"}, Resources: []string{"backend:cheap"}, Action: access.ActionAllow,
 	}))
@@ -714,17 +599,15 @@ func TestServer_HandleExecute_DataLabelPropagation(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv(testAPIKeyEnvVar, "test-key")
 
-	layer := serving.NewAgenticLayer(nil)
-	layer.AddLLMBackend("local", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{})
+	require.NoError(t, layer.AddLLMBackend("local", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:m")
-	layer.AddLLMBackend("external", &core.LLMBackend{
-		Type:         core.LLMInferenceAPITypeOpenAI,
-		Endpoint:     srv.URL() + "/v1",
+	}, "openai:m"))
+	require.NoError(t, layer.AddLLMBackend("external", &core.LLMBackend{
+				Endpoint:     srv.URL() + "/v1",
 		APIKeyEnvVar: testAPIKeyEnvVar,
-	}, "openai:m2")
+	}, "openai:m2"))
 
 	// Policy: PII cannot go to external backend.
 	require.NoError(t, layer.PolicyStore.Add(&access.Policy{
