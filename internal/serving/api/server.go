@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/harvard-cns/orla/internal/serving"
 	"github.com/harvard-cns/orla/internal/serving/access"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"log/slog"
 	"golang.org/x/time/rate"
 )
 

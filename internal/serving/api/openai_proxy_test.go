@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,8 @@ import (
 	"github.com/harvard-cns/orla/internal/model"
 	"github.com/harvard-cns/orla/internal/serving"
 	"github.com/harvard-cns/orla/internal/serving/access"
+	"github.com/harvard-cns/orla/internal/stages"
+	"github.com/harvard-cns/orla/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,6 +31,29 @@ func newProxyTestServer(t *testing.T) (*AgenticServer, *model.MockLLMServer) {
 		Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
 	}, "openai:m"))
 	return NewAgenticServer(layer, ":0", nil), srv
+}
+
+// newProxyTestServerWithStages is like newProxyTestServer but also wires a
+// SQLite-backed stage registry so tests can exercise stage-driven routing.
+func newProxyTestServerWithStages(t *testing.T) (*AgenticServer, *model.MockLLMServer, *stages.Registry) {
+	t.Helper()
+	srv := model.NewMockLLMServer().ReturnContent("hello from mock").Start()
+	t.Cleanup(srv.Close)
+	t.Setenv(testAPIKeyEnvVar, "test-key")
+
+	store, err := storage.Open(context.Background(), ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { core.LogDeferredError(store.Close) })
+
+	reg := stages.NewRegistry(store.DB())
+	layer := serving.NewAgenticLayer(serving.AgenticLayerOptions{StageRegistry: reg, DB: store.DB()})
+	require.NoError(t, layer.AddLLMBackend("cheap", &core.LLMBackend{
+		Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
+	}, "openai:m"))
+	require.NoError(t, layer.AddLLMBackend("strong", &core.LLMBackend{
+		Endpoint: srv.URL() + "/v1", APIKeyEnvVar: testAPIKeyEnvVar,
+	}, "openai:m"))
+	return NewAgenticServer(layer, ":0", nil), srv, reg
 }
 
 func doChatCompletion(t *testing.T, server *AgenticServer, body any, headers map[string]string) *httptest.ResponseRecorder {
@@ -66,7 +92,8 @@ func TestChatCompletions_HappyPath(t *testing.T) {
 	assert.Equal(t, "stop", result.Choices[0].FinishReason)
 }
 
-func TestChatCompletions_MissingModel(t *testing.T) {
+func TestChatCompletions_NoBackendResolved(t *testing.T) {
+	// No stage registry + no `model` field → 400, since neither path can supply a backend.
 	server, _ := newProxyTestServer(t)
 
 	resp := doChatCompletion(t, server,
@@ -75,7 +102,7 @@ func TestChatCompletions_MissingModel(t *testing.T) {
 	)
 
 	require.Equal(t, http.StatusBadRequest, resp.Code)
-	assert.Contains(t, resp.Body.String(), "model is required")
+	assert.Contains(t, resp.Body.String(), "no backend resolved")
 }
 
 func TestChatCompletions_MissingMessages(t *testing.T) {
@@ -428,6 +455,105 @@ func TestChatCompletions_WorkflowNotRegistered(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, resp.Code)
 	assert.Contains(t, resp.Body.String(), "wf-nonexistent")
+}
+
+// ---- Phase C: stage-driven routing ----
+
+func TestChatCompletions_StageOverridesRequestModel(t *testing.T) {
+	server, _, reg := newProxyTestServerWithStages(t)
+	require.NoError(t, reg.Upsert(context.Background(), &stages.Stage{
+		ID: "planning", Backend: "cheap",
+	}))
+
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			// Client sends a value, but the stage mapping wins.
+			Model:    "strong",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+		},
+		map[string]string{headerOrlaStage: "planning"},
+	)
+
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+
+	var result chatCompletion
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &result))
+	assert.Equal(t, "cheap", result.Model,
+		"response.model should be the resolved backend, not what the client asked for")
+}
+
+func TestChatCompletions_FallsBackToRequestModelWhenStageUnmapped(t *testing.T) {
+	server, _, _ := newProxyTestServerWithStages(t)
+
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "cheap",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+		},
+		map[string]string{headerOrlaStage: "fresh-stage"},
+	)
+
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+
+	var result chatCompletion
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &result))
+	assert.Equal(t, "cheap", result.Model)
+}
+
+func TestChatCompletions_StageReasoningEffortFlowsToUpstream(t *testing.T) {
+	server, srv, reg := newProxyTestServerWithStages(t)
+	require.NoError(t, reg.Upsert(context.Background(), &stages.Stage{
+		ID: "planning", Backend: "cheap", ReasoningEffort: "high",
+	}))
+
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+		},
+		map[string]string{headerOrlaStage: "planning"},
+	)
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+
+	var req struct {
+		ReasoningEffort string `json:"reasoning_effort"`
+	}
+	require.NoError(t, json.Unmarshal(srv.LastRequestBody(), &req))
+	assert.Equal(t, "high", req.ReasoningEffort,
+		"stage's reasoning_effort should flow into the upstream chat completion")
+}
+
+func TestChatCompletions_NoBackendWhenStageUnmappedAndNoModel(t *testing.T) {
+	server, _, _ := newProxyTestServerWithStages(t)
+
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+		},
+		map[string]string{headerOrlaStage: "fresh-stage"},
+	)
+
+	require.Equal(t, http.StatusBadRequest, resp.Code)
+	assert.Contains(t, resp.Body.String(), "no backend resolved")
+}
+
+func TestChatCompletions_StageAutoCreatedOnFirstSighting(t *testing.T) {
+	server, _, reg := newProxyTestServerWithStages(t)
+
+	// Stage doesn't exist yet; request supplies model fallback.
+	resp := doChatCompletion(t, server,
+		chatCompletionRequest{
+			Model:    "cheap",
+			Messages: []chatMessage{{Role: "user", Content: "hi"}},
+		},
+		map[string]string{headerOrlaStage: "brand-new"},
+	)
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+
+	// Stage now exists with default (empty) config so the platform engineer can fill it in.
+	got, err := reg.Get(context.Background(), "brand-new")
+	require.NoError(t, err)
+	assert.Equal(t, "brand-new", got.ID)
+	assert.Empty(t, got.Backend, "auto-created stage should have empty backend until the platform engineer maps it")
 }
 
 // parseSSEChunks parses an OpenAI-style data-only SSE stream into typed chunks

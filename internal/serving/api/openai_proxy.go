@@ -141,10 +141,6 @@ func (s *AgenticServer) handleChatCompletions(w http.ResponseWriter, r *http.Req
 		writeOpenAIError(w, http.StatusBadRequest, fmt.Sprintf("failed to decode request: %v", err))
 		return
 	}
-	if req.Model == "" {
-		writeOpenAIError(w, http.StatusBadRequest, "model is required")
-		return
-	}
 	if len(req.Messages) == 0 {
 		writeOpenAIError(w, http.StatusBadRequest, "messages is required")
 		return
@@ -153,6 +149,21 @@ func (s *AgenticServer) handleChatCompletions(w http.ResponseWriter, r *http.Req
 	stage, workflowRun, dataLabels, tags := extractOrlaContext(r, &req)
 	if stage == "" {
 		writeOpenAIError(w, http.StatusBadRequest, "stage is required (set X-Orla-Stage header or metadata.orla.stage)")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Resolve backend from the stage registry; req.Model is a fallback only
+	// when the stage has no backend mapped. Stage config also supplies
+	// platform-engineer-owned inference policy (currently reasoning effort).
+	backend, stageReasoningEffort, err := s.resolveStageRouting(ctx, stage, req.Model)
+	if err != nil {
+		writeOpenAIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if backend == "" {
+		writeOpenAIError(w, http.StatusBadRequest, "no backend resolved: stage has no mapping and request did not supply a model")
 		return
 	}
 
@@ -176,6 +187,9 @@ func (s *AgenticServer) handleChatCompletions(w http.ResponseWriter, r *http.Req
 	if rf := convertResponseFormat(req.Response); rf != nil {
 		opts.ResponseFormat = rf
 	}
+	if stageReasoningEffort != "" {
+		opts.ReasoningEffort = stageReasoningEffort
+	}
 	chatOpts := serving.ChatOptions{WorkflowID: workflowRun}
 
 	// Effective data labels merge explicit labels with those inherited from
@@ -194,27 +208,45 @@ func (s *AgenticServer) handleChatCompletions(w http.ResponseWriter, r *http.Req
 	for i, t := range tools {
 		toolNames[i] = t.Name
 	}
-	if d := s.layer.ValidateAccess(tags, req.Model, toolNames, effectiveLabels); !d.Allowed {
+	if d := s.layer.ValidateAccess(tags, backend, toolNames, effectiveLabels); !d.Allowed {
 		writeOpenAIError(w, http.StatusForbidden, d.Reason)
 		return
 	}
 
-	ctx := r.Context()
 	if req.Stream {
-		s.streamChatCompletion(w, ctx, req.Model, stage, messages, tools, opts, chatOpts)
+		s.streamChatCompletion(w, ctx, backend, stage, messages, tools, opts, chatOpts)
 		return
 	}
 
-	response, err := s.layer.Execute(ctx, req.Model, stage, messages, tools, opts, chatOpts)
+	response, err := s.layer.Execute(ctx, backend, stage, messages, tools, opts, chatOpts)
 	if err != nil {
 		writeOpenAIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	completion := buildChatCompletion(req.Model, response)
+	completion := buildChatCompletion(backend, response)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	core.WriteJSONResponse(w, completion)
+}
+
+// resolveStageRouting looks up the stage's config (auto-creating a default
+// record on miss) and returns the backend to use plus any stage-configured
+// reasoning_effort. If the registry isn't configured (test contexts), it
+// returns the request's model field verbatim and no reasoning effort.
+func (s *AgenticServer) resolveStageRouting(ctx context.Context, stage, fallbackModel string) (string, string, error) {
+	if s.layer.StageRegistry == nil {
+		return fallbackModel, "", nil
+	}
+	stageCfg, err := s.layer.StageRegistry.GetOrCreate(ctx, stage)
+	if err != nil {
+		return "", "", fmt.Errorf("stage lookup: %w", err)
+	}
+	backend := stageCfg.Backend
+	if backend == "" {
+		backend = fallbackModel
+	}
+	return backend, stageCfg.ReasoningEffort, nil
 }
 
 func (s *AgenticServer) streamChatCompletion(

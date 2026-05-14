@@ -2,7 +2,7 @@
 
 Status: **in progress**. Last updated 2026-05-13.
 
-**Completed so far:** A (revert), A.5a (mcp.Tool removal), A.5b (openai-go SDK), B.0 (storage + batchWriter), B (stage registry + REST), B.5 (backend persistence + cleanups: stages cache removed, accuracy machinery dropped, `type` collapsed into `model_id`, dead viper defaults removed). Phase 0 coverage tooling also landed.
+**Completed so far:** A (revert), A.5a (mcp.Tool removal), A.5b (openai-go SDK), B.0 (storage + batchWriter), B (stage registry + REST), B.5 (backend persistence + cleanups: stages cache removed, accuracy machinery dropped, `type` collapsed into `model_id`, dead viper defaults removed), B.7 (library swaps: google/uuid, slog over zap, goose for migrations, cenkalti/backoff for retries), C (proxy consults stage registry + `X-Orla-Backend` response header). Phase 0 coverage tooling also landed.
 
 ## Goal
 

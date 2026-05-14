@@ -29,11 +29,20 @@ paths:
         (OpenAI SDK, LangChain, LangGraph, AutoGen, CrewAI) at this URL to get Orla
         routing, access control, memory, and cost tracking without code changes.
 
-        The `model` field carries the registered Orla backend name. Orla metadata
-        (stage, workflow_run, data_labels, custom tags) flows through headers, with
-        a `metadata.orla` body field as a fallback. Standard OpenAI request and
-        response shapes apply, including streaming (`stream: true` returns SSE
-        chunks terminated by `data: [DONE]`).
+        **Routing is owned by the platform engineer's stage configuration.** The
+        daemon looks up `stage` in the registry and routes to `stage.backend`. The
+        request's `model` field is only consulted as a fallback when the stage has
+        no backend mapped; if neither path supplies a backend, the daemon returns
+        400. New stages are auto-created with empty config on first sighting so
+        the platform engineer can fill them in via `PUT /api/v1/stages/{id}`.
+
+        The response's `model` field reports the resolved backend — divergence
+        from the request's `model` is by design under the two-persona contract.
+
+        Orla identity metadata (stage, workflow_run, data_labels, custom tags)
+        flows through headers, with a `metadata.orla` body field as a fallback.
+        Standard OpenAI request and response shapes apply, including streaming
+        (`stream: true` returns SSE chunks terminated by `data: [DONE]`).
       operationId: chatCompletions
       parameters:
         - name: X-Orla-Stage
@@ -68,7 +77,7 @@ paths:
               $ref: "#/components/schemas/ChatCompletionRequest"
       responses:
         "200":
-          description: Success (non-streaming) or SSE stream (when `stream: true`)
+          description: Success (non-streaming) or SSE stream (when `stream: true`). The response's `model` field reports the resolved backend.
           content:
             application/json:
               schema:
@@ -78,7 +87,7 @@ paths:
                 type: string
                 description: OpenAI-style data-only SSE chunks terminated by `data: [DONE]`.
         "400":
-          description: Invalid request (missing model, missing stage, malformed messages, etc.)
+          description: Invalid request (missing stage, no backend resolved, malformed messages, etc.)
         "403":
           description: Access denied by policy
         "500":

@@ -238,10 +238,12 @@ See `docs/openapi.yaml` for the full OpenAPI 3.0 spec.
 
 ### OpenAI-compatible proxy
 
-`POST /v1/chat/completions` lets developers use any OpenAI-compatible client (raw OpenAI SDK, LangChain, LangGraph, AutoGen, CrewAI, etc.) by pointing `base_url` at the Orla daemon. Routing is carried out-of-band:
+`POST /v1/chat/completions` lets developers use any OpenAI-compatible client (raw OpenAI SDK, LangChain, LangGraph, AutoGen, CrewAI, etc.) by pointing `base_url` at the Orla daemon. The contract is intentionally minimal for the developer:
 
-- **`model` field = Orla backend name** (e.g. `"model": "cheap"` selects the registered backend named `cheap`). The backend's `model_id` is what gets sent upstream.
-- **Headers** for Orla metadata (with `metadata.orla` in the request body as a fallback for SDKs that can't easily set headers):
+- **Routing is owned by the platform engineer's stage configuration.** Before dispatching, the proxy calls `StageRegistry.GetOrCreate(stage)` and reads `stage.Backend`. If the stage has a backend mapping, that wins. The request's `model` field is only consulted as a *fallback* when the stage has no mapping, and a stage with no mapping plus an empty `model` returns 400. New stages are auto-created with empty config on first sighting so the platform engineer can fill them in later via `PUT /api/v1/stages/{id}`.
+- **The response's `model` field reports the resolved backend** — divergence from the request's `model` is by design under the two-persona contract, and the response body is the canonical source of truth for "which backend ran this".
+- **Inference policy** is sourced from the stage record too. Currently `reasoning_effort` is applied if set on the stage; later phases will add scheduling policy, priority, and cache-flush behavior.
+- **Headers** for Orla identity metadata (with `metadata.orla` in the request body as a fallback for SDKs that can't easily set headers):
   - `X-Orla-Stage` (required) — names the stage this call belongs to. Becomes the `stage` tag for access control.
   - `X-Orla-Workflow-Run` (optional) — workflow run id, becomes the `workflow_run` tag.
   - `X-Orla-Data-Labels` (optional) — comma-separated sensitivity labels, checked against data access policies.
