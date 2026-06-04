@@ -21,7 +21,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: extractions/setup-just@v3
+      - uses: extractions/setup-just@v4
       - name: Install golangci-lint
         # Pre-built v2 binary (built with current Go). The original v1
         # action shipped a binary compiled against Go 1.24 which choked
