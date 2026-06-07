@@ -191,9 +191,15 @@ func (s *Scheduler) CircuitState(name string) string {
 	if !ok {
 		return "closed"
 	}
-	exec.cb.mu.Lock()
-	defer exec.cb.mu.Unlock()
-	switch exec.cb.state {
+	return circuitStateOf(exec)
+}
+
+// circuitStateOf reads the circuit breaker state of an executor without
+// acquiring the scheduler lock. The caller must ensure exec is not nil.
+func circuitStateOf(e *executor) string {
+	e.cb.mu.Lock()
+	defer e.cb.mu.Unlock()
+	switch e.cb.state {
 	case cbOpen:
 		return "open"
 	case cbHalfOpen:
@@ -229,14 +235,15 @@ func (s *Scheduler) Shutdown(ctx context.Context) error {
 	}
 }
 
-// Stats is a point-in-time view of an executor's queue and in-flight
-// counters. Used for /metrics and test inspection.
+// Stats is a point-in-time view of an executor's queue, in-flight
+// counters, and circuit breaker state. Used for /metrics and test inspection.
 type Stats struct {
-	Backend    string
-	QueueDepth int64
-	InFlight   int64
-	Capacity   int
-	Dispatched int64
+	Backend      string
+	QueueDepth   int64
+	InFlight     int64
+	Capacity     int
+	Dispatched   int64
+	CircuitState string
 }
 
 // BackendOf returns the backend record the scheduler was registered
@@ -260,11 +267,12 @@ func (s *Scheduler) Stats() []Stats {
 	out := make([]Stats, 0, len(s.executors))
 	for name, e := range s.executors {
 		out = append(out, Stats{
-			Backend:    name,
-			QueueDepth: e.queueDepth.Load(),
-			InFlight:   e.inflight.Load(),
-			Capacity:   cap(e.slots),
-			Dispatched: e.dispatched.Load(),
+			Backend:      name,
+			QueueDepth:   e.queueDepth.Load(),
+			InFlight:     e.inflight.Load(),
+			Capacity:     cap(e.slots),
+			Dispatched:   e.dispatched.Load(),
+			CircuitState: circuitStateOf(e),
 		})
 	}
 	return out

@@ -42,8 +42,8 @@ func (f *fakeStatsSource) Stats() []scheduler.Stats { return f.stats }
 func TestSchedulerCollector_Emits(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	src := &fakeStatsSource{stats: []scheduler.Stats{
-		{Backend: "gpt4o", QueueDepth: 3, InFlight: 2, Capacity: 4, Dispatched: 100},
-		{Backend: "ollama", QueueDepth: 0, InFlight: 1, Capacity: 2, Dispatched: 5},
+		{Backend: "gpt4o", QueueDepth: 3, InFlight: 2, Capacity: 4, Dispatched: 100, CircuitState: "closed"},
+		{Backend: "ollama", QueueDepth: 0, InFlight: 1, Capacity: 2, Dispatched: 5, CircuitState: "open"},
 	}}
 	c := metrics.NewSchedulerCollector(src)
 	reg.MustRegister(c)
@@ -53,10 +53,44 @@ func TestSchedulerCollector_Emits(t *testing.T) {
 		"orla_scheduler_in_flight",
 		"orla_scheduler_capacity",
 		"orla_scheduler_dispatched_total",
+		"orla_circuit_breaker_state",
 	)
 	require.NoError(t, err)
-	// 2 backends × 4 metrics = 8 samples.
-	assert.Equal(t, 8, out)
+	// 2 backends × 4 scheduler metrics + 2 backends × 3 circuit states = 14 samples.
+	assert.Equal(t, 14, out)
+}
+
+func TestSchedulerCollector_CircuitStateGauge(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	src := &fakeStatsSource{stats: []scheduler.Stats{
+		{Backend: "b", CircuitState: "open"},
+	}}
+	c := metrics.NewSchedulerCollector(src)
+	reg.MustRegister(c)
+
+	mfs, err := reg.Gather()
+	require.NoError(t, err)
+
+	var found map[string]float64
+	for _, mf := range mfs {
+		if mf.GetName() != "orla_circuit_breaker_state" {
+			continue
+		}
+		found = make(map[string]float64)
+		for _, m := range mf.GetMetric() {
+			var stateLabel string
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == "state" {
+					stateLabel = lp.GetValue()
+				}
+			}
+			found[stateLabel] = m.GetGauge().GetValue()
+		}
+	}
+	require.NotNil(t, found, "orla_circuit_breaker_state metric not found")
+	assert.Equal(t, 1.0, found["open"], "active state must be 1")
+	assert.Equal(t, 0.0, found["closed"], "inactive state must be 0")
+	assert.Equal(t, 0.0, found["half-open"], "inactive state must be 0")
 }
 
 type fakeBatchStats struct{ drops, flushes, failures int64 }

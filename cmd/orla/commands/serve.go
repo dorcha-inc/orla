@@ -121,6 +121,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	api.RegisterBackendRoutes(srv.Router(), api.BackendDeps{
 		Registry:  backendRegistry,
 		Lifecycle: sched,
+		Manager:   sched,
 	})
 	completionWriter := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{
 		Pool:   store.Pool(),

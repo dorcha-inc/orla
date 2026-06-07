@@ -225,6 +225,111 @@ func TestFakeRegistry_GetReturnsIndependentRatesCopy(t *testing.T) {
 		"a caller's mutation must not leak into the registry's stored map")
 }
 
+type fakeManager struct{ states map[string]string }
+
+func (f *fakeManager) CircuitState(name string) string {
+	if s, ok := f.states[name]; ok {
+		return s
+	}
+	return "closed"
+}
+
+func newBackendTestServerWithManager(t *testing.T, m LLMBackendManager) (*Server, *backends.FakeRegistry) {
+	t.Helper()
+	reg := backends.NewFakeRegistry()
+	srv := NewServer(ServerConfig{
+		ListenAddress: "127.0.0.1:0",
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	RegisterBackendRoutes(srv.Router(), BackendDeps{Registry: reg, Manager: m})
+	return srv, reg
+}
+
+func TestBackendHandlers_ListCircuitStateClosed(t *testing.T) {
+	srv, reg := newBackendTestServerWithManager(t, &fakeManager{states: map[string]string{"b": "closed"}})
+	_, err := reg.Insert(context.Background(), &backends.Backend{
+		Name: "b", Endpoint: "x", ModelID: new("openai:gpt-4o"), MaxConcurrency: 1,
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/backends", nil)
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var body struct {
+		Backends []struct {
+			CircuitBreaker string `json:"circuit_breaker"`
+		} `json:"backends"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Backends, 1)
+	assert.Equal(t, "closed", body.Backends[0].CircuitBreaker)
+}
+
+func TestBackendHandlers_ListCircuitStateOpen(t *testing.T) {
+	srv, reg := newBackendTestServerWithManager(t, &fakeManager{states: map[string]string{"b": "open"}})
+	_, err := reg.Insert(context.Background(), &backends.Backend{
+		Name: "b", Endpoint: "x", ModelID: new("openai:gpt-4o"), MaxConcurrency: 1,
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/backends", nil)
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var body struct {
+		Backends []struct {
+			CircuitBreaker string `json:"circuit_breaker"`
+		} `json:"backends"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Backends, 1)
+	assert.Equal(t, "open", body.Backends[0].CircuitBreaker)
+}
+
+func TestBackendHandlers_GetCircuitStateHalfOpen(t *testing.T) {
+	srv, reg := newBackendTestServerWithManager(t, &fakeManager{states: map[string]string{"b": "half-open"}})
+	_, err := reg.Insert(context.Background(), &backends.Backend{
+		Name: "b", Endpoint: "x", ModelID: new("openai:gpt-4o"), MaxConcurrency: 1,
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/backends/b", nil)
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var body struct {
+		CircuitBreaker string `json:"circuit_breaker"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal(t, "half-open", body.CircuitBreaker)
+}
+
+func TestBackendHandlers_ListDefaultsCircuitStateToClosedWithoutManager(t *testing.T) {
+	srv, reg := newBackendTestServer(t)
+	_, err := reg.Insert(context.Background(), &backends.Backend{
+		Name: "b", Endpoint: "x", ModelID: new("openai:gpt-4o"), MaxConcurrency: 1,
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/backends", nil)
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var body struct {
+		Backends []struct {
+			CircuitBreaker string `json:"circuit_breaker"`
+		} `json:"backends"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Backends, 1)
+	assert.Equal(t, "closed", body.Backends[0].CircuitBreaker)
+}
+
 func TestBackendHandlers_ListOrderedByName(t *testing.T) {
 	srv, reg := newBackendTestServer(t)
 	for _, n := range []string{"zeta", "alpha", "mu"} {

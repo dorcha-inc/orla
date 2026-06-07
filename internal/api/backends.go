@@ -19,10 +19,27 @@ type BackendLifecycle interface {
 	Deregister(name string)
 }
 
+// LLMBackendManager reads runtime circuit-breaker state from the scheduler.
+// Defined as an interface rather than *scheduler.Scheduler directly so handler
+// tests can substitute a controlled fake — testing specific states (open,
+// half-open) without constructing a real scheduler and dispatching requests
+// to trip the circuit.
+type LLMBackendManager interface {
+	CircuitState(name string) string
+}
+
 // BackendDeps bundles backend-handler dependencies.
 type BackendDeps struct {
 	Registry  backends.Registry
 	Lifecycle BackendLifecycle
+	Manager   LLMBackendManager
+}
+
+// backendView is the HTTP response shape for a single backend. It embeds
+// the persisted Backend record and adds runtime fields not stored in the DB.
+type backendView struct {
+	*backends.Backend
+	CircuitBreaker string `json:"circuit_breaker"`
 }
 
 // RegisterBackendRoutes mounts the backend endpoints onto r. Routes:
@@ -176,7 +193,11 @@ func (h *backendHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"backends": rows})
+	views := make([]backendView, len(rows))
+	for i, b := range rows {
+		views[i] = backendView{Backend: b, CircuitBreaker: h.circuitState(b.Name)}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"backends": views})
 }
 
 func (h *backendHandler) get(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +211,14 @@ func (h *backendHandler) get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, b)
+	writeJSON(w, http.StatusOK, backendView{Backend: b, CircuitBreaker: h.circuitState(name)})
+}
+
+func (h *backendHandler) circuitState(name string) string {
+	if h.deps.Manager == nil {
+		return "closed"
+	}
+	return h.deps.Manager.CircuitState(name)
 }
 
 func (h *backendHandler) patch(w http.ResponseWriter, r *http.Request) {

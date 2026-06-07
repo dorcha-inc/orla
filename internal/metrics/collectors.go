@@ -13,14 +13,15 @@ type SchedulerStatsSource interface {
 }
 
 // SchedulerCollector emits per-backend queue depth, in-flight count,
-// and capacity gauges at scrape time.
+// capacity gauges, and circuit breaker state at scrape time.
 type SchedulerCollector struct {
 	src SchedulerStatsSource
 
-	queueDepth *prometheus.Desc
-	inFlight   *prometheus.Desc
-	capacity   *prometheus.Desc
-	dispatched *prometheus.Desc
+	queueDepth   *prometheus.Desc
+	inFlight     *prometheus.Desc
+	capacity     *prometheus.Desc
+	dispatched   *prometheus.Desc
+	circuitState *prometheus.Desc
 }
 
 // NewSchedulerCollector constructs a collector. Caller registers it
@@ -48,6 +49,11 @@ func NewSchedulerCollector(src SchedulerStatsSource) *SchedulerCollector {
 			"Cumulative count of dispatches initiated, per backend.",
 			[]string{"backend"}, nil,
 		),
+		circuitState: prometheus.NewDesc(
+			"orla_circuit_breaker_state",
+			"Circuit breaker state per backend. Exactly one state label is 1, the others are 0.",
+			[]string{"backend", "state"}, nil,
+		),
 	}
 }
 
@@ -56,7 +62,11 @@ func (c *SchedulerCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.inFlight
 	ch <- c.capacity
 	ch <- c.dispatched
+	ch <- c.circuitState
 }
+
+// cbStates is the fixed set of circuit breaker state label values.
+var cbStates = []string{"closed", "open", "half-open"}
 
 func (c *SchedulerCollector) Collect(ch chan<- prometheus.Metric) {
 	for _, s := range c.src.Stats() {
@@ -64,6 +74,13 @@ func (c *SchedulerCollector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(c.inFlight, prometheus.GaugeValue, float64(s.InFlight), s.Backend)
 		ch <- prometheus.MustNewConstMetric(c.capacity, prometheus.GaugeValue, float64(s.Capacity), s.Backend)
 		ch <- prometheus.MustNewConstMetric(c.dispatched, prometheus.CounterValue, float64(s.Dispatched), s.Backend)
+		for _, state := range cbStates {
+			active := 0.0
+			if s.CircuitState == state {
+				active = 1.0
+			}
+			ch <- prometheus.MustNewConstMetric(c.circuitState, prometheus.GaugeValue, active, s.Backend, state)
+		}
 	}
 }
 
