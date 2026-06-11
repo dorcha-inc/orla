@@ -37,7 +37,7 @@ jobs:
       - name: Check (build + test -race + lint + links)
         run: just check
       - name: Upload coverage
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: coverage.out
           token: ${{ secrets.CODECOV_TOKEN }}
