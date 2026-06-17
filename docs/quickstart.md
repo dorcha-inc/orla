@@ -20,6 +20,7 @@ Or from a clone:
 git clone https://github.com/harvard-cns/orla
 cd orla
 go build -o bin/orla ./cmd/orla
+go build -o bin/orlactl ./cmd/orlactl
 ```
 
 ## 2. Start the daemon
