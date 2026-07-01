@@ -17,8 +17,10 @@ import re
 import string
 import sys
 import urllib.request
+from typing import NoReturn
 
 from datasets import load_dataset
+from openai import BadRequestError
 from pydantic import ValidationError
 
 from agent import HotpotAgent
@@ -65,6 +67,19 @@ def post_feedback(completion_id: str, stage: str, rating: float) -> None:
         print(f"  feedback failed for {stage}: {type(e).__name__}")
 
 
+def _structured_output_error() -> NoReturn:
+    print(
+        "\nstructured output is not reaching the backend, so the response_format "
+        "schema is not being enforced.\n"
+        "  - update and restart the Orla daemon. an older daemon drops "
+        "response_format before it reaches the backend.\n"
+        "  - confirm the mapped backend supports structured outputs "
+        "(orlactl stage get select).",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+
 def main() -> None:
     n = int(os.environ.get("N", "10"))
     ds = load_dataset("hotpotqa/hotpot_qa", "distractor", split=f"validation[:{n}]")
@@ -76,16 +91,11 @@ def main() -> None:
         try:
             pred, calls = agent.answer(ex["question"], paragraphs)
         except ValidationError:
-            print(
-                "\na backend returned text instead of JSON, so it is not honoring the "
-                "response_format schema.\n"
-                "  - update and restart the Orla daemon. an older daemon drops "
-                "response_format before it reaches the backend.\n"
-                "  - confirm the mapped backend supports structured outputs "
-                "(orlactl stage get select).",
-                file=sys.stderr,
-            )
-            raise SystemExit(1) from None
+            _structured_output_error()
+        except BadRequestError as e:
+            if "response_format" in str(e) or "json_schema" in str(e):
+                _structured_output_error()
+            raise
         score = f1(pred, ex["answer"])
         total += score
         em += int(normalize(pred) == normalize(ex["answer"]))
