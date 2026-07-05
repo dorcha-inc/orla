@@ -42,6 +42,7 @@ type CompletionRecord struct {
 	Usage            map[string]float64 `json:"usage,omitempty"`
 	ToolKind         string             `json:"tool_kind,omitempty"`
 	Tags             map[string]string  `json:"tags,omitempty"`
+	Mapping          string             `json:"mapping,omitempty"`
 	CreatedAt        time.Time          `json:"created_at"`
 }
 
@@ -102,7 +103,7 @@ func flushCompletions(pool *pgxpool.Pool, logger *slog.Logger) storage.FlushFunc
 	columns := []string{
 		"completion_id", "stage_id", "workflow_run", "backend", "status",
 		"prompt_tokens", "completion_tokens", "latency_ms", "cost_usd",
-		"tags", "created_at", "usage", "tool_kind",
+		"tags", "created_at", "usage", "tool_kind", "mapping",
 	}
 	return func(ctx context.Context, items []*CompletionRecord) error {
 		conn, err := pool.Acquire(ctx)
@@ -129,6 +130,7 @@ func flushCompletions(pool *pgxpool.Pool, logger *slog.Logger) storage.FlushFunc
 				rec.CreatedAt,
 				usageBytes,
 				nullableString(rec.ToolKind),
+				rec.Mapping,
 			})
 		}
 

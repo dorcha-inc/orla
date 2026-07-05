@@ -76,6 +76,23 @@ type PatchStageRequest struct {
 	Labels          map[string]any `json:"labels,omitempty"`
 }
 
+// PutMappingRequest is the POST /api/v1/mappings body. It creates or
+// replaces a mapping variant named Name with the given per-stage
+// backend overrides. Overrides must be non-empty, a variant with no
+// overrides is indistinguishable from the live mapping.
+type PutMappingRequest struct {
+	Name      string            `json:"name"`
+	Overrides map[string]string `json:"overrides"`
+}
+
+// Variant is the JSON the API returns for a mapping variant.
+type Variant struct {
+	Name      string            `json:"name"`
+	Overrides map[string]string `json:"overrides"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
 // Stage is the JSON the API returns for a stage.
 type Stage struct {
 	ID              string         `json:"id"`

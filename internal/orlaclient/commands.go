@@ -4,7 +4,10 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -26,7 +29,7 @@ func NewRootCmd() *cobra.Command {
 		cmp.Or(os.Getenv("ORLA_ADDR"), "http://localhost:8081"), "orla daemon address")
 
 	client := func() *Client { return New(addr) }
-	root.AddCommand(newBackendCmd(client), newStageCmd(client), newFeedbackCmd(client))
+	root.AddCommand(newBackendCmd(client), newStageCmd(client), newMappingCmd(client), newFeedbackCmd(client))
 	return root
 }
 
@@ -220,6 +223,104 @@ func newStageRmCmd(client func() *Client) *cobra.Command {
 				return err
 			}
 			fmt.Printf("removed stage %q\n", args[0])
+			return nil
+		},
+	}
+}
+
+func newMappingCmd(client func() *Client) *cobra.Command {
+	cmd := &cobra.Command{Use: "mapping", Short: "Manage mapping variants"}
+	cmd.AddCommand(
+		newMappingSetCmd(client),
+		newMappingListCmd(client),
+		newMappingGetCmd(client),
+		newMappingRmCmd(client),
+	)
+	return cmd
+}
+
+func newMappingSetCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "set NAME STAGE=BACKEND [STAGE=BACKEND ...]",
+		Short: "Create or replace a mapping variant",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			overrides := make(map[string]string, len(args)-1)
+			for _, pair := range args[1:] {
+				stageID, backend, ok := strings.Cut(pair, "=")
+				if !ok || stageID == "" || backend == "" {
+					return fmt.Errorf("override %q must be STAGE=BACKEND", pair)
+				}
+				overrides[stageID] = backend
+			}
+			v, err := client().PutMapping(cmd.Context(), wire.PutMappingRequest{
+				Name:      args[0],
+				Overrides: overrides,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("set mapping %q with %d override(s)\n", v.Name, len(v.Overrides))
+			return nil
+		},
+	}
+}
+
+func newMappingListCmd(client func() *Client) *cobra.Command {
+	var output string
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List mapping variants",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			vs, err := client().ListMappings(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if output == "json" {
+				return printJSON(vs)
+			}
+			tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+			_, _ = fmt.Fprintln(tw, "MAPPING\tOVERRIDES")
+			for _, v := range vs {
+				parts := make([]string, 0, len(v.Overrides))
+				for _, stageID := range slices.Sorted(maps.Keys(v.Overrides)) {
+					parts = append(parts, stageID+"="+v.Overrides[stageID])
+				}
+				_, _ = fmt.Fprintf(tw, "%s\t%s\n", v.Name, strings.Join(parts, " "))
+			}
+			return tw.Flush()
+		},
+	}
+	cmd.Flags().StringVarP(&output, "output", "o", "table", "output format: table or json")
+	return cmd
+}
+
+func newMappingGetCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "get NAME",
+		Short: "Show one mapping variant",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			v, err := client().GetMapping(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			return printJSON(v)
+		},
+	}
+}
+
+func newMappingRmCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rm NAME",
+		Short: "Remove a mapping variant",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := client().DeleteMapping(cmd.Context(), args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("removed mapping %q\n", args[0])
 			return nil
 		},
 	}

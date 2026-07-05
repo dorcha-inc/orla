@@ -26,13 +26,13 @@ func NewReader(pool *pgxpool.Pool) *Reader {
 
 // CompletionMetrics is one row of /api/v1/stages/{id}/metrics.
 type CompletionMetrics struct {
-	Backend        string  `json:"backend"`
-	Count          int64   `json:"count"`
-	AvgLatencyMs   float64 `json:"avg_latency_ms"`
-	P50LatencyMs   float64 `json:"p50_latency_ms"`
-	P95LatencyMs   float64 `json:"p95_latency_ms"`
-	TotalCostUSD   float64 `json:"total_cost_usd"`
-	ErrorCount     int64   `json:"error_count"`
+	Backend      string  `json:"backend"`
+	Count        int64   `json:"count"`
+	AvgLatencyMs float64 `json:"avg_latency_ms"`
+	P50LatencyMs float64 `json:"p50_latency_ms"`
+	P95LatencyMs float64 `json:"p95_latency_ms"`
+	TotalCostUSD float64 `json:"total_cost_usd"`
+	ErrorCount   int64   `json:"error_count"`
 }
 
 // ListStageCompletions returns recent completion records for a stage.
@@ -103,6 +103,35 @@ func (r *Reader) StageMetrics(ctx context.Context, stageID string, since time.Ti
 	return out, nil
 }
 
+// MappingCost is one row of the cost-by-mapping aggregate. The live
+// critical path aggregates under the empty Mapping, each shadow variant
+// under its own name. Count is the dispatch count, not the example
+// count, so callers that know how many examples they drove compute
+// cost per example themselves.
+type MappingCost struct {
+	Mapping      string  `json:"mapping"`
+	Count        int64   `json:"count"`
+	TotalCostUSD float64 `json:"total_cost_usd"`
+}
+
+// CostByMapping returns total cost and dispatch count grouped by
+// mapping variant. If since is the zero time, no time filter applies.
+func (r *Reader) CostByMapping(ctx context.Context, since time.Time) ([]*MappingCost, error) {
+	rows, err := r.queries.CostByMapping(ctx, sinceParam(since))
+	if err != nil {
+		return nil, fmt.Errorf("telemetry: cost by mapping: %w", err)
+	}
+	out := make([]*MappingCost, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, &MappingCost{
+			Mapping:      row.Mapping,
+			Count:        row.Count,
+			TotalCostUSD: row.TotalCostUsd,
+		})
+	}
+	return out, nil
+}
+
 func sinceParam(t time.Time) pgtype.Timestamptz {
 	if t.IsZero() {
 		return pgtype.Timestamptz{Valid: false}
@@ -154,6 +183,7 @@ func rowToCompletionRecord(row db.ListStageCompletionsRow) (*CompletionRecord, e
 		}
 		rec.Tags = tags
 	}
+	rec.Mapping = row.Mapping
 	return rec, nil
 }
 

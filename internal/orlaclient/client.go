@@ -125,6 +125,34 @@ func (c *Client) DeleteStage(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodDelete, "/api/v1/stages/"+url.PathEscape(id), nil, nil)
 }
 
+// PutMapping creates or replaces a mapping variant.
+func (c *Client) PutMapping(ctx context.Context, req wire.PutMappingRequest) (wire.Variant, error) {
+	var v wire.Variant
+	err := c.do(ctx, http.MethodPost, "/api/v1/mappings", req, &v)
+	return v, err
+}
+
+// ListMappings returns every mapping variant.
+func (c *Client) ListMappings(ctx context.Context) ([]wire.Variant, error) {
+	var out struct {
+		Mappings []wire.Variant `json:"mappings"`
+	}
+	err := c.do(ctx, http.MethodGet, "/api/v1/mappings", nil, &out)
+	return out.Mappings, err
+}
+
+// GetMapping returns one mapping variant by name.
+func (c *Client) GetMapping(ctx context.Context, name string) (wire.Variant, error) {
+	var v wire.Variant
+	err := c.do(ctx, http.MethodGet, "/api/v1/mappings/"+url.PathEscape(name), nil, &v)
+	return v, err
+}
+
+// DeleteMapping removes a mapping variant.
+func (c *Client) DeleteMapping(ctx context.Context, name string) error {
+	return c.do(ctx, http.MethodDelete, "/api/v1/mappings/"+url.PathEscape(name), nil, nil)
+}
+
 // SubmitFeedback reports the outcome of a completion for a stage. Agents
 // normally post this themselves; the CLI command is for trying the loop
 // by hand.

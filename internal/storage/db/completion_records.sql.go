@@ -11,10 +11,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const costByMapping = `-- name: CostByMapping :many
+SELECT mapping,
+       COUNT(*)::bigint                            AS count,
+       COALESCE(SUM(cost_usd), 0)::double precision AS total_cost_usd
+FROM completion_records
+WHERE created_at > COALESCE($1::timestamptz, '-infinity'::timestamptz)
+GROUP BY mapping
+ORDER BY mapping
+`
+
+type CostByMappingRow struct {
+	Mapping      string
+	Count        int64
+	TotalCostUsd float64
+}
+
+// Total cost and dispatch count grouped by mapping variant, optionally
+// filtered by created_at > since. The live critical path aggregates
+// under the empty mapping, each shadow variant under its own name.
+func (q *Queries) CostByMapping(ctx context.Context, since pgtype.Timestamptz) ([]CostByMappingRow, error) {
+	rows, err := q.db.Query(ctx, costByMapping, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CostByMappingRow{}
+	for rows.Next() {
+		var i CostByMappingRow
+		if err := rows.Scan(&i.Mapping, &i.Count, &i.TotalCostUsd); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStageCompletions = `-- name: ListStageCompletions :many
 SELECT completion_id, stage_id, workflow_run, backend, status,
        prompt_tokens, completion_tokens, latency_ms, cost_usd,
-       tags, created_at, usage, tool_kind
+       tags, created_at, usage, tool_kind, mapping
 FROM completion_records
 WHERE stage_id = $1
   AND created_at > COALESCE($2::timestamptz, '-infinity'::timestamptz)
@@ -42,6 +81,7 @@ type ListStageCompletionsRow struct {
 	CreatedAt        pgtype.Timestamptz
 	Usage            []byte
 	ToolKind         *string
+	Mapping          string
 }
 
 // Returns completion records for a stage, optionally filtered by
@@ -69,6 +109,7 @@ func (q *Queries) ListStageCompletions(ctx context.Context, arg ListStageComplet
 			&i.CreatedAt,
 			&i.Usage,
 			&i.ToolKind,
+			&i.Mapping,
 		); err != nil {
 			return nil, err
 		}

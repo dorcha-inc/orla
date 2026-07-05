@@ -39,6 +39,7 @@ type CompletionRecord struct {
 	CostUsd          *float64
 	Tags             []byte
 	CreatedAt        pgtype.Timestamptz
+	Mapping          string
 }
 
 type Feedback struct {
@@ -50,6 +51,14 @@ type Feedback struct {
 	Labels       []byte
 	Notes        string
 	CreatedAt    pgtype.Timestamptz
+}
+
+type MappingVariant struct {
+	Name      string
+	StageID   string
+	Backend   string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }
 
 type Stage struct {

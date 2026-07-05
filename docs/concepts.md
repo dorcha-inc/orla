@@ -70,6 +70,14 @@ Set it with `PUT /api/v1/stages/{id}`. Change it with `PATCH /api/v1/stages/{id}
 
 Mappings are persistent. Orla rehydrates them from Postgres on startup, so a restart does not lose the routing your mapper learned.
 
+## Mapping variants and shadow testing
+
+The stage mapping above is the live mapping, the one the critical path uses. A mapping variant is a named alternative: a sparse set of per-stage backend overrides layered on the live mapping. A stage the variant does not mention resolves to its live backend, so a variant that changes one stage is a single override.
+
+A variant lets a mapper try a candidate mapping without disturbing production. The live critical path sends no header. A shadow request sends `X-Orla-Mapping` naming the candidate, so it runs the same workload under the candidate mapping alongside the live traffic. Orla records the variant on each completion, so cost separates by mapping even when the two streams interleave. A mapper that finds a candidate at least as good for less money promotes it by writing the candidate onto the live stage mapping.
+
+Manage variants with `POST /api/v1/mappings` to create or replace one, and `GET` and `DELETE /api/v1/mappings/{name}` to read and remove it. Read cost grouped by variant with `GET /api/v1/costs`.
+
 ## Feedback
 
 After a call completes, the agent can rate it:

@@ -6,29 +6,45 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
+	// Total cost and dispatch count grouped by mapping variant, optionally
+	// filtered by created_at > since. The live critical path aggregates
+	// under the empty mapping, each shadow variant under its own name.
+	CostByMapping(ctx context.Context, since pgtype.Timestamptz) ([]CostByMappingRow, error)
 	DeleteBackend(ctx context.Context, name string) (int64, error)
 	DeleteStage(ctx context.Context, id string) (int64, error)
+	DeleteVariant(ctx context.Context, name string) (int64, error)
 	// The SELECT column order matches the canonical backends table order.
 	// Keeping that order lets sqlc reuse the db.Backend row type instead of
 	// emitting a per-query row type.
 	GetBackend(ctx context.Context, name string) (Backend, error)
+	// The backend override for one (variant, stage). No row means the
+	// request falls through to the stage's live backend.
+	GetMappingOverride(ctx context.Context, arg GetMappingOverrideParams) (string, error)
 	GetStage(ctx context.Context, id string) (Stage, error)
 	InsertBackend(ctx context.Context, arg InsertBackendParams) (Backend, error)
+	// Every override across all variants, ordered so a caller can group
+	// consecutive rows by name.
+	ListAllVariantOverrides(ctx context.Context) ([]MappingVariant, error)
 	ListBackends(ctx context.Context) ([]Backend, error)
 	// Returns completion records for a stage, optionally filtered by
 	// created_at > since. Pass a zero timestamptz to skip the filter.
 	ListStageCompletions(ctx context.Context, arg ListStageCompletionsParams) ([]ListStageCompletionsRow, error)
 	ListStageFeedback(ctx context.Context, arg ListStageFeedbackParams) ([]Feedback, error)
 	ListStages(ctx context.Context) ([]Stage, error)
+	// All overrides for one variant, ordered by stage id.
+	ListVariantOverrides(ctx context.Context, name string) ([]MappingVariant, error)
 	ReplaceStage(ctx context.Context, arg ReplaceStageParams) (Stage, error)
 	// Per-backend aggregates for a stage. Empty AVG/PERCENTILE results
 	// (e.g., when no rows in the window) are coalesced to 0 so callers
 	// don't have to deal with NULLs.
 	StageMetricsByBackend(ctx context.Context, arg StageMetricsByBackendParams) ([]StageMetricsByBackendRow, error)
 	UpdateBackend(ctx context.Context, arg UpdateBackendParams) (Backend, error)
+	UpsertMappingOverride(ctx context.Context, arg UpsertMappingOverrideParams) error
 	// Auto-create a stage with empty fields on first sighting. If the row
 	// already exists, the no-op SET keeps the existing values and RETURNING
 	// returns them. (A bare ON CONFLICT DO NOTHING with RETURNING returns

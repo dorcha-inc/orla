@@ -84,6 +84,23 @@ CREATE TABLE backends (
 
 `max_concurrency` is the only operational cap orla enforces directly. `rate_per_second` is enforced per orla process.
 
+### `mapping_variants`
+
+Named, sparse per-stage backend overrides layered on the live stage mapping. One row per (variant, stage). The optimizer creates a variant to shadow-test a candidate, and a request selects it with `X-Orla-Mapping`.
+
+```sql
+CREATE TABLE mapping_variants (
+    name        TEXT NOT NULL,
+    stage_id    TEXT NOT NULL,
+    backend     TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (name, stage_id)
+);
+```
+
+A stage absent from a variant resolves to the stage's live backend, so a candidate that differs from live on one stage is a single row. `POST /api/v1/mappings` replaces a variant atomically, `GET` and `DELETE /api/v1/mappings/{name}` read and remove it.
+
 ### `completion_records`
 
 The mapper's primary observation channel.
@@ -102,13 +119,15 @@ CREATE TABLE completion_records (
     latency_ms        INTEGER,
     cost_usd          DOUBLE PRECISION,
     tags              JSONB NOT NULL DEFAULT '{}'::jsonb,
+    mapping           TEXT NOT NULL DEFAULT '',
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_completion_stage_time ON completion_records(stage_id, created_at DESC);
 CREATE INDEX idx_completion_workflow ON completion_records(workflow_run) WHERE workflow_run IS NOT NULL;
+CREATE INDEX idx_completion_mapping_time ON completion_records(mapping, created_at DESC);
 ```
 
-`status` is either `"success"` or `"error"`. One row per `/v1/chat/completions` or `/v1/tools/{kind}` dispatch, written async via `BatchWriter`. `tags` carries the `X-Orla-Tag-*` map verbatim.
+`status` is either `"success"` or `"error"`. One row per `/v1/chat/completions` or `/v1/tools/{kind}` dispatch, written async via `BatchWriter`. `tags` carries the `X-Orla-Tag-*` map verbatim. `mapping` is the variant that served the request, empty for the live critical path, which lets `GET /api/v1/costs` sum cost per variant even when critical and shadow traffic interleave.
 
 LLM rows populate `prompt_tokens` and `completion_tokens` and leave `usage` as the empty object. Tool rows leave the token columns NULL and populate `usage` with the resources the wrapper reported, with `tool_kind` set to the backend's tool family. To distinguish tool rows in a query, filter on `tool_kind IS NOT NULL` rather than `prompt_tokens IS NULL`. `cost_usd` is the final dollar amount in both cases, computed by the proxy at write time.
 
@@ -180,7 +199,7 @@ A second Postgres role is provisioned with `SELECT` only on the four tables, int
 CREATE ROLE orla_reader LOGIN PASSWORD '...';
 GRANT CONNECT ON DATABASE orla TO orla_reader;
 GRANT USAGE ON SCHEMA public TO orla_reader;
-GRANT SELECT ON stages, backends, completion_records, feedback TO orla_reader;
+GRANT SELECT ON stages, backends, mapping_variants, completion_records, feedback TO orla_reader;
 ```
 
 The REST API stays authoritative for common patterns. Direct SQL is the escape hatch for heavy analytical queries that do not deserve a new endpoint.

@@ -46,7 +46,6 @@ func freshPool(t *testing.T) *pgxpool.Pool {
 	return store.Pool()
 }
 
-
 func waitForFlush(t *testing.T, w *telemetry.CompletionWriter, want int64) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -114,6 +113,43 @@ func TestCompletionWriter_RoundTrip(t *testing.T) {
 	assert.InDelta(t, 0.0012, *costUSD, 1e-9)
 	assert.Equal(t, "success", status)
 	assert.Contains(t, string(tags), `"tenant"`)
+}
+
+func TestReader_CostByMapping(t *testing.T) {
+	pool := freshPool(t)
+	w := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{
+		Pool:      pool,
+		BatchSize: 10,
+		Interval:  50 * time.Millisecond,
+	})
+	t.Cleanup(func() { _ = w.Close(context.Background()) })
+
+	// Two dispatches on the live critical path (empty mapping) and one
+	// on a shadow variant.
+	recs := []*telemetry.CompletionRecord{
+		{CompletionID: "c1", StageID: "planning", Backend: "live", Status: "success", CostUSD: new(0.01), CreatedAt: time.Now()},
+		{CompletionID: "c2", StageID: "planning", Backend: "live", Status: "success", CostUSD: new(0.02), CreatedAt: time.Now()},
+		{CompletionID: "c3", StageID: "planning", Backend: "shadow", Status: "success", CostUSD: new(0.05), Mapping: "cand", CreatedAt: time.Now()},
+	}
+	for _, rec := range recs {
+		require.True(t, w.Submit(rec))
+	}
+	waitForFlush(t, w, 1)
+
+	reader := telemetry.NewReader(pool)
+	costs, err := reader.CostByMapping(context.Background(), time.Time{})
+	require.NoError(t, err)
+
+	byMapping := make(map[string]*telemetry.MappingCost, len(costs))
+	for _, c := range costs {
+		byMapping[c.Mapping] = c
+	}
+	require.Contains(t, byMapping, "")
+	require.Contains(t, byMapping, "cand")
+	assert.Equal(t, int64(2), byMapping[""].Count)
+	assert.InDelta(t, 0.03, byMapping[""].TotalCostUSD, 1e-9)
+	assert.Equal(t, int64(1), byMapping["cand"].Count)
+	assert.InDelta(t, 0.05, byMapping["cand"].TotalCostUSD, 1e-9)
 }
 
 func TestCompletionWriter_NullableColumnsNullWhenEmpty(t *testing.T) {

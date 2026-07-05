@@ -23,6 +23,7 @@ type fakeReader struct {
 	completions map[string][]*telemetry.CompletionRecord
 	feedback    map[string][]*telemetry.Feedback
 	metrics     map[string][]*telemetry.CompletionMetrics
+	costs       []*telemetry.MappingCost
 	err         error
 }
 
@@ -73,6 +74,15 @@ func (f *fakeReader) StageMetrics(_ context.Context, stage string, _ time.Time) 
 		return nil, f.err
 	}
 	return f.metrics[stage], nil
+}
+
+func (f *fakeReader) CostByMapping(_ context.Context, _ time.Time) ([]*telemetry.MappingCost, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.costs, nil
 }
 
 func newMapperTestServer(t *testing.T) (*Server, *fakeReader) {
@@ -178,6 +188,33 @@ func TestMapper_Metrics(t *testing.T) {
 	require.Len(t, body.Metrics, 1)
 	assert.Equal(t, "gpt4o", body.Metrics[0].Backend)
 	assert.Equal(t, int64(10), body.Metrics[0].Count)
+}
+
+func TestMapper_CostByMapping(t *testing.T) {
+	srv, r := newMapperTestServer(t)
+	r.costs = []*telemetry.MappingCost{
+		{Mapping: "", Count: 2, TotalCostUSD: 0.03},
+		{Mapping: "cand", Count: 1, TotalCostUSD: 0.05},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/costs", nil)
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var body struct {
+		Costs []*telemetry.MappingCost `json:"costs"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Costs, 2)
+	assert.Equal(t, "cand", body.Costs[1].Mapping)
+	assert.InDelta(t, 0.05, body.Costs[1].TotalCostUSD, 1e-9)
+}
+
+func TestMapper_CostByMapping_BadSince(t *testing.T) {
+	srv, _ := newMapperTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/costs?since=notatime", nil)
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestMapper_BubblesReaderError(t *testing.T) {

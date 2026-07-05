@@ -3,12 +3,24 @@
 -- created_at > since. Pass a zero timestamptz to skip the filter.
 SELECT completion_id, stage_id, workflow_run, backend, status,
        prompt_tokens, completion_tokens, latency_ms, cost_usd,
-       tags, created_at, usage, tool_kind
+       tags, created_at, usage, tool_kind, mapping
 FROM completion_records
 WHERE stage_id = $1
   AND created_at > COALESCE(@since::timestamptz, '-infinity'::timestamptz)
 ORDER BY created_at DESC
 LIMIT @limit_count;
+
+-- name: CostByMapping :many
+-- Total cost and dispatch count grouped by mapping variant, optionally
+-- filtered by created_at > since. The live critical path aggregates
+-- under the empty mapping, each shadow variant under its own name.
+SELECT mapping,
+       COUNT(*)::bigint                            AS count,
+       COALESCE(SUM(cost_usd), 0)::double precision AS total_cost_usd
+FROM completion_records
+WHERE created_at > COALESCE(@since::timestamptz, '-infinity'::timestamptz)
+GROUP BY mapping
+ORDER BY mapping;
 
 -- name: StageMetricsByBackend :many
 -- Per-backend aggregates for a stage. Empty AVG/PERCENTILE results

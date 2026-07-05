@@ -17,7 +17,7 @@ The handler runs these checks in order. Each is a 400 unless noted.
 1. **Decode body.** Body too large, over 10 MB, returns 400.
 2. **`messages` non-empty.**
 3. **Stage extracted.** From `X-Orla-Stage` header, falling back to `metadata.orla.stage` in the body. Missing returns 400.
-4. **Resolve backend.** `registry.GetOrCreate(stage)` auto-creates a default stage record on first sighting. If `stage.Backend` is set, use it. If not, fall back to `req.Model`. If neither is set, return 400.
+4. **Resolve backend.** `registry.GetOrCreate(stage)` auto-creates a default stage record on first sighting. If the request carries `X-Orla-Mapping` and that variant overrides this stage, use the variant's backend. Otherwise use `stage.Backend`. If that is empty, fall back to `req.Model`. If neither is set, return 400.
 5. **Apply inference policy** from the stage record. Currently just `reasoning_effort`.
 6. **Convert messages and tools** to the internal model types.
 7. **Dispatch** via `LayerExecute`, then `BackendManager.ScheduleChat`, into the per-backend queue and a worker that calls the openai-go provider.
@@ -29,6 +29,12 @@ If a developer uses a stage id that orla has never seen, the daemon inserts a de
 
 This means a developer can deploy new agent code without coordinating with the platform engineer. Their requests still flow, and the mapper picks them up on the next pass.
 
+## Mapping variants and shadow testing
+
+A mapping variant is a named, sparse set of per-stage backend overrides layered on the live stage mapping. A request selects a variant with the `X-Orla-Mapping` header, falling back to `metadata.orla.mapping`. When the variant overrides the request's stage, its backend wins. A stage absent from the variant falls through to the stage's live backend, so a candidate that differs from live on one stage is a single-entry variant.
+
+The optimizer uses variants for shadow testing. The live critical path sends no header and resolves the live mapping. A shadow request sends `X-Orla-Mapping` naming a candidate variant, so it runs the same workload under a different mapping without disturbing the live one. Both can stream concurrently because nothing mutates the live mapping. The variant name is recorded on each completion, so cost separates by mapping even when critical and shadow traffic interleave. Manage variants with `POST/GET/DELETE /api/v1/mappings`. See [`storage.md`](storage.md).
+
 ## Identity tags become completion-record dimensions
 
 Every dispatched request results in one row in `completion_records` with the following columns:
@@ -37,6 +43,7 @@ Every dispatched request results in one row in `completion_records` with the fol
 - `stage_id`: from the request
 - `workflow_run`: from the request, nullable
 - `backend`: the resolved name
+- `mapping`: the variant that served the request, empty for the live critical path
 - `tags_json`: the full `X-Orla-Tag-*` map
 - `prompt_tokens`, `completion_tokens`, `latency_ms`, `cost_usd`, `status`, `created_at`
 

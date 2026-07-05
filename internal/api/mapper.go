@@ -17,6 +17,7 @@ type MapperReader interface {
 	ListStageCompletions(ctx context.Context, stageID string, since time.Time, limit int32) ([]*telemetry.CompletionRecord, error)
 	ListStageFeedback(ctx context.Context, stageID string, since time.Time, limit int32) ([]*telemetry.Feedback, error)
 	StageMetrics(ctx context.Context, stageID string, since time.Time) ([]*telemetry.CompletionMetrics, error)
+	CostByMapping(ctx context.Context, since time.Time) ([]*telemetry.MappingCost, error)
 }
 
 // MapperDeps bundles the mapper read-endpoint dependencies.
@@ -43,6 +44,7 @@ func RegisterMapperRoutes(r chi.Router, deps MapperDeps) {
 	r.Get("/api/v1/stages/{id}/completions", h.listCompletions)
 	r.Get("/api/v1/stages/{id}/feedback", h.listFeedback)
 	r.Get("/api/v1/stages/{id}/metrics", h.metrics)
+	r.Get("/api/v1/costs", h.costByMapping)
 }
 
 type mapperHandler struct {
@@ -97,6 +99,22 @@ func (h *mapperHandler) metrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"metrics": rows})
+}
+
+// costByMapping serves GET /api/v1/costs?since=, total cost and
+// dispatch count grouped by mapping variant. The live critical path is
+// the row with an empty mapping.
+func (h *mapperHandler) costByMapping(w http.ResponseWriter, r *http.Request) {
+	since, ok := parseSince(w, r)
+	if !ok {
+		return
+	}
+	rows, err := h.deps.Reader.CostByMapping(r.Context(), since)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"costs": rows})
 }
 
 // parseSince reads ?since=<rfc3339>. Empty means no filter (zero time).

@@ -17,6 +17,7 @@ import (
 	"github.com/harvard-cns/orla/internal/api"
 	"github.com/harvard-cns/orla/internal/backends"
 	"github.com/harvard-cns/orla/internal/config"
+	"github.com/harvard-cns/orla/internal/mappings"
 	"github.com/harvard-cns/orla/internal/metrics"
 	"github.com/harvard-cns/orla/internal/provider"
 	"github.com/harvard-cns/orla/internal/scheduler"
@@ -62,6 +63,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	stageRegistry := stages.NewPostgresRegistry(store.Pool())
 	backendRegistry := backends.NewPostgresRegistry(store.Pool())
+	mappingRegistry := mappings.NewPostgresRegistry(store.Pool())
 
 	// Provider factory. LLM backends use the OpenAI provider. No tool
 	// providers are registered, so a tool backend resolves to the OpenAI
@@ -100,6 +102,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		PromRegistry:      promReg,
 	})
 	api.RegisterStageRoutes(srv.Router(), stageRegistry)
+	api.RegisterMappingRoutes(srv.Router(), mappingRegistry)
 	api.RegisterBackendRoutes(srv.Router(), api.BackendDeps{
 		Registry:  backendRegistry,
 		Lifecycle: sched,
@@ -120,6 +123,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	api.RegisterProxyRoutes(srv.Router(), api.ProxyDeps{
 		Stages:         stageRegistry,
+		Mappings:       mappingRegistry,
 		Scheduler:      sched,
 		CompletionSink: completionWriter,
 		Metrics:        m,
@@ -201,4 +205,3 @@ func newLogger(format, level string) *slog.Logger {
 	}
 	return slog.New(h)
 }
-

@@ -18,6 +18,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
 
+	"github.com/harvard-cns/orla/internal/mappings"
 	"github.com/harvard-cns/orla/internal/scheduler"
 	"github.com/harvard-cns/orla/internal/stages"
 	"github.com/harvard-cns/orla/internal/telemetry"
@@ -28,6 +29,7 @@ import (
 const (
 	HeaderStage       = "X-Orla-Stage"
 	HeaderWorkflowRun = "X-Orla-Workflow-Run"
+	HeaderMapping     = "X-Orla-Mapping"
 	HeaderTagPrefix   = "X-Orla-Tag-"
 )
 
@@ -35,6 +37,7 @@ const (
 const (
 	metaStage       = "orla.stage"
 	metaWorkflowRun = "orla.workflow_run"
+	metaMapping     = "orla.mapping"
 )
 
 // CompletionSink receives one record per dispatched chat completion.
@@ -51,9 +54,12 @@ type ProxyMetrics interface {
 	ObserveBackendLatency(backend string, seconds float64)
 }
 
-// ProxyDeps bundles the dependencies of the proxy handler.
+// ProxyDeps bundles the dependencies of the proxy handler. Mappings
+// may be nil, then no request can select a variant and the live stage
+// mapping always resolves.
 type ProxyDeps struct {
 	Stages         stages.Registry
+	Mappings       mappings.Registry
 	Scheduler      *scheduler.Scheduler
 	CompletionSink CompletionSink
 	Metrics        ProxyMetrics
@@ -76,6 +82,7 @@ type proxyHandler struct {
 type requestContext struct {
 	Stage       string
 	WorkflowRun string
+	Mapping     string
 	Tags        map[string]string
 }
 
@@ -123,6 +130,14 @@ func (h *proxyHandler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	backendName := stage.Backend
+	// A shadow request selects a mapping variant. When the variant
+	// overrides this stage, its backend wins over the live mapping.
+	// A stage absent from the variant falls through to stage.Backend.
+	if rc.Mapping != "" && h.deps.Mappings != nil {
+		if override, ok := h.deps.Mappings.Resolve(r.Context(), rc.Mapping, rc.Stage); ok {
+			backendName = override
+		}
+	}
 	if backendName == "" {
 		// Fall back to the client-supplied model field if the stage
 		// has no mapping yet.
@@ -419,6 +434,7 @@ func (h *proxyHandler) recordCompletion(in *completionInputs) {
 		LatencyMs:        in.latencyMs,
 		CostUSD:          in.costUSD,
 		Tags:             in.rc.Tags,
+		Mapping:          in.rc.Mapping,
 		CreatedAt:        time.Now(),
 	}
 	_ = h.deps.CompletionSink.Submit(rec)
@@ -431,6 +447,7 @@ func extractRequestContext(r *http.Request, metadata shared.Metadata) *requestCo
 
 	rc.Stage = cmp.Or(r.Header.Get(HeaderStage), metadata[metaStage])
 	rc.WorkflowRun = cmp.Or(r.Header.Get(HeaderWorkflowRun), metadata[metaWorkflowRun])
+	rc.Mapping = cmp.Or(r.Header.Get(HeaderMapping), metadata[metaMapping])
 
 	for name, values := range r.Header {
 		if !strings.HasPrefix(name, HeaderTagPrefix) {
