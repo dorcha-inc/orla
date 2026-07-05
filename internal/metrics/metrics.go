@@ -15,9 +15,10 @@ import (
 // Metrics is the set of push-style counters/histograms emitted by
 // proxy and feedback handlers.
 type Metrics struct {
-	RequestsTotal  *prometheus.CounterVec
-	BackendLatency *prometheus.HistogramVec
-	FeedbackTotal  *prometheus.CounterVec
+	RequestsTotal            *prometheus.CounterVec
+	BackendLatency           *prometheus.HistogramVec
+	FeedbackTotal            *prometheus.CounterVec
+	SchedulerRejectionsTotal *prometheus.CounterVec
 }
 
 // New constructs and registers all push-style metrics on reg.
@@ -49,8 +50,16 @@ func New(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"stage"},
 		),
+		SchedulerRejectionsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "orla",
+				Name:      "scheduler_rejections_total",
+				Help:      "Requests that failed to acquire a scheduler slot, by backend and reason.",
+			},
+			[]string{"backend", "reason"},
+		),
 	}
-	reg.MustRegister(m.RequestsTotal, m.BackendLatency, m.FeedbackTotal)
+	reg.MustRegister(m.RequestsTotal, m.BackendLatency, m.FeedbackTotal, m.SchedulerRejectionsTotal)
 	return m
 }
 
@@ -67,4 +76,9 @@ func (m *Metrics) ObserveBackendLatency(backend string, seconds float64) {
 // IncFeedback is the api.FeedbackMetrics adapter.
 func (m *Metrics) IncFeedback(stage string) {
 	m.FeedbackTotal.WithLabelValues(stage).Inc()
+}
+
+// IncSchedulerRejection is the api.ProxyMetrics adapter.
+func (m *Metrics) IncSchedulerRejection(backend, reason string) {
+	m.SchedulerRejectionsTotal.WithLabelValues(backend, reason).Inc()
 }

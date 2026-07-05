@@ -35,6 +35,18 @@ func TestMetrics_BackendLatencyHistogram(t *testing.T) {
 	assert.Equal(t, 1, got, "one label combination")
 }
 
+func TestMetrics_SchedulerRejectionsCounter(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := metrics.New(reg)
+
+	m.IncSchedulerRejection("gpt4o", "unknown_backend")
+	m.IncSchedulerRejection("gpt4o", "unknown_backend")
+	m.IncSchedulerRejection("gpt4o", "canceled")
+
+	got := testutil.ToFloat64(m.SchedulerRejectionsTotal.WithLabelValues("gpt4o", "unknown_backend"))
+	assert.InDelta(t, 2.0, got, 1e-9)
+}
+
 type fakeStatsSource struct{ stats []scheduler.Stats }
 
 func (f *fakeStatsSource) Stats() []scheduler.Stats { return f.stats }

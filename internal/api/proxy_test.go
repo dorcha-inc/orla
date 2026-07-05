@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,13 +26,36 @@ import (
 	"github.com/harvard-cns/orla/internal/stages"
 )
 
+// fakeProxyMetrics is a hand-written ProxyMetrics recorder for tests
+// that care about what the handler reported.
+type fakeProxyMetrics struct {
+	mu         sync.Mutex
+	rejections []string // "backend/reason"
+}
+
+func (f *fakeProxyMetrics) IncRequest(stage, backend, status string)              {}
+func (f *fakeProxyMetrics) ObserveBackendLatency(backend string, seconds float64) {}
+
+func (f *fakeProxyMetrics) IncSchedulerRejection(backend, reason string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.rejections = append(f.rejections, backend+"/"+reason)
+}
+
+func (f *fakeProxyMetrics) rejectionsSnapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.rejections...)
+}
+
 // proxyEnv wires up a fake stage registry and a real scheduler with a
 // mock provider, exactly the dependencies the handler needs.
 type proxyEnv struct {
-	srv    *Server
-	stages *stages.FakeRegistry
-	sched  *scheduler.Scheduler
-	mock   *provider.MockProvider
+	srv     *Server
+	stages  *stages.FakeRegistry
+	sched   *scheduler.Scheduler
+	mock    *provider.MockProvider
+	metrics *fakeProxyMetrics
 }
 
 func newProxyEnv(t *testing.T) *proxyEnv {
@@ -59,6 +84,7 @@ func newProxyEnv(t *testing.T) *proxyEnv {
 	t.Cleanup(func() { _ = sched.Shutdown(context.Background()) })
 
 	stageReg := stages.NewFakeRegistry()
+	fakeMetrics := &fakeProxyMetrics{}
 
 	srv := NewServer(ServerConfig{
 		ListenAddress: "127.0.0.1:0",
@@ -67,9 +93,10 @@ func newProxyEnv(t *testing.T) *proxyEnv {
 	RegisterProxyRoutes(srv.Router(), ProxyDeps{
 		Stages:    stageReg,
 		Scheduler: sched,
+		Metrics:   fakeMetrics,
 	})
 
-	return &proxyEnv{srv: srv, stages: stageReg, sched: sched, mock: mock}
+	return &proxyEnv{srv: srv, stages: stageReg, sched: sched, mock: mock, metrics: fakeMetrics}
 }
 
 func bodyForChat(messages ...string) []byte {
@@ -233,19 +260,35 @@ func TestProxy_RejectsRequestWithoutBackendOrModel(t *testing.T) {
 }
 
 func TestProxy_UnknownBackendReturns502(t *testing.T) {
-	env := newProxyEnv(t)
-	_, err := env.stages.Replace(context.Background(), &stages.Stage{
-		ID: "planning", Backend: "does-not-exist",
-	})
-	require.NoError(t, err)
+	tests := []struct {
+		name      string
+		streaming bool
+	}{
+		{name: "non-streaming", streaming: false},
+		{name: "streaming", streaming: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newProxyEnv(t)
+			_, err := env.stages.Replace(context.Background(), &stages.Stage{
+				ID: "planning", Backend: "does-not-exist",
+			})
+			require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
-		bytes.NewReader(bodyForChat("hi")))
-	req.Header.Set(HeaderStage, "planning")
-	rr := httptest.NewRecorder()
-	env.srv.Router().ServeHTTP(rr, req)
+			body, _ := json.Marshal(map[string]any{
+				"model":    "gpt-4o",
+				"stream":   tt.streaming,
+				"messages": []map[string]string{{"role": "user", "content": "hi"}},
+			})
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+			req.Header.Set(HeaderStage, "planning")
+			rr := httptest.NewRecorder()
+			env.srv.Router().ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusBadGateway, rr.Code)
+			assert.Equal(t, http.StatusBadGateway, rr.Code)
+			assert.Equal(t, []string{unregisteredBackendLabel + "/unknown_backend"}, env.metrics.rejectionsSnapshot())
+		})
+	}
 }
 
 func TestProxy_ProviderErrorRendersUpstreamShape(t *testing.T) {
@@ -304,6 +347,57 @@ func TestProxy_RejectsEmptyMessages(t *testing.T) {
 	rr := httptest.NewRecorder()
 	env.srv.Router().ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestProxy_StatusForSchedulerErrReasons(t *testing.T) {
+	tests := []struct {
+		name             string
+		err              error
+		wantStatus       int
+		wantReason       string
+		wantLabelBackend string
+		wantRetryAfter   string
+	}{
+		{name: "unknown backend", err: scheduler.ErrUnknownBackend, wantStatus: http.StatusBadGateway, wantReason: "unknown_backend", wantLabelBackend: unregisteredBackendLabel},
+		{name: "circuit open", err: &scheduler.CircuitOpenError{Backend: "gpt4o"}, wantStatus: http.StatusServiceUnavailable, wantReason: "circuit_open", wantLabelBackend: "gpt4o", wantRetryAfter: "60"},
+		{name: "wrong kind", err: scheduler.ErrWrongKind, wantStatus: http.StatusInternalServerError, wantReason: "wrong_kind", wantLabelBackend: "gpt4o"},
+		{name: "canceled", err: context.Canceled, wantStatus: http.StatusRequestTimeout, wantReason: "canceled", wantLabelBackend: "gpt4o"},
+		{name: "deadline exceeded", err: context.DeadlineExceeded, wantStatus: http.StatusRequestTimeout, wantReason: "deadline_exceeded", wantLabelBackend: "gpt4o"},
+		{name: "unclassified error", err: errors.New("boom"), wantStatus: http.StatusInternalServerError, wantReason: "internal_error", wantLabelBackend: "gpt4o"},
+		{
+			name:             "wrapped unknown backend",
+			err:              fmt.Errorf("acquire: %w", scheduler.ErrUnknownBackend),
+			wantStatus:       http.StatusBadGateway,
+			wantReason:       "unknown_backend",
+			wantLabelBackend: unregisteredBackendLabel,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeProxyMetrics{}
+			rr := httptest.NewRecorder()
+
+			statusForSchedulerErr(rr, tt.err, "gpt4o", fake)
+
+			assert.Equal(t, tt.wantStatus, rr.Code)
+			assert.Equal(t, []string{tt.wantLabelBackend + "/" + tt.wantReason}, fake.rejectionsSnapshot())
+			if tt.wantRetryAfter != "" {
+				assert.Equal(t, tt.wantRetryAfter, rr.Header().Get("Retry-After"))
+			}
+		})
+	}
+}
+
+// TestProxy_StatusForSchedulerErrNilMetrics confirms the nil-metrics
+// guard doesn't panic. Production wiring always sets ProxyDeps.Metrics;
+// this is the only test that exercises a nil ProxyMetrics on this
+// specific code path.
+func TestProxy_StatusForSchedulerErrNilMetrics(t *testing.T) {
+	rr := httptest.NewRecorder()
+	assert.NotPanics(t, func() {
+		statusForSchedulerErr(rr, scheduler.ErrUnknownBackend, "gpt4o", nil)
+	})
+	assert.Equal(t, http.StatusBadGateway, rr.Code)
 }
 
 func TestExtractRequestContext_TagsLowercased(t *testing.T) {

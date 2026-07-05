@@ -71,3 +71,5 @@ All non-200 responses use the OpenAI error envelope:
 ```
 
 Status code drives the `type` field. Clients that already handle OpenAI errors handle these correctly.
+
+A request that fails before dispatch, an unregistered backend, a backend/kind mismatch, or a client that gives up while queued, is counted in `orla_scheduler_rejections_total{backend, reason}` even though it never reaches `completion_records`.
