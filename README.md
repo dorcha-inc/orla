@@ -9,8 +9,6 @@
   <a href="https://codecov.io/gh/harvard-cns/orla"><img src="https://codecov.io/gh/harvard-cns/orla/branch/main/graph/badge.svg" alt="Codecov"></a>
 </p>
 
-> **Migration note.** The [Orla project website](https://orlaserver.github.io/) currently documents Orla v1. We are updating it incrementally for v2. Until that work lands, the `docs/` directory in this repository is the source of truth for v2.
-
 Orla is a runtime-adaptive execution layer for agentic workflows. Modern agentic applications combine many LLM calls, tool invocations, and heterogeneous backends, and developers usually wire these together by hand.
 
 You point your agent at Orla as an OpenAI-compatible endpoint and tag each call with a stage, what the call is for rather than where to send it. Orla serves the call through the stage's current policy, records what happened, and lets an external optimizer update that policy as it learns. This loop tunes each stage's policy for cost and accuracy from production data, with no changes to your agent's code.
