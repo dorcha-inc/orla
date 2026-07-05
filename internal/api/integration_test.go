@@ -23,7 +23,6 @@ import (
 	"github.com/harvard-cns/orla/internal/backends"
 	"github.com/harvard-cns/orla/internal/metrics"
 	"github.com/harvard-cns/orla/internal/provider"
-	"github.com/harvard-cns/orla/internal/provider/structurepred"
 	"github.com/harvard-cns/orla/internal/scheduler"
 	"github.com/harvard-cns/orla/internal/stages"
 	"github.com/harvard-cns/orla/internal/storage"
@@ -112,16 +111,16 @@ func setupOrlaStack(t *testing.T) *orlaStack {
 	stageReg := stages.NewPostgresRegistry(store.Pool())
 	backendReg := backends.NewPostgresRegistry(store.Pool())
 
-	// Kind-aware factory mirrors serve.go's wiring.
+	// Kind-aware factory. Tool backends get a fake ToolProvider so the
+	// tool-dispatch route can be exercised end-to-end. serve.go registers
+	// no real tool providers.
 	sched := scheduler.New(func(b *backends.Backend) provider.Backend {
 		if b.Kind == backends.KindTool {
 			tk := ""
 			if b.ToolKind != nil {
 				tk = *b.ToolKind
 			}
-			if tk == structurepred.ToolKind {
-				return structurepred.New(b)
-			}
+			return fakeToolProvider{name: b.Name, toolKind: tk}
 		}
 		return provider.NewOpenAI(b)
 	}, logger)
@@ -349,28 +348,22 @@ func readBody(t *testing.T, resp *http.Response) string {
 	return string(b)
 }
 
-// fakeStructurePredUpstream mimics a Boltz/Chai/Protenix wrapper.
-// It returns a fixed structure-prediction response with a small fixed
-// gpu_seconds so the test can verify cost computation deterministically.
-func fakeStructurePredUpstream(t *testing.T) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/tools/structure-prediction" {
-			http.Error(w, "wrong path", http.StatusNotFound)
-			return
-		}
-		// Decode the envelope. We don't validate the inner payload here,
-		// the wrapper would.
-		var env provider.ToolRequest
-		_ = json.NewDecoder(r.Body).Decode(&env)
+// fakeToolProvider is a ToolProvider stand-in for the tool-dispatch
+// tests. It returns a fixed payload and a small gpu_seconds usage so
+// cost computation is deterministic.
+type fakeToolProvider struct {
+	name     string
+	toolKind string
+}
 
-		w.Header().Set("Content-Type", "application/json")
-		// Inner Response = {"structure_cif": "data_test\n#"}
-		_ = json.NewEncoder(w).Encode(provider.ToolResponse{
-			Payload: []byte(`{"structure_cif":"data_test\n#"}`),
-			Usage:   map[string]float64{"gpu_seconds": 5.0},
-		})
-	}))
+func (f fakeToolProvider) Name() string     { return f.name }
+func (f fakeToolProvider) ToolKind() string { return f.toolKind }
+
+func (f fakeToolProvider) Invoke(context.Context, provider.ToolRequest) (*provider.ToolResponse, error) {
+	return &provider.ToolResponse{
+		Payload: []byte(`{"structure_cif":"data_test\n#"}`),
+		Usage:   map[string]float64{"gpu_seconds": 5.0},
+	}, nil
 }
 
 // TestIntegration_ToolDispatch_StructurePrediction exercises the
@@ -378,9 +371,6 @@ func fakeStructurePredUpstream(t *testing.T) *httptest.Server {
 // backend, map a stage to it, POST a prediction request, verify the
 // response + the completion record + the computed cost.
 func TestIntegration_ToolDispatch_StructurePrediction(t *testing.T) {
-	upstream := fakeStructurePredUpstream(t)
-	t.Cleanup(upstream.Close)
-
 	stack := setupOrlaStack(t)
 	base := stack.ts.URL
 
@@ -389,7 +379,7 @@ func TestIntegration_ToolDispatch_StructurePrediction(t *testing.T) {
 		"name":            "fake-boltz",
 		"kind":            "tool",
 		"tool_kind":       "structure-prediction",
-		"endpoint":        upstream.URL,
+		"endpoint":        "http://tool.local",
 		"max_concurrency": 1,
 		"rates":           map[string]float64{"gpu_seconds": 0.001}, // $/s
 	})
@@ -468,8 +458,6 @@ func TestIntegration_ToolDispatch_StructurePrediction(t *testing.T) {
 func TestIntegration_ChatAndToolCoexist(t *testing.T) {
 	llmUpstream := fakeOpenAIUpstream(t)
 	t.Cleanup(llmUpstream.Close)
-	toolUpstream := fakeStructurePredUpstream(t)
-	t.Cleanup(toolUpstream.Close)
 
 	stack := setupOrlaStack(t)
 	base := stack.ts.URL
@@ -482,7 +470,7 @@ func TestIntegration_ChatAndToolCoexist(t *testing.T) {
 		}),
 		mustMarshal(t, map[string]any{
 			"name": "boltz", "kind": "tool", "tool_kind": "structure-prediction",
-			"endpoint": toolUpstream.URL, "max_concurrency": 1,
+			"endpoint": "http://tool.local", "max_concurrency": 1,
 			"rates": map[string]float64{"gpu_seconds": 0.001},
 		}),
 	} {

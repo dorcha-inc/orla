@@ -7,8 +7,6 @@
 //
 //   - Tool backends speak a kind-specific JSON RPC over HTTP. Each
 //     ToolKind is implemented in its own subpackage under provider/.
-//     The first such subpackage is provider/structurepred, which
-//     covers protein structure prediction.
 //
 // The Backend interface is the common identity both kinds share.
 // Scheduler machinery such as concurrency caps, rate limits, and

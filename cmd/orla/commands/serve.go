@@ -19,7 +19,6 @@ import (
 	"github.com/harvard-cns/orla/internal/config"
 	"github.com/harvard-cns/orla/internal/metrics"
 	"github.com/harvard-cns/orla/internal/provider"
-	"github.com/harvard-cns/orla/internal/provider/structurepred"
 	"github.com/harvard-cns/orla/internal/scheduler"
 	"github.com/harvard-cns/orla/internal/stages"
 	"github.com/harvard-cns/orla/internal/storage"
@@ -64,29 +63,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	stageRegistry := stages.NewPostgresRegistry(store.Pool())
 	backendRegistry := backends.NewPostgresRegistry(store.Pool())
 
-	// Kind-aware provider factory. LLM backends use the OpenAI provider;
-	// tool backends select by ToolKind (only structure-prediction for now;
-	// more tool kinds register more cases here as they're added).
+	// Provider factory. LLM backends use the OpenAI provider. No tool
+	// providers are registered, so a tool backend resolves to the OpenAI
+	// provider, which the tool dispatch path rejects at AcquireTool. Add
+	// a KindTool case here when a ToolProvider implementation lands.
 	factory := func(b *backends.Backend) provider.Backend {
-		switch b.Kind {
-		case backends.KindTool:
-			tk := ""
-			if b.ToolKind != nil {
-				tk = *b.ToolKind
-			}
-			switch tk {
-			case structurepred.ToolKind:
-				return structurepred.New(b)
-			default:
-				// Unknown tool_kind: fall back to a stub that errors on
-				// every dispatch. The proxy validates tool_kind before
-				// AcquireTool, so this branch is unreachable in well-
-				// configured deployments.
-				return provider.NewOpenAI(b)
-			}
-		default:
-			return provider.NewOpenAI(b)
-		}
+		return provider.NewOpenAI(b)
 	}
 	sched := scheduler.New(factory, logger)
 	// Rehydrate scheduler with existing backends from the DB.

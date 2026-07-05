@@ -36,9 +36,8 @@ var ErrUnknownBackend = errors.New("scheduler: unknown backend")
 // ProviderFactory constructs a provider for a backend and returns
 // the kind-agnostic Backend interface. The caller, or the scheduler's
 // typed accessors, downcasts to LLMProvider or ToolProvider based on
-// backend.Kind. The serve command's factory branches by Kind to
-// return provider.NewOpenAI for KindLLM, or structurepred.New for
-// KindTool with ToolKind "structure-prediction".
+// backend.Kind. The serve command's factory returns provider.NewOpenAI.
+// A ToolProvider is plugged in there when a tool implementation exists.
 type ProviderFactory func(b *backends.Backend) provider.Backend
 
 // ReleaseFunc returns a slot back to the executor. Always call it,

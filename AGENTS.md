@@ -58,7 +58,6 @@ internal/
   config/                envconfig-based daemon configuration
   metrics/               Prometheus collectors and registration
   provider/              LLMProvider + ToolProvider interfaces
-  provider/structurepred/ Tool provider for protein structure prediction
   scheduler/             Per-backend FCFS executor with concurrency caps
   stages/                Stage registry (PostgresRegistry + FakeRegistry)
   storage/               pgx pool, goose migrations, BatchWriter
