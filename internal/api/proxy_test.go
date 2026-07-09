@@ -26,20 +26,32 @@ import (
 	"github.com/harvard-cns/orla/internal/stages"
 )
 
-// fakeProxyMetrics is a hand-written ProxyMetrics recorder for tests
-// that care about what the handler reported.
+// fakeProxyMetrics is the hand-written ProxyMetrics recorder shared by
+// the proxy and tool handler tests.
 type fakeProxyMetrics struct {
 	mu         sync.Mutex
+	reqs       []string // "stage|backend|status"
 	rejections []string // "backend/reason"
 }
 
-func (f *fakeProxyMetrics) IncRequest(stage, backend, status string)              {}
+func (f *fakeProxyMetrics) IncRequest(stage, backend, status string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reqs = append(f.reqs, stage+"|"+backend+"|"+status)
+}
+
 func (f *fakeProxyMetrics) ObserveBackendLatency(backend string, seconds float64) {}
 
 func (f *fakeProxyMetrics) IncSchedulerRejection(backend, reason string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rejections = append(f.rejections, backend+"/"+reason)
+}
+
+func (f *fakeProxyMetrics) requestsSnapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.reqs...)
 }
 
 func (f *fakeProxyMetrics) rejectionsSnapshot() []string {
@@ -398,6 +410,39 @@ func TestProxy_StatusForSchedulerErrNilMetrics(t *testing.T) {
 		statusForSchedulerErr(rr, scheduler.ErrUnknownBackend, "gpt4o", nil)
 	})
 	assert.Equal(t, http.StatusBadGateway, rr.Code)
+}
+
+// TestProxy_UnknownBackendWinsOverCanceledContext locks the invariant
+// the unregisteredBackendLabel guard depends on. An arbitrary
+// client-supplied model reaches the scheduler when the stage has no
+// mapping. Even if the request context is already canceled, the
+// registry lookup must fail with ErrUnknownBackend before the
+// cancellation is observed, so the metric is labeled with the fixed
+// unregistered label rather than the arbitrary model name. If the
+// scheduler ever checks the context first, this label becomes
+// unbounded and this test fails.
+func TestProxy_UnknownBackendWinsOverCanceledContext(t *testing.T) {
+	env := newProxyEnv(t)
+	_, err := env.stages.Replace(context.Background(), &stages.Stage{
+		ID: "planning", Backend: "",
+	})
+	require.NoError(t, err)
+
+	body, _ := json.Marshal(map[string]any{
+		"model":    "arbitrary-client-model-xyz",
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+		bytes.NewReader(body)).WithContext(ctx)
+	req.Header.Set(HeaderStage, "planning")
+	rr := httptest.NewRecorder()
+	env.srv.Router().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadGateway, rr.Code, rr.Body.String())
+	assert.Equal(t, []string{unregisteredBackendLabel + "/unknown_backend"},
+		env.metrics.rejectionsSnapshot())
 }
 
 func TestExtractRequestContext_TagsLowercased(t *testing.T) {

@@ -466,17 +466,22 @@ func extractRequestContext(r *http.Request, metadata shared.Metadata) *requestCo
 	return rc
 }
 
-// unregisteredBackendLabel replaces the requested backend name when
-// recording orla_scheduler_rejections_total for an unknown backend.
-// chatCompletions falls back to the client-supplied model field when a
-// stage has no mapping, so this name can be arbitrary, unvalidated
-// client input, using it as a metric label as-is would let a client
-// mint unbounded Prometheus series.
+// unregisteredBackendLabel replaces an unknown backend name in the
+// rejection metric. The name can be arbitrary client input, so using it
+// verbatim would let a client mint unbounded Prometheus series.
 const unregisteredBackendLabel = "unregistered"
 
 // statusForSchedulerErr classifies a scheduler acquire error into an
 // HTTP response and a metric reason.
 func statusForSchedulerErr(w http.ResponseWriter, err error, backendName string, metrics ProxyMetrics) {
+	// Every branch below except unknown_backend labels the metric with
+	// backendName verbatim. That is safe only because Scheduler.Acquire
+	// returns ErrUnknownBackend from the registry lookup before it ever
+	// consults the context or the executor, so any other error implies a
+	// registered backend and a bounded label. An arbitrary client-supplied
+	// model can reach here only as unknown_backend, which uses the fixed
+	// unregisteredBackendLabel. Preserve that ordering in the scheduler or
+	// this becomes an unbounded-cardinality hole.
 	reason := "internal_error"
 	metricBackend := backendName
 	_, isCircuitOpen := errors.AsType[*scheduler.CircuitOpenError](err)

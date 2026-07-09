@@ -42,28 +42,14 @@ func (s *recordingSink) Submit(rec *telemetry.CompletionRecord) bool {
 	return true
 }
 
-type recordingMetrics struct {
-	reqs       []string // "stage|backend|status"
-	rejections []string // "backend/reason"
-}
-
-func (m *recordingMetrics) IncRequest(stage, backend, status string) {
-	m.reqs = append(m.reqs, stage+"|"+backend+"|"+status)
-}
-func (m *recordingMetrics) ObserveBackendLatency(string, float64) {}
-func (m *recordingMetrics) IncSchedulerRejection(backend, reason string) {
-	m.rejections = append(m.rejections, backend+"/"+reason)
-}
-
-func newToolTestEnv(t *testing.T, tool *mockTool, b *backends.Backend) (*Server, *backends.FakeRegistry, *recordingSink, *recordingMetrics) {
+func newToolTestEnv(t *testing.T, tool *mockTool, b *backends.Backend) (*Server, *backends.FakeRegistry, *recordingSink, *fakeProxyMetrics) {
 	t.Helper()
 	return newToolTestEnvOpts(t, tool, b, true)
 }
 
-// newToolTestEnvOpts is newToolTestEnv with control over whether the
-// backend gets registered with the scheduler, letting a test simulate
-// a backend that exists in the registry but has no scheduler executor.
-func newToolTestEnvOpts(t *testing.T, tool *mockTool, b *backends.Backend, registerWithScheduler bool) (*Server, *backends.FakeRegistry, *recordingSink, *recordingMetrics) {
+// newToolTestEnvOpts sets whether the backend gets a scheduler
+// executor. false simulates a backend in the registry with none.
+func newToolTestEnvOpts(t *testing.T, tool *mockTool, b *backends.Backend, registerWithScheduler bool) (*Server, *backends.FakeRegistry, *recordingSink, *fakeProxyMetrics) {
 	t.Helper()
 	if b == nil {
 		toolKind := tool.toolKind
@@ -98,7 +84,7 @@ func newToolTestEnvOpts(t *testing.T, tool *mockTool, b *backends.Backend, regis
 	t.Cleanup(func() { _ = sch.Shutdown(context.Background()) })
 
 	sink := &recordingSink{}
-	metrics := &recordingMetrics{}
+	metrics := &fakeProxyMetrics{}
 	srv := NewServer(ServerConfig{
 		ListenAddress: "127.0.0.1:0",
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -158,8 +144,9 @@ func TestTool_InvokeSuccess(t *testing.T) {
 	assert.InDelta(t, 0.0025, *rec.CostUSD, 1e-9)
 
 	// Metrics emitted.
-	require.Len(t, metrics.reqs, 1)
-	assert.Equal(t, "predict|boltz|success", metrics.reqs[0])
+	reqs := metrics.requestsSnapshot()
+	require.Len(t, reqs, 1)
+	assert.Equal(t, "predict|boltz|success", reqs[0])
 }
 
 func TestTool_RequiresStageHeader(t *testing.T) {
@@ -268,8 +255,9 @@ func TestTool_PropagatesProviderError(t *testing.T) {
 	// Error path also records a completion (status=error) and metric.
 	require.Len(t, sink.got, 1)
 	assert.Equal(t, "error", sink.got[0].Status)
-	require.Len(t, metrics.reqs, 1)
-	assert.Equal(t, "predict|boltz|error", metrics.reqs[0])
+	reqs := metrics.requestsSnapshot()
+	require.Len(t, reqs, 1)
+	assert.Equal(t, "predict|boltz|error", reqs[0])
 }
 
 // assertErr is a tiny helper so this file doesn't need the errors package.
@@ -277,12 +265,9 @@ type assertErr string
 
 func (e assertErr) Error() string { return string(e) }
 
-// TestTool_SchedulerUnknownBackendRecordsRejectionMetric covers a
-// backend that exists in the backends registry (so it passes the
-// Kind/ToolKind checks) but was never registered with the scheduler,
-// AcquireTool fails with scheduler.ErrUnknownBackend, and that must
-// reach the same statusForSchedulerErr/IncSchedulerRejection path
-// proxy.go exercises.
+// A backend in the registry but not the scheduler passes the Kind
+// checks, then fails AcquireTool with ErrUnknownBackend. The tool route
+// must record the rejection metric just as the proxy route does.
 func TestTool_SchedulerUnknownBackendRecordsRejectionMetric(t *testing.T) {
 	tool := &mockTool{
 		name:     "boltz",
@@ -301,5 +286,5 @@ func TestTool_SchedulerUnknownBackendRecordsRejectionMetric(t *testing.T) {
 	srv.Router().ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusBadGateway, rr.Code, rr.Body.String())
-	assert.Equal(t, []string{unregisteredBackendLabel + "/unknown_backend"}, metrics.rejections)
+	assert.Equal(t, []string{unregisteredBackendLabel + "/unknown_backend"}, metrics.rejectionsSnapshot())
 }
