@@ -47,6 +47,19 @@ func TestMetrics_SchedulerRejectionsCounter(t *testing.T) {
 	assert.InDelta(t, 2.0, got, 1e-9)
 }
 
+func TestMetrics_PolicyDecisionsCounter(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := metrics.New(reg)
+
+	m.IncPolicyDecision("gpt4o", "ok")
+	m.IncPolicyDecision("gpt4o", "ok")
+	m.IncPolicyDecision("gpt4o", "fallback_timeout")
+	m.ObservePolicyDecision("gpt4o", 0.004)
+
+	got := testutil.ToFloat64(m.PolicyDecisionsTotal.WithLabelValues("gpt4o", "ok"))
+	assert.InDelta(t, 2.0, got, 1e-9)
+}
+
 type fakeStatsSource struct{ stats []scheduler.Stats }
 
 func (f *fakeStatsSource) Stats() []scheduler.Stats { return f.stats }

@@ -19,6 +19,8 @@ type Metrics struct {
 	BackendLatency           *prometheus.HistogramVec
 	FeedbackTotal            *prometheus.CounterVec
 	SchedulerRejectionsTotal *prometheus.CounterVec
+	PolicyDecisionsTotal     *prometheus.CounterVec
+	PolicyDecisionSeconds    *prometheus.HistogramVec
 }
 
 // New constructs and registers all push-style metrics on reg.
@@ -58,8 +60,33 @@ func New(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"backend", "reason"},
 		),
+		PolicyDecisionsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "orla",
+				Name:      "scheduler_policy_decisions_total",
+				Help:      "Scheduling policy decisions, by backend and outcome (ok|fallback_timeout|fallback_error|fallback_invalid).",
+			},
+			[]string{"backend", "outcome"},
+		),
+		PolicyDecisionSeconds: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: "orla",
+				Name:      "scheduler_policy_decision_seconds",
+				Help:      "Latency of a scheduling policy decision in seconds.",
+				// 1ms .. ~1s
+				Buckets: prometheus.ExponentialBuckets(0.001, 2, 11),
+			},
+			[]string{"backend"},
+		),
 	}
-	reg.MustRegister(m.RequestsTotal, m.BackendLatency, m.FeedbackTotal, m.SchedulerRejectionsTotal)
+	reg.MustRegister(
+		m.RequestsTotal,
+		m.BackendLatency,
+		m.FeedbackTotal,
+		m.SchedulerRejectionsTotal,
+		m.PolicyDecisionsTotal,
+		m.PolicyDecisionSeconds,
+	)
 	return m
 }
 
@@ -81,4 +108,14 @@ func (m *Metrics) IncFeedback(stage string) {
 // IncSchedulerRejection is the api.ProxyMetrics adapter.
 func (m *Metrics) IncSchedulerRejection(backend, reason string) {
 	m.SchedulerRejectionsTotal.WithLabelValues(backend, reason).Inc()
+}
+
+// IncPolicyDecision is the scheduler.PolicyMetrics adapter.
+func (m *Metrics) IncPolicyDecision(backend, outcome string) {
+	m.PolicyDecisionsTotal.WithLabelValues(backend, outcome).Inc()
+}
+
+// ObservePolicyDecision is the scheduler.PolicyMetrics adapter.
+func (m *Metrics) ObservePolicyDecision(backend string, seconds float64) {
+	m.PolicyDecisionSeconds.WithLabelValues(backend).Observe(seconds)
 }

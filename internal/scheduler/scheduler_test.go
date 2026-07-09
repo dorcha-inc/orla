@@ -145,7 +145,7 @@ func TestScheduler_AcquireCancelInQueue(t *testing.T) {
 	// Second request enters the queue, we cancel immediately.
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	_, _, err := s.Acquire(ctx, "b")
+	_, _, err := s.Acquire(ctx, "b", scheduler.RequestInfo{})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled))
 }

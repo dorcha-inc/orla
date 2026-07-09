@@ -119,7 +119,11 @@ func (h *toolHandler) invoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tp, release, err := h.deps.Scheduler.AcquireTool(r.Context(), backendName)
+	tp, release, err := h.deps.Scheduler.AcquireTool(r.Context(), backendName, scheduler.RequestInfo{
+		Stage: rc.Stage,
+		Model: kind,
+		Tags:  rc.Tags,
+	})
 	if err != nil {
 		statusForSchedulerErr(w, err, backendName, h.deps.Metrics)
 		return

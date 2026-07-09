@@ -25,6 +25,7 @@ type Querier interface {
 	// The backend override for one (variant, stage). No row means the
 	// request falls through to the stage's live backend.
 	GetMappingOverride(ctx context.Context, arg GetMappingOverrideParams) (string, error)
+	GetSchedulerPolicy(ctx context.Context) (GetSchedulerPolicyRow, error)
 	GetStage(ctx context.Context, id string) (Stage, error)
 	InsertBackend(ctx context.Context, arg InsertBackendParams) (Backend, error)
 	// Every override across all variants, ordered so a caller can group
@@ -45,6 +46,7 @@ type Querier interface {
 	StageMetricsByBackend(ctx context.Context, arg StageMetricsByBackendParams) ([]StageMetricsByBackendRow, error)
 	UpdateBackend(ctx context.Context, arg UpdateBackendParams) (Backend, error)
 	UpsertMappingOverride(ctx context.Context, arg UpsertMappingOverrideParams) error
+	UpsertSchedulerPolicy(ctx context.Context, arg UpsertSchedulerPolicyParams) error
 	// Auto-create a stage with empty fields on first sighting. If the row
 	// already exists, the no-op SET keeps the existing values and RETURNING
 	// returns them. (A bare ON CONFLICT DO NOTHING with RETURNING returns

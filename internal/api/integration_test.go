@@ -24,9 +24,11 @@ import (
 	"github.com/harvard-cns/orla/internal/metrics"
 	"github.com/harvard-cns/orla/internal/provider"
 	"github.com/harvard-cns/orla/internal/scheduler"
+	"github.com/harvard-cns/orla/internal/settings"
 	"github.com/harvard-cns/orla/internal/stages"
 	"github.com/harvard-cns/orla/internal/storage"
 	"github.com/harvard-cns/orla/internal/telemetry"
+	"github.com/harvard-cns/orla/internal/wire"
 )
 
 // fakeOpenAIUpstream is an httptest.Server that mimics an OpenAI-compatible
@@ -135,10 +137,15 @@ func setupOrlaStack(t *testing.T) *orlaStack {
 		Ready:         store.Ping,
 		PromRegistry:  promReg,
 	})
+	policyStore := settings.NewPostgresStore(store.Pool())
 	api.RegisterStageRoutes(srv.Router(), stageReg)
 	api.RegisterBackendRoutes(srv.Router(), api.BackendDeps{
 		Registry:  backendReg,
 		Lifecycle: sched,
+	})
+	api.RegisterSchedulerRoutes(srv.Router(), api.SchedulerDeps{
+		Store:     policyStore,
+		Scheduler: sched,
 	})
 
 	completionW := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{
@@ -308,6 +315,46 @@ func TestIntegration_FullLoop(t *testing.T) {
 	assert.True(t, strings.Contains(string(promBody),
 		`orla_requests_total{backend="fake-backend",stage="planning",status="success"} 1`),
 		"expected requests_total to reflect the dispatch:\n%s", string(promBody))
+}
+
+// TestIntegration_SchedulerPolicy wires the real Postgres-backed policy
+// store, the scheduler, and the HTTP handler, then round-trips a policy
+// through PUT and GET and confirms it persists for a later reader, the
+// way the daemon reloads it on restart.
+func TestIntegration_SchedulerPolicy(t *testing.T) {
+	stack := setupOrlaStack(t)
+	base := stack.ts.URL
+
+	// A fresh install is first-come-first-served.
+	var got wire.SchedulerPolicy
+	resp := getResp(t, base+"/api/v1/scheduler/policy")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+	_ = resp.Body.Close()
+	assert.False(t, got.Enabled)
+
+	// Set one over HTTP.
+	body := mustMarshal(t, wire.SchedulerPolicy{URL: "http://sched:8090/next", TimeoutMS: 75})
+	req, err := http.NewRequest(http.MethodPut, base+"/api/v1/scheduler/policy", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	putResp := doRequest(t, req)
+	require.Equal(t, http.StatusOK, putResp.StatusCode, readBody(t, putResp))
+
+	// GET reflects it.
+	resp2 := getResp(t, base+"/api/v1/scheduler/policy")
+	require.NoError(t, json.NewDecoder(resp2.Body).Decode(&got))
+	_ = resp2.Body.Close()
+	assert.True(t, got.Enabled)
+	assert.Equal(t, "http://sched:8090/next", got.URL)
+	assert.Equal(t, 75, got.TimeoutMS)
+
+	// It is durable: a fresh store over the same database sees it, which
+	// is what the daemon does when it reloads the policy on restart.
+	reloaded, err := settings.NewPostgresStore(stack.store.Pool()).Get(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "http://sched:8090/next", reloaded.URL)
+	assert.Equal(t, 75*time.Millisecond, reloaded.Timeout)
 }
 
 func mustMarshal(t *testing.T, v any) []byte {

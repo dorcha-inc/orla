@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -21,6 +22,7 @@ import (
 	"github.com/harvard-cns/orla/internal/metrics"
 	"github.com/harvard-cns/orla/internal/provider"
 	"github.com/harvard-cns/orla/internal/scheduler"
+	"github.com/harvard-cns/orla/internal/settings"
 	"github.com/harvard-cns/orla/internal/stages"
 	"github.com/harvard-cns/orla/internal/storage"
 	"github.com/harvard-cns/orla/internal/telemetry"
@@ -65,6 +67,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	backendRegistry := backends.NewPostgresRegistry(store.Pool())
 	mappingRegistry := mappings.NewPostgresRegistry(store.Pool())
 
+	promReg := prometheus.NewRegistry()
+	promReg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+	m := metrics.New(promReg)
+
 	// Provider factory. LLM backends use the OpenAI provider. No tool
 	// providers are registered, so a tool backend resolves to the OpenAI
 	// provider, which the tool dispatch path rejects at AcquireTool. Add
@@ -72,7 +81,21 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	factory := func(b *backends.Backend) provider.Backend {
 		return provider.NewOpenAI(b)
 	}
-	sched := scheduler.New(factory, logger)
+	sched := scheduler.New(factory, logger, scheduler.WithPolicyMetrics(m))
+
+	// The scheduling policy is control-plane state, managed live through
+	// orlactl. Load whatever was last set and install it before any
+	// backend registers, so the first request already sees it.
+	policyStore := settings.NewPostgresStore(store.Pool())
+	policyCfg, err := policyStore.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("load scheduler policy: %w", err)
+	}
+	api.ApplySchedulerPolicy(sched, policyCfg)
+	if policyCfg.Enabled() {
+		logger.Info("scheduling policy enabled", "url", policyCfg.URL, "timeout", policyCfg.Timeout)
+	}
+
 	// Rehydrate scheduler with existing backends from the DB.
 	existing, err := backendRegistry.List(ctx)
 	if err != nil {
@@ -81,13 +104,6 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	for _, b := range existing {
 		sched.Register(b)
 	}
-
-	promReg := prometheus.NewRegistry()
-	promReg.MustRegister(
-		collectors.NewGoCollector(),
-		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-	)
-	m := metrics.New(promReg)
 	promReg.MustRegister(metrics.NewSchedulerCollector(sched))
 
 	srv := api.NewServer(api.ServerConfig{
@@ -103,6 +119,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	})
 	api.RegisterStageRoutes(srv.Router(), stageRegistry)
 	api.RegisterMappingRoutes(srv.Router(), mappingRegistry)
+	api.RegisterSchedulerRoutes(srv.Router(), api.SchedulerDeps{
+		Store:     policyStore,
+		Scheduler: sched,
+	})
 	api.RegisterBackendRoutes(srv.Router(), api.BackendDeps{
 		Registry:  backendRegistry,
 		Lifecycle: sched,

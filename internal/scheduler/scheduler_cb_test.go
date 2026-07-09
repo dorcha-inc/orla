@@ -153,7 +153,7 @@ func TestScheduler_ReportOutcomeTripsAndResetsCircuit(t *testing.T) {
 
 	// A reported success after the open window closes the circuit again.
 	rewindSchedulerCB(s, "b", 61*time.Second)
-	_, release, err := s.AcquireLLM(context.Background(), "b") // consumes the half-open probe
+	_, release, err := s.AcquireLLM(context.Background(), "b", RequestInfo{}) // consumes the half-open probe
 	require.NoError(t, err)
 	s.ReportOutcome("b", nil)
 	release()

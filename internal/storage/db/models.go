@@ -61,6 +61,13 @@ type MappingVariant struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type SchedulerPolicy struct {
+	ID        bool
+	Url       string
+	TimeoutMs int32
+	UpdatedAt pgtype.Timestamptz
+}
+
 type Stage struct {
 	ID              string
 	Backend         string

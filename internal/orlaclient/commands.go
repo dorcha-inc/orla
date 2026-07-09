@@ -29,7 +29,7 @@ func NewRootCmd() *cobra.Command {
 		cmp.Or(os.Getenv("ORLA_ADDR"), "http://localhost:8081"), "orla daemon address")
 
 	client := func() *Client { return New(addr) }
-	root.AddCommand(newBackendCmd(client), newStageCmd(client), newMappingCmd(client), newFeedbackCmd(client))
+	root.AddCommand(newBackendCmd(client), newStageCmd(client), newMappingCmd(client), newSchedulerCmd(client), newFeedbackCmd(client))
 	return root
 }
 
@@ -140,6 +140,72 @@ func newBackendRmCmd(client func() *Client) *cobra.Command {
 				return err
 			}
 			fmt.Printf("removed backend %q\n", args[0])
+			return nil
+		},
+	}
+}
+
+func newSchedulerCmd(client func() *Client) *cobra.Command {
+	cmd := &cobra.Command{Use: "scheduler", Short: "Manage the scheduling policy"}
+	policy := &cobra.Command{Use: "policy", Short: "Manage the scheduling policy"}
+	policy.AddCommand(
+		newSchedulerPolicyShowCmd(client),
+		newSchedulerPolicySetCmd(client),
+		newSchedulerPolicyDisableCmd(client),
+	)
+	cmd.AddCommand(policy)
+	return cmd
+}
+
+func newSchedulerPolicyShowCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show",
+		Short: "Show the active scheduling policy",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := client().GetSchedulerPolicy(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return printJSON(p)
+		},
+	}
+}
+
+func newSchedulerPolicySetCmd(client func() *Client) *cobra.Command {
+	var (
+		policyURL string
+		timeoutMS int
+	)
+	cmd := &cobra.Command{
+		Use:   "set --url URL [--timeout-ms N]",
+		Short: "Point the scheduler at an external policy service",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := client().SetSchedulerPolicy(cmd.Context(), wire.SchedulerPolicy{
+				URL:       policyURL,
+				TimeoutMS: timeoutMS,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("scheduling policy set: url=%s timeout_ms=%d\n", p.URL, p.TimeoutMS)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&policyURL, "url", "", "scheduling service URL (required)")
+	cmd.Flags().IntVar(&timeoutMS, "timeout-ms", 0, "per-decision timeout in milliseconds (default 50)")
+	_ = cmd.MarkFlagRequired("url")
+	return cmd
+}
+
+func newSchedulerPolicyDisableCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "disable",
+		Short: "Revert to first-come-first-served scheduling",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if _, err := client().SetSchedulerPolicy(cmd.Context(), wire.SchedulerPolicy{URL: ""}); err != nil {
+				return err
+			}
+			fmt.Println("scheduling policy disabled, serving first-come-first-served")
 			return nil
 		},
 	}

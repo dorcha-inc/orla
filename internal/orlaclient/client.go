@@ -153,6 +153,21 @@ func (c *Client) DeleteMapping(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/api/v1/mappings/"+url.PathEscape(name), nil, nil)
 }
 
+// GetSchedulerPolicy returns the active scheduling policy.
+func (c *Client) GetSchedulerPolicy(ctx context.Context) (wire.SchedulerPolicy, error) {
+	var p wire.SchedulerPolicy
+	err := c.do(ctx, http.MethodGet, "/api/v1/scheduler/policy", nil, &p)
+	return p, err
+}
+
+// SetSchedulerPolicy replaces the active scheduling policy. An empty URL
+// reverts to first-come-first-served.
+func (c *Client) SetSchedulerPolicy(ctx context.Context, req wire.SchedulerPolicy) (wire.SchedulerPolicy, error) {
+	var p wire.SchedulerPolicy
+	err := c.do(ctx, http.MethodPut, "/api/v1/scheduler/policy", req, &p)
+	return p, err
+}
+
 // SubmitFeedback reports the outcome of a completion for a stage. Agents
 // normally post this themselves; the CLI command is for trying the loop
 // by hand.

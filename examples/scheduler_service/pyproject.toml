@@ -1,0 +1,23 @@
+[project]
+name = "orla-example-scheduler-service"
+version = "0.1.0"
+description = "An external scheduling service that orders Orla's per-backend queue."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi==0.121.2",
+    "uvicorn==0.35.0",
+    "pydantic==2.13.4",
+]
+
+[dependency-groups]
+dev = [
+    "ruff==0.15.20",
+    "ty==0.0.55",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

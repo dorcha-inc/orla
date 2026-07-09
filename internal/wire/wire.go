@@ -103,6 +103,16 @@ type Stage struct {
 	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
+// SchedulerPolicy is the JSON for GET and PUT /api/v1/scheduler/policy.
+// An empty URL means first-come-first-served. TimeoutMS bounds a single
+// scheduling decision. Enabled is derived on responses and ignored on
+// input.
+type SchedulerPolicy struct {
+	URL       string `json:"url"`
+	TimeoutMS int    `json:"timeout_ms"`
+	Enabled   bool   `json:"enabled"`
+}
+
 // FeedbackRequest is the POST /v1/feedback body. CompletionID and StageID
 // are required. Rating, when set, must be between 0 and 1. Agents post
 // this after a call so the mapper has an outcome signal.

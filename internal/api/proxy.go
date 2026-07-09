@@ -192,7 +192,7 @@ func reattachJSONSchema(params *openai.ChatCompletionNewParams, body []byte) err
 }
 
 func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request, rc *requestContext, backendName string, params openai.ChatCompletionNewParams) {
-	p, release, err := h.deps.Scheduler.AcquireLLM(r.Context(), backendName)
+	p, release, err := h.deps.Scheduler.AcquireLLM(r.Context(), backendName, schedulerRequestInfo(rc, params))
 	if err != nil {
 		statusForSchedulerErr(w, err, backendName, h.deps.Metrics)
 		return
@@ -246,7 +246,7 @@ func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc *requestContext, backendName string, params openai.ChatCompletionNewParams) {
-	p, release, err := h.deps.Scheduler.AcquireLLM(r.Context(), backendName)
+	p, release, err := h.deps.Scheduler.AcquireLLM(r.Context(), backendName, schedulerRequestInfo(rc, params))
 	if err != nil {
 		statusForSchedulerErr(w, err, backendName, h.deps.Metrics)
 		return
@@ -464,6 +464,17 @@ func extractRequestContext(r *http.Request, metadata shared.Metadata) *requestCo
 		rc.Tags[key] = values[0]
 	}
 	return rc
+}
+
+// schedulerRequestInfo builds the metadata the scheduler forwards to a
+// scheduling policy. The model is the client-requested model, which may
+// differ from the resolved backend name.
+func schedulerRequestInfo(rc *requestContext, params openai.ChatCompletionNewParams) scheduler.RequestInfo {
+	return scheduler.RequestInfo{
+		Stage: rc.Stage,
+		Model: string(params.Model),
+		Tags:  rc.Tags,
+	}
 }
 
 // unregisteredBackendLabel replaces an unknown backend name in the
