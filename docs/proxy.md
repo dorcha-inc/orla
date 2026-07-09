@@ -72,4 +72,15 @@ All non-200 responses use the OpenAI error envelope:
 
 Status code drives the `type` field. Clients that already handle OpenAI errors handle these correctly.
 
-A request that fails before dispatch, an unregistered backend, a backend/kind mismatch, or a client that gives up while queued, is counted in `orla_scheduler_rejections_total{backend, reason}` even though it never reaches `completion_records`.
+Some requests fail before dispatch and never reach `completion_records`. These are counted in `orla_scheduler_rejections_total{backend, reason}`. The `reason` label is one of:
+
+- `unknown_backend`: the resolved backend is not registered. Returns 502.
+- `wrong_kind`: the backend exists but is the wrong kind for the route, an LLM asked to serve a tool or the reverse. Returns 500.
+- `circuit_open`: the backend's circuit breaker is open and is failing fast. Returns 503 with `Retry-After`.
+- `canceled`: the client canceled while the request was queued. Returns 408.
+- `deadline_exceeded`: the request deadline passed while the request was queued. Returns 408.
+- `internal_error`: any other acquire failure. Returns 500.
+
+The `chat/completions` route falls back to the client-supplied `model` field when a stage has no backend mapping, so an unknown backend name can be arbitrary client input. To keep the metric from minting unbounded label series, the `unknown_backend` case records a fixed `backend="unregistered"` label. The real name still appears in the error body and logs.
+
+These rejections do not increment `orla_requests_total`, which counts only requests that reach dispatch, so a total error rate must union both counters.

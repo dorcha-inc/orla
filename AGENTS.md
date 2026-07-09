@@ -233,6 +233,10 @@ scenario reads as a clause: `TestProxy_ComputesLLMCostUSD`,
 Use hand-written fakes with the suffix `Fake*` (e.g. `FakeRegistry`).
 Do not introduce a mocking code generator.
 
+Share one fake per interface across the package's tests. If a fake
+already exists for an interface, extend it rather than hand-rolling a
+second.
+
 For HTTP-shaped dependencies, prefer `httptest.NewServer` or a
 hand-written fake server function that returns a *httptest.Server.
 Both are easier to debug than generated mocks.
