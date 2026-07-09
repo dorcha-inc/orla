@@ -121,7 +121,7 @@ func (h *toolHandler) invoke(w http.ResponseWriter, r *http.Request) {
 
 	tp, release, err := h.deps.Scheduler.AcquireTool(r.Context(), backendName)
 	if err != nil {
-		statusForSchedulerErr(w, err, backendName)
+		statusForSchedulerErr(w, err, backendName, h.deps.Metrics)
 		return
 	}
 	defer release()

@@ -43,15 +43,27 @@ func (s *recordingSink) Submit(rec *telemetry.CompletionRecord) bool {
 }
 
 type recordingMetrics struct {
-	reqs []string // "stage|backend|status"
+	reqs       []string // "stage|backend|status"
+	rejections []string // "backend/reason"
 }
 
 func (m *recordingMetrics) IncRequest(stage, backend, status string) {
 	m.reqs = append(m.reqs, stage+"|"+backend+"|"+status)
 }
 func (m *recordingMetrics) ObserveBackendLatency(string, float64) {}
+func (m *recordingMetrics) IncSchedulerRejection(backend, reason string) {
+	m.rejections = append(m.rejections, backend+"/"+reason)
+}
 
 func newToolTestEnv(t *testing.T, tool *mockTool, b *backends.Backend) (*Server, *backends.FakeRegistry, *recordingSink, *recordingMetrics) {
+	t.Helper()
+	return newToolTestEnvOpts(t, tool, b, true)
+}
+
+// newToolTestEnvOpts is newToolTestEnv with control over whether the
+// backend gets registered with the scheduler, letting a test simulate
+// a backend that exists in the registry but has no scheduler executor.
+func newToolTestEnvOpts(t *testing.T, tool *mockTool, b *backends.Backend, registerWithScheduler bool) (*Server, *backends.FakeRegistry, *recordingSink, *recordingMetrics) {
 	t.Helper()
 	if b == nil {
 		toolKind := tool.toolKind
@@ -80,7 +92,9 @@ func newToolTestEnv(t *testing.T, tool *mockTool, b *backends.Backend) (*Server,
 		func(*backends.Backend) provider.Backend { return tool },
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
-	sch.Register(b)
+	if registerWithScheduler {
+		sch.Register(b)
+	}
 	t.Cleanup(func() { _ = sch.Shutdown(context.Background()) })
 
 	sink := &recordingSink{}
@@ -262,3 +276,30 @@ func TestTool_PropagatesProviderError(t *testing.T) {
 type assertErr string
 
 func (e assertErr) Error() string { return string(e) }
+
+// TestTool_SchedulerUnknownBackendRecordsRejectionMetric covers a
+// backend that exists in the backends registry (so it passes the
+// Kind/ToolKind checks) but was never registered with the scheduler,
+// AcquireTool fails with scheduler.ErrUnknownBackend, and that must
+// reach the same statusForSchedulerErr/IncSchedulerRejection path
+// proxy.go exercises.
+func TestTool_SchedulerUnknownBackendRecordsRejectionMetric(t *testing.T) {
+	tool := &mockTool{
+		name:     "boltz",
+		toolKind: "structure-prediction",
+		respFn: func(provider.ToolRequest) (*provider.ToolResponse, error) {
+			t.Fatal("should not be invoked")
+			return nil, nil
+		},
+	}
+	srv, _, _, metrics := newToolTestEnvOpts(t, tool, nil, false)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/v1/tools/structure-prediction", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set(HeaderStage, "predict")
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadGateway, rr.Code, rr.Body.String())
+	assert.Equal(t, []string{unregisteredBackendLabel + "/unknown_backend"}, metrics.rejections)
+}

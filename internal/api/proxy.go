@@ -52,6 +52,7 @@ type CompletionSink interface {
 type ProxyMetrics interface {
 	IncRequest(stage, backend, status string)
 	ObserveBackendLatency(backend string, seconds float64)
+	IncSchedulerRejection(backend, reason string)
 }
 
 // ProxyDeps bundles the dependencies of the proxy handler. Mappings
@@ -193,7 +194,7 @@ func reattachJSONSchema(params *openai.ChatCompletionNewParams, body []byte) err
 func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request, rc *requestContext, backendName string, params openai.ChatCompletionNewParams) {
 	p, release, err := h.deps.Scheduler.AcquireLLM(r.Context(), backendName)
 	if err != nil {
-		statusForSchedulerErr(w, err, backendName)
+		statusForSchedulerErr(w, err, backendName, h.deps.Metrics)
 		return
 	}
 	defer release()
@@ -247,7 +248,7 @@ func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request,
 func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc *requestContext, backendName string, params openai.ChatCompletionNewParams) {
 	p, release, err := h.deps.Scheduler.AcquireLLM(r.Context(), backendName)
 	if err != nil {
-		statusForSchedulerErr(w, err, backendName)
+		statusForSchedulerErr(w, err, backendName, h.deps.Metrics)
 		return
 	}
 	defer release()
@@ -465,24 +466,46 @@ func extractRequestContext(r *http.Request, metadata shared.Metadata) *requestCo
 	return rc
 }
 
-func statusForSchedulerErr(w http.ResponseWriter, err error, backendName string) {
-	if errors.Is(err, scheduler.ErrUnknownBackend) {
-		writeError(w, http.StatusBadGateway,
-			fmt.Errorf("backend %q is not registered", backendName))
-		return
-	}
-	if _, ok := errors.AsType[*scheduler.CircuitOpenError](err); ok {
+// unregisteredBackendLabel replaces the requested backend name when
+// recording orla_scheduler_rejections_total for an unknown backend.
+// chatCompletions falls back to the client-supplied model field when a
+// stage has no mapping, so this name can be arbitrary, unvalidated
+// client input, using it as a metric label as-is would let a client
+// mint unbounded Prometheus series.
+const unregisteredBackendLabel = "unregistered"
+
+// statusForSchedulerErr classifies a scheduler acquire error into an
+// HTTP response and a metric reason.
+func statusForSchedulerErr(w http.ResponseWriter, err error, backendName string, metrics ProxyMetrics) {
+	reason := "internal_error"
+	metricBackend := backendName
+	_, isCircuitOpen := errors.AsType[*scheduler.CircuitOpenError](err)
+	switch {
+	case errors.Is(err, scheduler.ErrUnknownBackend):
+		reason = "unknown_backend"
+		metricBackend = unregisteredBackendLabel
+		writeError(w, http.StatusBadGateway, fmt.Errorf("backend %q is not registered", backendName))
+	case isCircuitOpen:
+		reason = "circuit_open"
 		// Backend is failing fast. Signal "retry later" with 503 rather than
 		// a generic 500. Retry-After mirrors the breaker's open window.
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusServiceUnavailable, err)
-		return
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	case errors.Is(err, scheduler.ErrWrongKind):
+		reason = "wrong_kind"
+		writeError(w, http.StatusInternalServerError, err)
+	case errors.Is(err, context.Canceled):
+		reason = "canceled"
 		writeError(w, http.StatusRequestTimeout, err)
-		return
+	case errors.Is(err, context.DeadlineExceeded):
+		reason = "deadline_exceeded"
+		writeError(w, http.StatusRequestTimeout, err)
+	default:
+		writeError(w, http.StatusInternalServerError, err)
 	}
-	writeError(w, http.StatusInternalServerError, err)
+	if metrics != nil {
+		metrics.IncSchedulerRejection(metricBackend, reason)
+	}
 }
 
 func writeUpstreamError(w http.ResponseWriter, err error) {
