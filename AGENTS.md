@@ -464,6 +464,29 @@ helper like `isFiniteNonNegative(float64) bool` keeps the boundary
 checks readable. Don't sprinkle finite-checks throughout the call
 stack.
 
+### Failure handling
+
+Orla is critical infrastructure. Fail loud at startup and config time.
+Degrade gracefully at request time. These are not in tension. They
+apply at different layers.
+
+At construction and wiring time a missing or invalid required
+dependency should fail fast, before the listener serves traffic. A
+readiness probe catches it, the deploy rolls back, and no live request
+is affected. Crashlooping on a bad config beats coming up healthy and
+serving blind.
+
+On the request hot path, degrade instead of crashing. One bad input or
+one unavailable backend must not take down in-flight work. Return an
+error envelope, shed load with a 503, or no-op an optional side effect.
+The scheduler shedding to 503 with a Retry-After header is the pattern.
+
+Never split the difference by tolerating a required dependency at
+construction and then panicking on the first request that needs it.
+That turns a config mistake into a delayed outage under load. Validate
+it at the wiring boundary or make it a genuinely optional dependency
+that no-ops when absent, the way the proxy treats its metrics sink.
+
 ### Use the standard library
 
 Prefer something already built, the standard library or a vetted
