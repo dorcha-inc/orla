@@ -7,8 +7,8 @@ highest tags["priority"] wins, ties broken by the longest wait. Anything
 without a priority tag is treated as priority 0.
 
 Run it with `just run` (uvicorn on :8090), point Orla at it with
-ORLA_SCHEDULER_POLICY_URL=http://127.0.0.1:8090/v1/schedule/next, and
-send competing requests to watch the order change.
+`orlactl scheduler policy set --url http://127.0.0.1:8090/v1/schedule/next`,
+and send competing requests to watch the order change.
 """
 
 from __future__ import annotations

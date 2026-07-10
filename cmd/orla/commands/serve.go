@@ -83,9 +83,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	sched := scheduler.New(factory, logger, scheduler.WithPolicyMetrics(m))
 
-	// The scheduling policy is control-plane state, managed live through
-	// orlactl. Load whatever was last set and install it before any
-	// backend registers, so the first request already sees it.
+	// Restore the scheduling policy last set through orlactl.
 	policyStore := settings.NewPostgresStore(store.Pool())
 	policyCfg, err := policyStore.Get(ctx)
 	if err != nil {
