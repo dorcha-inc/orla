@@ -58,13 +58,7 @@ Return the `id` of the request to admit next.
 {"next": "9f1c..."}
 ```
 
-A service that prefers to return a full ranking can send `order` instead. Orla admits the first element and asks again when the next slot frees.
-
-```json
-{"order": ["9f1c...", "3ab8...", "7de2..."]}
-```
-
-If both are present, `next` wins. If `next` is empty, the first element of `order` is used.
+Orla asks again each time a slot frees, so a service returns one decision at a time against the current pending set. An empty or missing `next` is treated as no decision and falls back to first-come-first-served.
 
 ## Fallback
 

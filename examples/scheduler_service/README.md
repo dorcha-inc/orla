@@ -42,6 +42,5 @@ and returns the id to admit next:
 {"next": "req-1"}
 ```
 
-A service may instead return a full ranking as `{"order": ["req-1", "req-2"]}`.
-Orla uses the first element. See `docs/scheduling-service.md` in the Orla
-repo for the normative contract.
+Orla asks once per freed slot, so a service returns one decision at a time.
+See `docs/scheduling-service.md` in the Orla repo for the normative contract.

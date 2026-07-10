@@ -305,7 +305,7 @@ func TestHTTPPolicy_Decisions(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "next field", status: 200, body: `{"next":"id2"}`, wantID: "id2"},
-		{name: "order fallback", status: 200, body: `{"order":["id3","id1"]}`, wantID: "id3"},
+		{name: "unknown fields ignored", status: 200, body: `{"next":"id1","order":["x"]}`, wantID: "id1"},
 		{name: "empty decision", status: 200, body: `{}`, wantErr: true},
 		{name: "non-200", status: 503, body: `nope`, wantErr: true},
 		{name: "malformed json", status: 200, body: `{`, wantErr: true},

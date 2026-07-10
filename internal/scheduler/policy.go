@@ -96,13 +96,10 @@ type scheduleRequest struct {
 	Pending []scheduleRequestPending `json:"pending"`
 }
 
-// scheduleResponse accepts either a single next id or an ordered list.
-// Next is preferred. When Next is empty the first element of Order is
-// used, which lets a service return a full ranking without the
-// executor having to consume more than one decision at a time.
+// scheduleResponse is the service's decision: the id of the pending
+// request to admit next.
 type scheduleResponse struct {
-	Next  string   `json:"next"`
-	Order []string `json:"order"`
+	Next string `json:"next"`
 }
 
 // Next implements SchedulingPolicy.
@@ -130,13 +127,10 @@ func (p *HTTPPolicy) Next(ctx context.Context, backend BackendView, pending []Pe
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&decoded); err != nil {
 		return "", fmt.Errorf("decode schedule response: %w", err)
 	}
-	if decoded.Next != "" {
-		return decoded.Next, nil
+	if decoded.Next == "" {
+		return "", fmt.Errorf("scheduling service returned no decision")
 	}
-	if len(decoded.Order) > 0 {
-		return decoded.Order[0], nil
-	}
-	return "", fmt.Errorf("scheduling service returned no decision")
+	return decoded.Next, nil
 }
 
 func buildScheduleRequest(backend BackendView, pending []PendingRequest) scheduleRequest {
