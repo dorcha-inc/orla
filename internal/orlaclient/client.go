@@ -104,6 +104,14 @@ func (c *Client) MapStage(ctx context.Context, id string, req wire.MapStageReque
 	return s, err
 }
 
+// PatchStage applies a partial update to a stage, leaving fields absent
+// from req unchanged.
+func (c *Client) PatchStage(ctx context.Context, id string, req wire.PatchStageRequest) (wire.Stage, error) {
+	var s wire.Stage
+	err := c.do(ctx, http.MethodPatch, "/api/v1/stages/"+url.PathEscape(id), req, &s)
+	return s, err
+}
+
 // ListStages returns every stage and its mapping.
 func (c *Client) ListStages(ctx context.Context) ([]wire.Stage, error) {
 	var out struct {

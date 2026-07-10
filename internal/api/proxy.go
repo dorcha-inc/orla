@@ -78,8 +78,7 @@ type proxyHandler struct {
 
 // requestContext aggregates the identity metadata we extract from
 // headers + body fallbacks. Stages and tags are persisted later by the
-// completion-records writer, the proxy only consumes Stage and (in a
-// future phase) ReasoningEffort.
+// completion-records writer.
 type requestContext struct {
 	Stage       string
 	WorkflowRun string
@@ -154,6 +153,9 @@ func (h *proxyHandler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	if stage.ReasoningEffort != "" {
 		params.ReasoningEffort = shared.ReasoningEffort(stage.ReasoningEffort)
 	}
+	if stage.Prompt != "" {
+		applyStagePrompt(&params, stage.Prompt)
+	}
 
 	if peek.Stream {
 		h.serveStreaming(w, r, rc, backendName, params)
@@ -189,6 +191,21 @@ func reattachJSONSchema(params *openai.ChatCompletionNewParams, body []byte) err
 	}
 	params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{OfJSONSchema: &js}
 	return nil
+}
+
+// applyStagePrompt substitutes the stage's prompt for the request's
+// leading system message. It replaces the first message when that is a
+// system message and prepends one otherwise. The rest of the
+// conversation is left untouched, so a tool-calling loop keeps its
+// accumulated scratchpad and only the instructions change. The caller
+// guarantees prompt is non-empty.
+func applyStagePrompt(params *openai.ChatCompletionNewParams, prompt string) {
+	sys := openai.SystemMessage(prompt)
+	if len(params.Messages) > 0 && params.Messages[0].OfSystem != nil {
+		params.Messages[0] = sys
+		return
+	}
+	params.Messages = append([]openai.ChatCompletionMessageParamUnion{sys}, params.Messages...)
 }
 
 func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request, rc *requestContext, backendName string, params openai.ChatCompletionNewParams) {

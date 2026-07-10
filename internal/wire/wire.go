@@ -65,6 +65,7 @@ type Backend struct {
 type MapStageRequest struct {
 	Backend         string         `json:"backend"`
 	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	Prompt          string         `json:"prompt,omitempty"`
 	Labels          map[string]any `json:"labels,omitempty"`
 }
 
@@ -73,6 +74,7 @@ type MapStageRequest struct {
 type PatchStageRequest struct {
 	Backend         *string        `json:"backend,omitempty"`
 	ReasoningEffort *string        `json:"reasoning_effort,omitempty"`
+	Prompt          *string        `json:"prompt,omitempty"`
 	Labels          map[string]any `json:"labels,omitempty"`
 }
 
@@ -98,6 +100,7 @@ type Stage struct {
 	ID              string         `json:"id"`
 	Backend         string         `json:"backend"`
 	ReasoningEffort string         `json:"reasoning_effort"`
+	Prompt          string         `json:"prompt"`
 	Labels          map[string]any `json:"labels"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`

@@ -18,7 +18,7 @@ The handler runs these checks in order. Each is a 400 unless noted.
 2. **`messages` non-empty.**
 3. **Stage extracted.** From `X-Orla-Stage` header, falling back to `metadata.orla.stage` in the body. Missing returns 400.
 4. **Resolve backend.** `registry.GetOrCreate(stage)` auto-creates a default stage record on first sighting. If the request carries `X-Orla-Mapping` and that variant overrides this stage, use the variant's backend. Otherwise use `stage.Backend`. If that is empty, fall back to `req.Model`. If neither is set, return 400.
-5. **Apply inference policy** from the stage record. Currently just `reasoning_effort`.
+5. **Apply inference policy** from the stage record. This sets `reasoning_effort` and, when the stage has a `prompt`, substitutes it for the leading system message.
 6. **Convert messages and tools** to the internal model types.
 7. **Dispatch** via `LayerExecute`, then `BackendManager.ScheduleChat`, into the per-backend queue and a worker that calls the openai-go provider.
 8. **Encode response** as OpenAI chat completion or stream chunks.
@@ -34,6 +34,12 @@ This means a developer can deploy new agent code without coordinating with the p
 A mapping variant is a named, sparse set of per-stage backend overrides layered on the live stage mapping. A request selects a variant with the `X-Orla-Mapping` header, falling back to `metadata.orla.mapping`. When the variant overrides the request's stage, its backend wins. A stage absent from the variant falls through to the stage's live backend, so a candidate that differs from live on one stage is a single-entry variant.
 
 The optimizer uses variants for shadow testing. The live critical path sends no header and resolves the live mapping. A shadow request sends `X-Orla-Mapping` naming a candidate variant, so it runs the same workload under a different mapping without disturbing the live one. Both can stream concurrently because nothing mutates the live mapping. The variant name is recorded on each completion, so cost separates by mapping even when critical and shadow traffic interleave. Manage variants with `POST/GET/DELETE /api/v1/mappings`. See [`storage.md`](storage.md).
+
+## Stage prompt override
+
+A stage can carry a `prompt`. When it is non-empty the proxy substitutes it for the request's leading system message before forwarding. If the first message is a system message its content is replaced. Otherwise a system message is prepended. The rest of the conversation is untouched, so a tool-calling loop keeps its accumulated scratchpad and only the instructions change.
+
+The override is opt-in. A stage with an empty prompt forwards the client's messages verbatim, so an agent that does not want orla managing its prompt is unaffected. The contract is "the stage's prompt is the leading system message," which holds for a single-shot stage like a composer and for a multi-step loop whose every call repeats the same system message. An agent that hides its instructions in a user turn or a tool description should leave the stage prompt empty and apply the prompt itself. See [`prompts.md`](prompts.md).
 
 ## Identity tags become completion-record dimensions
 

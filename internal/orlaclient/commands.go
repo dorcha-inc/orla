@@ -215,10 +215,59 @@ func newStageCmd(client func() *Client) *cobra.Command {
 	cmd := &cobra.Command{Use: "stage", Short: "Manage stage mappings"}
 	cmd.AddCommand(
 		newStageMapCmd(client),
+		newStagePromptCmd(client),
 		newStageListCmd(client),
 		newStageGetCmd(client),
 		newStageRmCmd(client),
 	)
+	return cmd
+}
+
+func newStagePromptCmd(client func() *Client) *cobra.Command {
+	var file string
+	var clear bool
+	cmd := &cobra.Command{
+		Use:   "prompt STAGE [TEXT]",
+		Short: "Set or clear a stage's system-prompt override",
+		Long: "Set the prompt from TEXT, from a file with --file, or clear it " +
+			"with --clear. When set, the proxy substitutes this prompt for the " +
+			"leading system message on every call tagged with the stage.",
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var prompt string
+			switch {
+			case clear:
+				if file != "" || len(args) > 1 {
+					return fmt.Errorf("--clear takes no prompt text")
+				}
+			case file != "":
+				if len(args) > 1 {
+					return fmt.Errorf("pass prompt text or --file, not both")
+				}
+				b, err := os.ReadFile(file) //nolint:gosec // the path is an operator-supplied CLI flag
+				if err != nil {
+					return fmt.Errorf("read prompt file: %w", err)
+				}
+				prompt = string(b)
+			case len(args) == 2:
+				prompt = args[1]
+			default:
+				return fmt.Errorf("provide prompt text, --file, or --clear")
+			}
+			s, err := client().PatchStage(cmd.Context(), args[0], wire.PatchStageRequest{Prompt: &prompt})
+			if err != nil {
+				return err
+			}
+			if s.Prompt == "" {
+				fmt.Printf("cleared prompt for stage %q\n", s.ID)
+			} else {
+				fmt.Printf("set prompt for stage %q (%d chars)\n", s.ID, len(s.Prompt))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&file, "file", "f", "", "read the prompt from a file")
+	cmd.Flags().BoolVar(&clear, "clear", false, "clear the stage's prompt")
 	return cmd
 }
 
@@ -253,9 +302,13 @@ func newStageListCmd(client func() *Client) *cobra.Command {
 				return printJSON(ss)
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-			_, _ = fmt.Fprintln(tw, "STAGE\tBACKEND")
+			_, _ = fmt.Fprintln(tw, "STAGE\tBACKEND\tPROMPT")
 			for _, s := range ss {
-				_, _ = fmt.Fprintf(tw, "%s\t%s\n", s.ID, cmp.Or(s.Backend, "-"))
+				prompt := "-"
+				if s.Prompt != "" {
+					prompt = "set"
+				}
+				_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", s.ID, cmp.Or(s.Backend, "-"), prompt)
 			}
 			return tw.Flush()
 		},

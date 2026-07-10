@@ -632,3 +632,128 @@ func TestProxy_StreamingSmoke(t *testing.T) {
 			"must forward the upstream chunk verbatim, not emit zero-value fields strict clients reject")
 	}
 }
+
+// chatBodyMessages marshals a raw chat completion body with the given
+// messages, so a test can shape a system-message or tool-scratchpad
+// conversation the injection logic has to preserve.
+func chatBodyMessages(messages []map[string]any) []byte {
+	b, _ := json.Marshal(map[string]any{"model": "gpt-4o", "messages": messages})
+	return b
+}
+
+// sentMessages returns the messages the backend received on the first
+// (and here only) Chat call, decoded to plain maps for assertion.
+func sentMessages(t *testing.T, env *proxyEnv) []map[string]any {
+	t.Helper()
+	require.Equal(t, 1, env.mock.CallCount())
+	raw, err := json.Marshal(env.mock.Calls()[0].Messages)
+	require.NoError(t, err)
+	var out []map[string]any
+	require.NoError(t, json.Unmarshal(raw, &out))
+	return out
+}
+
+func TestProxy_StagePromptReplacesLeadingSystemMessage(t *testing.T) {
+	env := newProxyEnv(t)
+	_, err := env.stages.Replace(context.Background(), &stages.Stage{
+		ID: "answer", Backend: "gpt4o", Prompt: "OPTIMIZED",
+	})
+	require.NoError(t, err)
+
+	body := chatBodyMessages([]map[string]any{
+		{"role": "system", "content": "default prompt"},
+		{"role": "user", "content": "question"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set(HeaderStage, "answer")
+	rr := httptest.NewRecorder()
+	env.srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	got := sentMessages(t, env)
+	require.Len(t, got, 2)
+	assert.Equal(t, "system", got[0]["role"])
+	assert.Equal(t, "OPTIMIZED", got[0]["content"])
+	assert.Equal(t, "user", got[1]["role"])
+	assert.Equal(t, "question", got[1]["content"])
+}
+
+func TestProxy_StagePromptPrependsWhenNoSystemMessage(t *testing.T) {
+	env := newProxyEnv(t)
+	_, err := env.stages.Replace(context.Background(), &stages.Stage{
+		ID: "answer", Backend: "gpt4o", Prompt: "OPTIMIZED",
+	})
+	require.NoError(t, err)
+
+	body := chatBodyMessages([]map[string]any{
+		{"role": "user", "content": "question"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set(HeaderStage, "answer")
+	rr := httptest.NewRecorder()
+	env.srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	got := sentMessages(t, env)
+	require.Len(t, got, 2)
+	assert.Equal(t, "system", got[0]["role"])
+	assert.Equal(t, "OPTIMIZED", got[0]["content"])
+	assert.Equal(t, "user", got[1]["role"])
+}
+
+func TestProxy_NoStagePromptLeavesMessagesUntouched(t *testing.T) {
+	env := newProxyEnv(t)
+	_, err := env.stages.Replace(context.Background(), &stages.Stage{
+		ID: "answer", Backend: "gpt4o",
+	})
+	require.NoError(t, err)
+
+	body := chatBodyMessages([]map[string]any{
+		{"role": "system", "content": "default prompt"},
+		{"role": "user", "content": "question"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set(HeaderStage, "answer")
+	rr := httptest.NewRecorder()
+	env.srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	got := sentMessages(t, env)
+	require.Len(t, got, 2)
+	assert.Equal(t, "default prompt", got[0]["content"], "untouched when stage has no prompt")
+}
+
+// A ReAct step arrives as a system message plus an accumulated
+// scratchpad of user, assistant tool-call, and tool-result messages.
+// Only the system message may change, the scratchpad must survive.
+func TestProxy_StagePromptPreservesToolScratchpad(t *testing.T) {
+	env := newProxyEnv(t)
+	_, err := env.stages.Replace(context.Background(), &stages.Stage{
+		ID: "retrieval", Backend: "gpt4o", Prompt: "OPTIMIZED",
+	})
+	require.NoError(t, err)
+
+	body := chatBodyMessages([]map[string]any{
+		{"role": "system", "content": "default instructions"},
+		{"role": "user", "content": "find sources"},
+		{"role": "assistant", "content": "", "tool_calls": []map[string]any{{
+			"id": "call_1", "type": "function",
+			"function": map[string]any{"name": "searchEngine", "arguments": "{}"},
+		}}},
+		{"role": "tool", "tool_call_id": "call_1", "content": "a snippet"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set(HeaderStage, "retrieval")
+	rr := httptest.NewRecorder()
+	env.srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	got := sentMessages(t, env)
+	require.Len(t, got, 4)
+	assert.Equal(t, "system", got[0]["role"])
+	assert.Equal(t, "OPTIMIZED", got[0]["content"])
+	assert.Equal(t, "find sources", got[1]["content"])
+	assert.Equal(t, "assistant", got[2]["role"])
+	assert.Equal(t, "tool", got[3]["role"])
+	assert.Equal(t, "a snippet", got[3]["content"])
+}

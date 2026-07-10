@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -172,4 +173,82 @@ func TestStageHandlers_PutRejectsUnknownFields(t *testing.T) {
 	srv.Router().ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code,
 		"DisallowUnknownFields should reject typos")
+}
+
+func TestStageHandlers_PutSetsPrompt(t *testing.T) {
+	srv, reg := newStageTestServer(t)
+
+	body := mustJSON(t, map[string]any{"backend": "gpt-4o", "prompt": "You are a careful assistant."})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/stages/answer", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var got stages.Stage
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	assert.Equal(t, "You are a careful assistant.", got.Prompt)
+
+	stored, err := reg.Get(context.Background(), "answer")
+	require.NoError(t, err)
+	assert.Equal(t, "You are a careful assistant.", stored.Prompt)
+}
+
+func TestStageHandlers_PatchSetsPromptLeavingBackend(t *testing.T) {
+	srv, reg := newStageTestServer(t)
+	_, err := reg.Replace(context.Background(), &stages.Stage{ID: "answer", Backend: "gpt-4o"})
+	require.NoError(t, err)
+
+	body := mustJSON(t, map[string]any{"prompt": "new prompt"})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/stages/answer", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var got stages.Stage
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	assert.Equal(t, "new prompt", got.Prompt)
+	assert.Equal(t, "gpt-4o", got.Backend, "untouched field preserved")
+}
+
+func TestStageHandlers_PatchClearsPrompt(t *testing.T) {
+	srv, reg := newStageTestServer(t)
+	_, err := reg.Replace(context.Background(), &stages.Stage{ID: "answer", Backend: "gpt-4o", Prompt: "old"})
+	require.NoError(t, err)
+
+	body := mustJSON(t, map[string]any{"prompt": ""})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/stages/answer", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var got stages.Stage
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	assert.Empty(t, got.Prompt)
+}
+
+func TestStageHandlers_PutRejectsOversizePrompt(t *testing.T) {
+	srv, _ := newStageTestServer(t)
+
+	body := mustJSON(t, map[string]any{
+		"backend": "gpt-4o",
+		"prompt":  strings.Repeat("x", maxPromptLen+1),
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/stages/answer", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestStageHandlers_PatchRejectsOversizePrompt(t *testing.T) {
+	srv, reg := newStageTestServer(t)
+	_, err := reg.Replace(context.Background(), &stages.Stage{ID: "answer", Backend: "gpt-4o"})
+	require.NoError(t, err)
+
+	body := mustJSON(t, map[string]any{"prompt": strings.Repeat("x", maxPromptLen+1)})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/stages/answer", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }

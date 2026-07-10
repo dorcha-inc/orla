@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -38,6 +39,8 @@ func RegisterStageRoutes(r chi.Router, reg stages.Registry) {
 type stageHandler struct {
 	reg stages.Registry
 }
+
+const maxPromptLen = 10 << 20 // 10 MB
 
 func (h *stageHandler) list(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.reg.List(r.Context())
@@ -76,10 +79,16 @@ func (h *stageHandler) put(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
+	if len(body.Prompt) > maxPromptLen {
+		writeErrorMsg(w, http.StatusBadRequest,
+			fmt.Sprintf("prompt exceeds max length %d, got %d", maxPromptLen, len(body.Prompt)))
+		return
+	}
 	s, err := h.reg.Replace(r.Context(), &stages.Stage{
 		ID:              id,
 		Backend:         body.Backend,
 		ReasoningEffort: body.ReasoningEffort,
+		Prompt:          body.Prompt,
 		Labels:          body.Labels,
 	})
 	if err != nil {
@@ -97,6 +106,11 @@ func (h *stageHandler) patch(w http.ResponseWriter, r *http.Request) {
 	}
 	var body stages.PatchRequest
 	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if body.Prompt != nil && len(*body.Prompt) > maxPromptLen {
+		writeErrorMsg(w, http.StatusBadRequest,
+			fmt.Sprintf("prompt exceeds max length %d, got %d", maxPromptLen, len(*body.Prompt)))
 		return
 	}
 	s, err := h.reg.Patch(r.Context(), id, body)

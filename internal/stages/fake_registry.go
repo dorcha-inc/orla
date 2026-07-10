@@ -88,6 +88,7 @@ func (r *FakeRegistry) Replace(_ context.Context, s *Stage) (*Stage, error) {
 		ID:              s.ID,
 		Backend:         s.Backend,
 		ReasoningEffort: s.ReasoningEffort,
+		Prompt:          s.Prompt,
 		Labels:          cloneLabels(labels),
 		CreatedAt:       created,
 		UpdatedAt:       now,
@@ -109,6 +110,9 @@ func (r *FakeRegistry) Patch(_ context.Context, id string, p PatchRequest) (*Sta
 	}
 	if p.ReasoningEffort != nil {
 		updated.ReasoningEffort = *p.ReasoningEffort
+	}
+	if p.Prompt != nil {
+		updated.Prompt = *p.Prompt
 	}
 	if p.Labels != nil {
 		updated.Labels = cloneLabels(p.Labels)

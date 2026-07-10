@@ -111,6 +111,7 @@ func (r *PostgresRegistry) Replace(ctx context.Context, s *Stage) (*Stage, error
 		ID:              s.ID,
 		Backend:         s.Backend,
 		ReasoningEffort: s.ReasoningEffort,
+		Prompt:          s.Prompt,
 		Labels:          labelBytes,
 	})
 	if err != nil {
@@ -144,6 +145,9 @@ func (r *PostgresRegistry) Patch(ctx context.Context, id string, p PatchRequest)
 	if p.ReasoningEffort != nil {
 		current.ReasoningEffort = *p.ReasoningEffort
 	}
+	if p.Prompt != nil {
+		current.Prompt = *p.Prompt
+	}
 	if p.Labels != nil {
 		b, err := json.Marshal(p.Labels)
 		if err != nil {
@@ -156,6 +160,7 @@ func (r *PostgresRegistry) Patch(ctx context.Context, id string, p PatchRequest)
 		ID:              current.ID,
 		Backend:         current.Backend,
 		ReasoningEffort: current.ReasoningEffort,
+		Prompt:          current.Prompt,
 		Labels:          current.Labels,
 	})
 	if err != nil {
@@ -194,6 +199,7 @@ func toStage(row db.Stage) (*Stage, error) {
 		ID:              row.ID,
 		Backend:         row.Backend,
 		ReasoningEffort: row.ReasoningEffort,
+		Prompt:          row.Prompt,
 		Labels:          labels,
 		CreatedAt:       row.CreatedAt.Time,
 		UpdatedAt:       row.UpdatedAt.Time,

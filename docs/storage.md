@@ -37,13 +37,16 @@ CREATE TABLE stages (
     id                TEXT PRIMARY KEY,
     backend           TEXT NOT NULL DEFAULT '',
     reasoning_effort  TEXT NOT NULL DEFAULT '',
+    prompt            TEXT NOT NULL DEFAULT '',
     labels            JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 
-Auto-created on first sighting with empty fields. The platform engineer fills in `backend` and optionally `reasoning_effort` and `labels` via `PUT /api/v1/stages/{id}`.
+Auto-created on first sighting with empty fields. The platform engineer fills in `backend` and optionally `reasoning_effort`, `prompt`, and `labels` via `PUT /api/v1/stages/{id}`.
+
+`prompt` is the stage's system-prompt override. Empty is the "not set" state and the client's own prompt passes through untouched. When non-empty the proxy substitutes it for the leading system message. See [`prompts.md`](prompts.md).
 
 `labels` is intentionally free-form JSONB. The mapper encodes its own state there, such as last action timestamp, exploration flag, or arm-pull counters, without schema migrations. JSONB lets the mapper query directly:
 

@@ -65,6 +65,7 @@ func TestPostgresRegistry_GetOrCreate_AutoCreatesDefault(t *testing.T) {
 	assert.Equal(t, "planning", s.ID)
 	assert.Empty(t, s.Backend)
 	assert.Empty(t, s.ReasoningEffort)
+	assert.Empty(t, s.Prompt)
 	assert.Equal(t, map[string]any{}, s.Labels)
 	assert.False(t, s.CreatedAt.IsZero())
 }
@@ -101,6 +102,7 @@ func TestPostgresRegistry_ReplaceThenGet(t *testing.T) {
 		ID:              "planning",
 		Backend:         "gpt-4o",
 		ReasoningEffort: "high",
+		Prompt:          "You are a careful planner.",
 		Labels:          map[string]any{"owner": "core", "epsilon": 0.1},
 	}
 	_, err := reg.Replace(ctx, want)
@@ -110,6 +112,7 @@ func TestPostgresRegistry_ReplaceThenGet(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, want.Backend, got.Backend)
 	assert.Equal(t, want.ReasoningEffort, got.ReasoningEffort)
+	assert.Equal(t, want.Prompt, got.Prompt)
 	assert.Equal(t, "core", got.Labels["owner"])
 	// JSON numbers come back as float64.
 	assert.InDelta(t, 0.1, got.Labels["epsilon"], 0.0001)
@@ -124,6 +127,7 @@ func TestPostgresRegistry_Patch_PartialUpdate(t *testing.T) {
 		ID:              "planning",
 		Backend:         "gpt-4o",
 		ReasoningEffort: "low",
+		Prompt:          "seed prompt",
 		Labels:          map[string]any{"k": "v"},
 	})
 	require.NoError(t, err)
@@ -135,7 +139,14 @@ func TestPostgresRegistry_Patch_PartialUpdate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "gpt-4o-mini", got.Backend)
 	assert.Equal(t, "low", got.ReasoningEffort, "untouched field preserved")
+	assert.Equal(t, "seed prompt", got.Prompt, "untouched prompt preserved")
 	assert.Equal(t, "v", got.Labels["k"], "untouched labels preserved")
+
+	prompt := "patched prompt"
+	got, err = reg.Patch(ctx, "planning", stages.PatchRequest{Prompt: &prompt})
+	require.NoError(t, err)
+	assert.Equal(t, "patched prompt", got.Prompt)
+	assert.Equal(t, "gpt-4o-mini", got.Backend, "untouched backend preserved")
 }
 
 func TestPostgresRegistry_Patch_NotFound(t *testing.T) {
@@ -192,6 +203,11 @@ func TestFakeRegistry_BehavesLikePostgresAtTheBoundaries(t *testing.T) {
 
 	_, err = reg.Patch(ctx, "missing", stages.PatchRequest{})
 	assert.ErrorIs(t, err, stages.ErrNotFound)
+
+	prompt := "fake prompt"
+	patched, err := reg.Patch(ctx, "auto", stages.PatchRequest{Prompt: &prompt})
+	require.NoError(t, err)
+	assert.Equal(t, "fake prompt", patched.Prompt)
 
 	require.NoError(t, reg.Delete(ctx, "auto"))
 	assert.ErrorIs(t, reg.Delete(ctx, "auto"), stages.ErrNotFound)

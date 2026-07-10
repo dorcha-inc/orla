@@ -22,7 +22,7 @@ func (q *Queries) DeleteStage(ctx context.Context, id string) (int64, error) {
 }
 
 const getStage = `-- name: GetStage :one
-SELECT id, backend, reasoning_effort, labels, created_at, updated_at
+SELECT id, backend, reasoning_effort, labels, created_at, updated_at, prompt
 FROM stages
 WHERE id = $1
 `
@@ -37,12 +37,13 @@ func (q *Queries) GetStage(ctx context.Context, id string) (Stage, error) {
 		&i.Labels,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Prompt,
 	)
 	return i, err
 }
 
 const listStages = `-- name: ListStages :many
-SELECT id, backend, reasoning_effort, labels, created_at, updated_at
+SELECT id, backend, reasoning_effort, labels, created_at, updated_at, prompt
 FROM stages
 ORDER BY id
 `
@@ -63,6 +64,7 @@ func (q *Queries) ListStages(ctx context.Context) ([]Stage, error) {
 			&i.Labels,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Prompt,
 		); err != nil {
 			return nil, err
 		}
@@ -75,20 +77,22 @@ func (q *Queries) ListStages(ctx context.Context) ([]Stage, error) {
 }
 
 const replaceStage = `-- name: ReplaceStage :one
-INSERT INTO stages (id, backend, reasoning_effort, labels, updated_at)
-VALUES ($1, $2, $3, $4, now())
+INSERT INTO stages (id, backend, reasoning_effort, prompt, labels, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
 ON CONFLICT (id) DO UPDATE
 SET backend = EXCLUDED.backend,
     reasoning_effort = EXCLUDED.reasoning_effort,
+    prompt = EXCLUDED.prompt,
     labels = EXCLUDED.labels,
     updated_at = now()
-RETURNING id, backend, reasoning_effort, labels, created_at, updated_at
+RETURNING id, backend, reasoning_effort, labels, created_at, updated_at, prompt
 `
 
 type ReplaceStageParams struct {
 	ID              string
 	Backend         string
 	ReasoningEffort string
+	Prompt          string
 	Labels          []byte
 }
 
@@ -97,6 +101,7 @@ func (q *Queries) ReplaceStage(ctx context.Context, arg ReplaceStageParams) (Sta
 		arg.ID,
 		arg.Backend,
 		arg.ReasoningEffort,
+		arg.Prompt,
 		arg.Labels,
 	)
 	var i Stage
@@ -107,16 +112,17 @@ func (q *Queries) ReplaceStage(ctx context.Context, arg ReplaceStageParams) (Sta
 		&i.Labels,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Prompt,
 	)
 	return i, err
 }
 
 const upsertStageDefault = `-- name: UpsertStageDefault :one
-INSERT INTO stages (id, backend, reasoning_effort, labels)
-VALUES ($1, '', '', '{}'::jsonb)
+INSERT INTO stages (id, backend, reasoning_effort, prompt, labels)
+VALUES ($1, '', '', '', '{}'::jsonb)
 ON CONFLICT (id) DO UPDATE
 SET id = stages.id
-RETURNING id, backend, reasoning_effort, labels, created_at, updated_at
+RETURNING id, backend, reasoning_effort, labels, created_at, updated_at, prompt
 `
 
 // Auto-create a stage with empty fields on first sighting. If the row
@@ -134,6 +140,7 @@ func (q *Queries) UpsertStageDefault(ctx context.Context, id string) (Stage, err
 		&i.Labels,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Prompt,
 	)
 	return i, err
 }

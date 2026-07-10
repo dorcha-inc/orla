@@ -75,4 +75,5 @@ type Stage struct {
 	Labels          []byte
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+	Prompt          string
 }

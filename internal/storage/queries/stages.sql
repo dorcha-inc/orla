@@ -1,10 +1,10 @@
 -- name: GetStage :one
-SELECT id, backend, reasoning_effort, labels, created_at, updated_at
+SELECT id, backend, reasoning_effort, labels, created_at, updated_at, prompt
 FROM stages
 WHERE id = $1;
 
 -- name: ListStages :many
-SELECT id, backend, reasoning_effort, labels, created_at, updated_at
+SELECT id, backend, reasoning_effort, labels, created_at, updated_at, prompt
 FROM stages
 ORDER BY id;
 
@@ -14,21 +14,22 @@ ORDER BY id;
 -- returns them. (A bare ON CONFLICT DO NOTHING with RETURNING returns
 -- no row when the conflict fires, which loses the "fetch existing"
 -- behavior we want here.)
-INSERT INTO stages (id, backend, reasoning_effort, labels)
-VALUES ($1, '', '', '{}'::jsonb)
+INSERT INTO stages (id, backend, reasoning_effort, prompt, labels)
+VALUES ($1, '', '', '', '{}'::jsonb)
 ON CONFLICT (id) DO UPDATE
 SET id = stages.id
-RETURNING id, backend, reasoning_effort, labels, created_at, updated_at;
+RETURNING id, backend, reasoning_effort, labels, created_at, updated_at, prompt;
 
 -- name: ReplaceStage :one
-INSERT INTO stages (id, backend, reasoning_effort, labels, updated_at)
-VALUES ($1, $2, $3, $4, now())
+INSERT INTO stages (id, backend, reasoning_effort, prompt, labels, updated_at)
+VALUES ($1, $2, $3, $4, $5, now())
 ON CONFLICT (id) DO UPDATE
 SET backend = EXCLUDED.backend,
     reasoning_effort = EXCLUDED.reasoning_effort,
+    prompt = EXCLUDED.prompt,
     labels = EXCLUDED.labels,
     updated_at = now()
-RETURNING id, backend, reasoning_effort, labels, created_at, updated_at;
+RETURNING id, backend, reasoning_effort, labels, created_at, updated_at, prompt;
 
 -- name: DeleteStage :execrows
 DELETE FROM stages WHERE id = $1;

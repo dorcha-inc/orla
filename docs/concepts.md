@@ -62,6 +62,7 @@ A mapping is the answer to "which backend should serve stage X right now?". It l
   "id": "research",
   "backend": "qwen3-next-80b",
   "reasoning_effort": "",
+  "prompt": "",
   "labels": {}
 }
 ```
@@ -69,6 +70,12 @@ A mapping is the answer to "which backend should serve stage X right now?". It l
 Set it with `PUT /api/v1/stages/{id}`. Change it with `PATCH /api/v1/stages/{id}`. The next call on that stage uses the new mapping immediately.
 
 Mappings are persistent. Orla rehydrates them from Postgres on startup, so a restart does not lose the routing your mapper learned.
+
+## Stage prompts
+
+The stage record also carries a `prompt`. It is the second lever on how a stage behaves. The mapping decides which model serves the stage. The prompt decides the instructions that model runs under.
+
+When a stage's prompt is non-empty, orla substitutes it for the leading system message on every call tagged with that stage. The rest of the conversation is left alone. The override is opt-in, an empty prompt forwards the agent's own messages untouched. This lets a platform engineer or an optimizer manage a stage's prompt centrally, the same way they manage its backend, and change it without redeploying the agent. See [`prompts.md`](prompts.md).
 
 ## Mapping variants and shadow testing
 

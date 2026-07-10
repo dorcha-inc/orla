@@ -10,12 +10,13 @@ package stages
 import "time"
 
 // Stage is the persistent record for a single stage id. The zero
-// values for Backend, ReasoningEffort, and Labels are the "not yet
-// configured" state, auto-created on first sighting by the proxy.
+// values for Backend, ReasoningEffort, Prompt, and Labels are the "not
+// yet configured" state, auto-created on first sighting by the proxy.
 type Stage struct {
 	ID              string         `json:"id"`
 	Backend         string         `json:"backend"`
 	ReasoningEffort string         `json:"reasoning_effort"`
+	Prompt          string         `json:"prompt"`
 	Labels          map[string]any `json:"labels"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
@@ -28,5 +29,6 @@ type Stage struct {
 type PatchRequest struct {
 	Backend         *string        `json:"backend,omitempty"`
 	ReasoningEffort *string        `json:"reasoning_effort,omitempty"`
+	Prompt          *string        `json:"prompt,omitempty"`
 	Labels          map[string]any `json:"labels,omitempty"`
 }
