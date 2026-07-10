@@ -75,7 +75,7 @@ Mappings are persistent. Orla rehydrates them from Postgres on startup, so a res
 
 The stage record also carries a `prompt`. It is the second lever on how a stage behaves. The mapping decides which model serves the stage. The prompt decides the instructions that model runs under.
 
-When a stage's prompt is non-empty, orla substitutes it for the leading system message on every call tagged with that stage. The rest of the conversation is left alone. The override is opt-in, an empty prompt forwards the agent's own messages untouched. This lets a platform engineer or an optimizer manage a stage's prompt centrally, the same way they manage its backend, and change it without redeploying the agent. See [`prompts.md`](prompts.md).
+When a stage's prompt is non-empty, orla substitutes it for the leading instruction message, the system or developer message the request opens with, on every call tagged with that stage. The rest of the conversation is left alone. The override is opt-in, an empty prompt forwards the agent's own messages untouched. This lets a platform engineer or an optimizer manage a stage's prompt centrally, the same way they manage its backend, and change it without redeploying the agent. See [`prompts.md`](prompts.md).
 
 ## Mapping variants and shadow testing
 

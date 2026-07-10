@@ -8,7 +8,7 @@ backend runs under. This document covers the second lever.
 
 Every stage record has a `prompt` field. It is the stage's system-prompt
 override. Empty is the "not set" state. When it is non-empty, the proxy
-substitutes it for the request's leading system message before
+substitutes it for the request's leading instruction message before
 forwarding the call.
 
 The point is the same as the mapping. A platform engineer or an
@@ -19,22 +19,25 @@ leaves it alone when one is not.
 
 ## How the override applies
 
-The contract is "the stage's prompt is the leading system message." On a
-call tagged with a stage that has a non-empty prompt, orla does one of
-two things.
+The contract is "the stage's prompt is the leading instruction message."
+The instruction message is the system or developer message the request
+opens with. Both roles carry instructions, and SDKs differ on which one
+they emit, so orla treats either as the slot to override. On a call
+tagged with a stage that has a non-empty prompt, orla does one of two
+things.
 
-- If the first message is a system message, orla replaces its content
-  with the stage prompt.
-- If the first message is not a system message, orla prepends a system
-  message carrying the prompt.
+- If the first message is a system or developer message, orla replaces
+  its content with the stage prompt and keeps its role.
+- If the first message is neither, orla prepends a system message
+  carrying the prompt.
 
-Everything after the leading system message is untouched. A single-shot
-stage like a composer sends one system message and one user message, and
-orla swaps the first. A multi-step loop sends the same system message on
-every step alongside a growing scratchpad of user, assistant, and tool
-messages, and orla swaps that same system message on each step while the
-scratchpad survives. The instructions change. The accumulated reasoning
-does not.
+Everything after the leading instruction message is untouched. A
+single-shot stage like a composer sends one instruction message and one
+user message, and orla swaps the first. A multi-step loop sends the same
+instruction message on every step alongside a growing scratchpad of user,
+assistant, and tool messages, and orla swaps that message on each step
+while the scratchpad survives. The instructions change. The accumulated
+reasoning does not.
 
 ## Opt in per stage
 
@@ -44,10 +47,11 @@ the field existed. Nothing changes for an agent that does not want orla
 managing its prompt.
 
 Set a stage prompt only when the stage's instructions arrive as a clean
-leading system message. That holds for most single-instruction stages
-and for tool-calling loops whose framework puts the agent instructions
-in the system slot. It does not hold for an agent that folds its
-instructions into a user turn or into tool descriptions. For those, leave
+leading instruction message. That holds for most single-instruction
+stages and for tool-calling loops whose framework puts the agent
+instructions in the system or developer slot. It does not hold for an
+agent that folds its instructions into a user turn or into tool
+descriptions. For those, leave
 the stage prompt empty and let the agent apply the prompt itself. Routing
 a backend needs no cooperation from the agent, but replacing a prompt
 needs orla to know which message is the prompt, and only the agent knows

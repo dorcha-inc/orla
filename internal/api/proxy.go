@@ -194,18 +194,24 @@ func reattachJSONSchema(params *openai.ChatCompletionNewParams, body []byte) err
 }
 
 // applyStagePrompt substitutes the stage's prompt for the request's
-// leading system message. It replaces the first message when that is a
-// system message and prepends one otherwise. The rest of the
-// conversation is left untouched, so a tool-calling loop keeps its
-// accumulated scratchpad and only the instructions change. The caller
+// leading instruction message, the system or developer message SDKs use
+// for instructions. It replaces that message in place and keeps its
+// role, or prepends a system message when the first message is neither.
+// The rest of the conversation is left untouched, so a tool-calling loop
+// keeps its scratchpad and only the instructions change. The caller
 // guarantees prompt is non-empty.
 func applyStagePrompt(params *openai.ChatCompletionNewParams, prompt string) {
-	sys := openai.SystemMessage(prompt)
-	if len(params.Messages) > 0 && params.Messages[0].OfSystem != nil {
-		params.Messages[0] = sys
-		return
+	if len(params.Messages) > 0 {
+		switch {
+		case params.Messages[0].OfSystem != nil:
+			params.Messages[0] = openai.SystemMessage(prompt)
+			return
+		case params.Messages[0].OfDeveloper != nil:
+			params.Messages[0] = openai.DeveloperMessage(prompt)
+			return
+		}
 	}
-	params.Messages = append([]openai.ChatCompletionMessageParamUnion{sys}, params.Messages...)
+	params.Messages = append([]openai.ChatCompletionMessageParamUnion{openai.SystemMessage(prompt)}, params.Messages...)
 }
 
 func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request, rc *requestContext, backendName string, params openai.ChatCompletionNewParams) {

@@ -46,7 +46,7 @@ CREATE TABLE stages (
 
 Auto-created on first sighting with empty fields. The platform engineer fills in `backend` and optionally `reasoning_effort`, `prompt`, and `labels` via `PUT /api/v1/stages/{id}`.
 
-`prompt` is the stage's system-prompt override. Empty is the "not set" state and the client's own prompt passes through untouched. When non-empty the proxy substitutes it for the leading system message. See [`prompts.md`](prompts.md).
+`prompt` is the stage's system-prompt override. Empty is the "not set" state and the client's own prompt passes through untouched. When non-empty the proxy substitutes it for the leading instruction message, the system or developer message the request opens with. See [`prompts.md`](prompts.md).
 
 `labels` is intentionally free-form JSONB. The mapper encodes its own state there, such as last action timestamp, exploration flag, or arm-pull counters, without schema migrations. JSONB lets the mapper query directly:
 

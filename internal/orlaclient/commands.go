@@ -231,7 +231,7 @@ func newStagePromptCmd(client func() *Client) *cobra.Command {
 		Short: "Set or clear a stage's system-prompt override",
 		Long: "Set the prompt from TEXT, from a file with --file, or clear it " +
 			"with --clear. When set, the proxy substitutes this prompt for the " +
-			"leading system message on every call tagged with the stage.",
+			"leading instruction message on every call tagged with the stage.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var prompt string

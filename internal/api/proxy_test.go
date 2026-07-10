@@ -678,6 +678,31 @@ func TestProxy_StagePromptReplacesLeadingSystemMessage(t *testing.T) {
 	assert.Equal(t, "question", got[1]["content"])
 }
 
+// The Vercel AI SDK sends instructions as a developer message, not system.
+func TestProxy_StagePromptReplacesLeadingDeveloperMessage(t *testing.T) {
+	env := newProxyEnv(t)
+	_, err := env.stages.Replace(context.Background(), &stages.Stage{
+		ID: "answer", Backend: "gpt4o", Prompt: "OPTIMIZED",
+	})
+	require.NoError(t, err)
+
+	body := chatBodyMessages([]map[string]any{
+		{"role": "developer", "content": "default instructions"},
+		{"role": "user", "content": "question"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set(HeaderStage, "answer")
+	rr := httptest.NewRecorder()
+	env.srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	got := sentMessages(t, env)
+	require.Len(t, got, 2, "replaced in place, not prepended")
+	assert.Equal(t, "developer", got[0]["role"], "role preserved")
+	assert.Equal(t, "OPTIMIZED", got[0]["content"])
+	assert.Equal(t, "user", got[1]["role"])
+}
+
 func TestProxy_StagePromptPrependsWhenNoSystemMessage(t *testing.T) {
 	env := newProxyEnv(t)
 	_, err := env.stages.Replace(context.Background(), &stages.Stage{
