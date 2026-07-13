@@ -89,6 +89,7 @@ func (h *stageHandler) put(w http.ResponseWriter, r *http.Request) {
 		Backend:         body.Backend,
 		ReasoningEffort: body.ReasoningEffort,
 		Prompt:          body.Prompt,
+		CaptureIO:       body.CaptureIO,
 		Labels:          body.Labels,
 	})
 	if err != nil {

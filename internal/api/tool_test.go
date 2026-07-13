@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,12 +35,23 @@ func (m *mockTool) Invoke(_ context.Context, req provider.ToolRequest) (*provide
 }
 
 type recordingSink struct {
+	mu  sync.Mutex
 	got []*telemetry.CompletionRecord
 }
 
 func (s *recordingSink) Submit(rec *telemetry.CompletionRecord) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.got = append(s.got, rec)
 	return true
+}
+
+// records returns a snapshot of the submitted records under lock, safe to
+// call from a test goroutine while a server goroutine may still be writing.
+func (s *recordingSink) records() []*telemetry.CompletionRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]*telemetry.CompletionRecord(nil), s.got...)
 }
 
 func newToolTestEnv(t *testing.T, tool *mockTool, b *backends.Backend) (*Server, *backends.FakeRegistry, *recordingSink, *fakeProxyMetrics) {

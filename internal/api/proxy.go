@@ -84,6 +84,9 @@ type requestContext struct {
 	WorkflowRun string
 	Mapping     string
 	Tags        map[string]string
+
+	CaptureIO      bool
+	RequestContent string
 }
 
 func (h *proxyHandler) chatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +150,11 @@ func (h *proxyHandler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest,
 			fmt.Sprintf("stage %q has no backend mapping and request did not specify model", rc.Stage))
 		return
+	}
+
+	if stage.CaptureIO {
+		rc.CaptureIO = true
+		rc.RequestContent = string(body)
 	}
 
 	// Apply stage-level inference policy.
@@ -253,6 +261,12 @@ func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request,
 	prompt := int(resp.Usage.PromptTokens)
 	completion := int(resp.Usage.CompletionTokens)
 	costUSD := h.computeLLMCost(backendName, prompt, completion, completionID)
+	var responseContent string
+	if rc.CaptureIO {
+		if b, err := json.Marshal(resp); err == nil {
+			responseContent = string(b)
+		}
+	}
 	h.recordCompletion(&completionInputs{
 		completionID:     completionID,
 		rc:               rc,
@@ -262,6 +276,7 @@ func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request,
 		completionTokens: &completion,
 		latencyMs:        &latencyMs,
 		costUSD:          costUSD,
+		responseContent:  responseContent,
 	})
 	h.emitMetrics(rc.Stage, backendName, "success", latencyMs)
 
@@ -291,6 +306,7 @@ func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc
 	start := time.Now()
 	var completionID string
 	var promptTokens, completionTokens int
+	var captured strings.Builder
 
 	stream := p.ChatStream(r.Context(), params)
 	defer func() { _ = stream.Close() }()
@@ -313,6 +329,9 @@ func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc
 		}
 		if chunk.Usage.CompletionTokens > 0 {
 			completionTokens = int(chunk.Usage.CompletionTokens)
+		}
+		if rc.CaptureIO && len(chunk.Choices) > 0 {
+			captured.WriteString(chunk.Choices[0].Delta.Content)
 		}
 		data := rechunkWithModel(chunk.RawJSON(), modelJSON)
 		if _, werr := fmt.Fprintf(w, "data: %s\n\n", data); werr != nil {
@@ -371,6 +390,7 @@ func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc
 		completionTokens: ct,
 		latencyMs:        &latencyMs,
 		costUSD:          costUSD,
+		responseContent:  captured.String(),
 	})
 	h.emitMetrics(rc.Stage, backendName, "success", latencyMs)
 }
@@ -432,6 +452,7 @@ type completionInputs struct {
 	completionTokens *int
 	latencyMs        *int
 	costUSD          *float64
+	responseContent  string
 }
 
 // emitMetrics is a no-op when ProxyMetrics is nil.
@@ -460,6 +481,12 @@ func (h *proxyHandler) recordCompletion(in *completionInputs) {
 		Tags:             in.rc.Tags,
 		Mapping:          in.rc.Mapping,
 		CreatedAt:        time.Now(),
+	}
+	if in.rc.CaptureIO {
+		rec.IO = &telemetry.CapturedIO{
+			Request:  in.rc.RequestContent,
+			Response: in.responseContent,
+		}
 	}
 	_ = h.deps.CompletionSink.Submit(rec)
 }

@@ -141,3 +141,12 @@ func TestBatchWriterCollector_Emits(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 6, count)
 }
+
+type fakeIODropsStats struct{ ioDrops int64 }
+
+func (f *fakeIODropsStats) IODrops() int64 { return f.ioDrops }
+
+func TestCompletionIOCollector_Emits(t *testing.T) {
+	c := metrics.NewCompletionIOCollector(&fakeIODropsStats{ioDrops: 3})
+	assert.Equal(t, float64(3), testutil.ToFloat64(c))
+}

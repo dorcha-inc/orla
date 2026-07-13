@@ -180,6 +180,97 @@ func TestProxy_ComputesLLMCostUSD(t *testing.T) {
 	assert.InDelta(t, 2.5, *sink.got[0].CostUSD, 1e-9)
 }
 
+func TestProxy_CaptureIORecordsRequestAndResponse(t *testing.T) {
+	mock := provider.NewMockProvider().WithName("gpt4o").
+		WithResponse(&openai.ChatCompletion{
+			ID:    "chatcmpl-cap",
+			Model: "openai:gpt-4o",
+			Choices: []openai.ChatCompletionChoice{{
+				Message: openai.ChatCompletionMessage{Role: "assistant", Content: "the answer"},
+			}},
+		})
+	sched := scheduler.New(
+		func(b *backends.Backend) provider.Backend { return mock },
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	t.Cleanup(func() { _ = sched.Shutdown(context.Background()) })
+	sched.Register(&backends.Backend{
+		Name: "gpt4o", Endpoint: "x", ModelID: new("openai:gpt-4o"), MaxConcurrency: 2,
+	})
+
+	stageReg := stages.NewFakeRegistry()
+	_, err := stageReg.Replace(context.Background(), &stages.Stage{
+		ID: "composer", Backend: "gpt4o", CaptureIO: true,
+	})
+	require.NoError(t, err)
+
+	sink := &recordingSink{}
+	srv := NewServer(ServerConfig{
+		ListenAddress: "127.0.0.1:0",
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	RegisterProxyRoutes(srv.Router(), ProxyDeps{
+		Stages: stageReg, Scheduler: sched, CompletionSink: sink,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+		bytes.NewReader(bodyForChat("what is the answer")))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(HeaderStage, "composer")
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	require.Len(t, sink.got, 1)
+	rec := sink.got[0]
+	require.NotNil(t, rec.IO, "IO captured when capture_io on")
+	assert.Contains(t, rec.IO.Request, "what is the answer")
+	assert.Contains(t, rec.IO.Response, "the answer")
+}
+
+func TestProxy_CaptureIOOffLeavesIONil(t *testing.T) {
+	mock := provider.NewMockProvider().WithName("gpt4o").
+		WithResponse(&openai.ChatCompletion{
+			ID:      "chatcmpl-nocap",
+			Model:   "openai:gpt-4o",
+			Choices: []openai.ChatCompletionChoice{{Message: openai.ChatCompletionMessage{Role: "assistant", Content: "x"}}},
+		})
+	sched := scheduler.New(
+		func(b *backends.Backend) provider.Backend { return mock },
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	t.Cleanup(func() { _ = sched.Shutdown(context.Background()) })
+	sched.Register(&backends.Backend{
+		Name: "gpt4o", Endpoint: "x", ModelID: new("openai:gpt-4o"), MaxConcurrency: 2,
+	})
+
+	stageReg := stages.NewFakeRegistry()
+	_, err := stageReg.Replace(context.Background(), &stages.Stage{
+		ID: "composer", Backend: "gpt4o", // capture off by default
+	})
+	require.NoError(t, err)
+
+	sink := &recordingSink{}
+	srv := NewServer(ServerConfig{
+		ListenAddress: "127.0.0.1:0",
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	RegisterProxyRoutes(srv.Router(), ProxyDeps{
+		Stages: stageReg, Scheduler: sched, CompletionSink: sink,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+		bytes.NewReader(bodyForChat("hi")))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(HeaderStage, "composer")
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	require.Len(t, sink.got, 1)
+	assert.Nil(t, sink.got[0].IO)
+}
+
 func TestProxy_RequiresStageHeader(t *testing.T) {
 	env := newProxyEnv(t)
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
@@ -631,6 +722,78 @@ func TestProxy_StreamingSmoke(t *testing.T) {
 		assert.NotContains(t, c, `"role":""`,
 			"must forward the upstream chunk verbatim, not emit zero-value fields strict clients reject")
 	}
+}
+
+// TestProxy_StreamingCaptureAccumulatesContent checks that when a stage
+// has capture_io on, the proxy accumulates the streamed delta content and
+// records it as the response side of the completion_io row.
+func TestProxy_StreamingCaptureAccumulatesContent(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher := w.(http.Flusher)
+		chunks := []string{
+			`{"id":"chunk-1","object":"chat.completion.chunk","created":1,"model":"upstream","choices":[{"index":0,"delta":{"content":"hello"}}]}`,
+			`{"id":"chunk-2","object":"chat.completion.chunk","created":1,"model":"upstream","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":"stop"}]}`,
+		}
+		for _, c := range chunks {
+			_, _ = io.WriteString(w, "data: "+c+"\n\n")
+			flusher.Flush()
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	t.Cleanup(upstream.Close)
+
+	stageReg := stages.NewFakeRegistry()
+	_, err := stageReg.Replace(context.Background(), &stages.Stage{
+		ID: "composer", Backend: "real", CaptureIO: true,
+	})
+	require.NoError(t, err)
+
+	sched := scheduler.New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	sched.Register(&backends.Backend{
+		Name: "real", Endpoint: upstream.URL,
+		ModelID: new("openai:upstream"), MaxConcurrency: 1,
+	})
+	t.Cleanup(func() { _ = sched.Shutdown(context.Background()) })
+
+	sink := &recordingSink{}
+	srv := NewServer(ServerConfig{
+		ListenAddress: "127.0.0.1:0",
+		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WriteTimeout:  0,
+	})
+	RegisterProxyRoutes(srv.Router(), ProxyDeps{Stages: stageReg, Scheduler: sched, CompletionSink: sink})
+
+	ts := httptest.NewServer(srv.Router())
+	t.Cleanup(ts.Close)
+
+	body, _ := json.Marshal(map[string]any{
+		"model":    "upstream",
+		"stream":   true,
+		"messages": []map[string]string{{"role": "user", "content": "hi"}},
+	})
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(HeaderStage, "composer")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+
+	// recordCompletion runs on the server goroutine after the stream
+	// drains, so poll the sink rather than read it once.
+	require.Eventually(t, func() bool {
+		return len(sink.records()) == 1
+	}, 2*time.Second, 10*time.Millisecond)
+	rec := sink.records()[0]
+	require.NotNil(t, rec.IO)
+	assert.Contains(t, rec.IO.Request, `"content":"hi"`)
+	assert.Equal(t, "hello world", rec.IO.Response)
 }
 
 // chatBodyMessages marshals a raw chat completion body with the given

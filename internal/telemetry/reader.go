@@ -132,6 +132,42 @@ func (r *Reader) CostByMapping(ctx context.Context, since time.Time) ([]*Mapping
 	return out, nil
 }
 
+// CompletionIO is one captured stage of a workflow run. RequestContent
+// and ResponseContent are nil when the proxy captured only one side.
+type CompletionIO struct {
+	CompletionID    string    `json:"completion_id"`
+	WorkflowRun     string    `json:"workflow_run,omitempty"`
+	StageID         string    `json:"stage_id"`
+	RequestContent  *string   `json:"request_content,omitempty"`
+	ResponseContent *string   `json:"response_content,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// WorkflowIO returns the captured request and response content for every
+// captured stage of one workflow run, in stage order. Only stages with
+// capture_io on have rows, so an unconfigured run returns an empty slice.
+func (r *Reader) WorkflowIO(ctx context.Context, workflowRun string) ([]*CompletionIO, error) {
+	rows, err := r.queries.CompletionIOByWorkflowRun(ctx, &workflowRun)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry: workflow io: %w", err)
+	}
+	out := make([]*CompletionIO, 0, len(rows))
+	for _, row := range rows {
+		cio := &CompletionIO{
+			CompletionID:    row.CompletionID,
+			StageID:         row.StageID,
+			RequestContent:  row.RequestContent,
+			ResponseContent: row.ResponseContent,
+			CreatedAt:       row.CreatedAt.Time,
+		}
+		if row.WorkflowRun != nil {
+			cio.WorkflowRun = *row.WorkflowRun
+		}
+		out = append(out, cio)
+	}
+	return out, nil
+}
+
 func sinceParam(t time.Time) pgtype.Timestamptz {
 	if t.IsZero() {
 		return pgtype.Timestamptz{Valid: false}

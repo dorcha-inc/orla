@@ -138,6 +138,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"completion_records": completionWriter,
 		"feedback":           feedbackWriter,
 	}))
+	promReg.MustRegister(metrics.NewCompletionIOCollector(completionWriter))
 
 	api.RegisterProxyRoutes(srv.Router(), api.ProxyDeps{
 		Stages:         stageRegistry,

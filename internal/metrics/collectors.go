@@ -142,3 +142,37 @@ func (c *BatchWriterCollector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(c.failures, prometheus.CounterValue, float64(w.Failures()), kind)
 	}
 }
+
+// CompletionIODropsSource reports captured I/O rows lost to a failed
+// best-effort completion_io write.
+type CompletionIODropsSource interface {
+	IODrops() int64
+}
+
+// CompletionIOCollector emits the count of dropped captured I/O rows. It is
+// separate from BatchWriterCollector because the completion_io write rides
+// on the completion-records flush rather than its own buffered writer.
+type CompletionIOCollector struct {
+	src   CompletionIODropsSource
+	drops *prometheus.Desc
+}
+
+// NewCompletionIOCollector reads drops from the completion writer.
+func NewCompletionIOCollector(src CompletionIODropsSource) *CompletionIOCollector {
+	return &CompletionIOCollector{
+		src: src,
+		drops: prometheus.NewDesc(
+			"orla_completion_io_drops_total",
+			"Captured request and response rows dropped because the completion_io write failed.",
+			nil, nil,
+		),
+	}
+}
+
+func (c *CompletionIOCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.drops
+}
+
+func (c *CompletionIOCollector) Collect(ch chan<- prometheus.Metric) {
+	ch <- prometheus.MustNewConstMetric(c.drops, prometheus.CounterValue, float64(c.src.IODrops()))
+}
