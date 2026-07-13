@@ -60,6 +60,21 @@ func TestMetrics_PolicyDecisionsCounter(t *testing.T) {
 	assert.InDelta(t, 2.0, got, 1e-9)
 }
 
+func TestMetrics_CostAnomalyCounter(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := metrics.New(reg)
+
+	m.IncCostAnomaly("boltz")
+	m.IncCostAnomaly("boltz")
+	m.IncCostAnomaly("ad-vina")
+
+	got := testutil.ToFloat64(m.CostAnomalyTotal.WithLabelValues("boltz"))
+	assert.InDelta(t, 2.0, got, 1e-9)
+
+	gotOther := testutil.ToFloat64(m.CostAnomalyTotal.WithLabelValues("ad-vina"))
+	assert.InDelta(t, 1.0, gotOther, 1e-9)
+}
+
 type fakeStatsSource struct{ stats []scheduler.Stats }
 
 func (f *fakeStatsSource) Stats() []scheduler.Stats { return f.stats }

@@ -159,7 +159,7 @@ func (h *toolHandler) invoke(w http.ResponseWriter, r *http.Request) {
 	// Compute cost. If the tool reported its own cost directly, use
 	// that. Otherwise sum the dot product of reported usage with the
 	// backend's rates.
-	costUSD := computeToolCost(resp, bk.Rates, bk.Name, completionID)
+	costUSD := computeToolCost(resp, bk.Rates, bk.Name, completionID, h.deps.Metrics)
 
 	// Copy resp.Usage so the async telemetry writer can read it
 	// without aliasing the provider's response. Today's providers
@@ -240,10 +240,16 @@ func (h *toolHandler) recordToolCompletion(in *toolCompletionInputs) {
 // warning and returns nil. Silent zero would hide a misconfiguration
 // where the tool's reported keys do not match what the platform
 // engineer priced.
+//
+// A cost above toolCostAnomalyCeilingUSD is logged and counted as an
+// anomaly but still returned. Orla has no independent way to verify
+// tool-reported cost, so an implausible value is flagged for a human
+// to investigate, not silently dropped or corrected.
 func computeToolCost(
 	resp *provider.ToolResponse,
 	rates map[string]float64,
 	backendName, completionID string,
+	metrics ProxyMetrics,
 ) *float64 {
 	if resp == nil {
 		return nil
@@ -258,6 +264,7 @@ func computeToolCost(
 			)
 			return nil
 		}
+		flagIfCostAnomalous(metrics, backendName, completionID, c)
 		return &c
 	}
 	if len(resp.Usage) == 0 || len(rates) == 0 {
@@ -288,7 +295,33 @@ func computeToolCost(
 		)
 		return nil
 	}
+	flagIfCostAnomalous(metrics, backendName, completionID, total)
 	return &total
+}
+
+// toolCostAnomalyCeilingUSD is a sanity backstop, not a budget. A
+// value above this is more likely a bug or a misbehaving tool
+// wrapper than real spend, but orla has no independent way to verify
+// tool-reported cost, so it's flagged, not rejected. The reported
+// value is still recorded either way.
+const toolCostAnomalyCeilingUSD = 1000.0
+
+// flagIfCostAnomalous logs and counts a cost that exceeds the sanity
+// ceiling. It never changes what the caller records. computeToolCost
+// still returns the reported value either way.
+func flagIfCostAnomalous(metrics ProxyMetrics, backendName, completionID string, c float64) {
+	if c <= toolCostAnomalyCeilingUSD {
+		return
+	}
+	slog.Default().Warn("tool: reported cost exceeds sanity ceiling",
+		"backend", backendName,
+		"completion_id", completionID,
+		"cost_usd", c,
+		"ceiling_usd", toolCostAnomalyCeilingUSD,
+	)
+	if metrics != nil {
+		metrics.IncCostAnomaly(backendName)
+	}
 }
 
 func (h *toolHandler) emitMetrics(stage, backend, status string, latencyMs int) {
