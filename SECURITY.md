@@ -36,7 +36,7 @@ When deploying orla:
 
 ## known security considerations
 
-1. **No built-in auth.** The HTTP API trusts every caller. A reverse proxy or service mesh must enforce identity.
+1. **No built-in auth.** The HTTP API trusts every caller. A reverse proxy or service mesh must enforce identity, and must also authorize by path: `/api/v1/*` (control plane, backends, stages, mappings, scheduler policy) should generally be restricted to platform-engineer callers, separately from `/v1/*` (data plane). Authenticating the caller alone does not stop a data-plane caller from reaching control-plane routes, since orla itself applies no per-path authorization.
 2. **API key fan-out.** Orla holds outbound credentials for every backend. Compromise of the orla process exposes all of them.
 3. **Rate limiting is per-instance.** `rate_per_second` is enforced per orla process. Multiple replicas multiply the effective cap.
 4. **Tenant isolation is advisory.** Tenancy is carried by request headers such as `X-Orla-Tag-Tenant` and used for fair-share scheduling. It is not a security boundary on its own.
