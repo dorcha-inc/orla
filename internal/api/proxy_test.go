@@ -29,9 +29,10 @@ import (
 // fakeProxyMetrics is the hand-written ProxyMetrics recorder shared by
 // the proxy and tool handler tests.
 type fakeProxyMetrics struct {
-	mu         sync.Mutex
-	reqs       []string // "stage|backend|status"
-	rejections []string // "backend/reason"
+	mu            sync.Mutex
+	reqs          []string // "stage|backend|status"
+	rejections    []string // "backend/reason"
+	costAnomalies []string // "backend"
 }
 
 func (f *fakeProxyMetrics) IncRequest(stage, backend, status string) {
@@ -58,6 +59,18 @@ func (f *fakeProxyMetrics) rejectionsSnapshot() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.rejections...)
+}
+
+func (f *fakeProxyMetrics) IncCostAnomaly(backend string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.costAnomalies = append(f.costAnomalies, backend)
+}
+
+func (f *fakeProxyMetrics) costAnomaliesSnapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.costAnomalies...)
 }
 
 // proxyEnv wires up a fake stage registry and a real scheduler with a

@@ -98,3 +98,5 @@ Some requests fail before dispatch and never reach `completion_records`. These a
 The `chat/completions` route falls back to the client-supplied `model` field when a stage has no backend mapping, so an unknown backend name can be arbitrary client input. To keep the metric from minting unbounded label series, the `unknown_backend` case records a fixed `backend="unregistered"` label. The real name still appears in the error body and logs.
 
 These rejections do not increment `orla_requests_total`, which counts only requests that reach dispatch, so a total error rate must union both counters.
+
+Tool dispatches whose reported cost exceeds a $1,000 sanity ceiling are logged and counted in `orla_cost_anomaly_total{backend}`. The reported value is still recorded as-is either way. This isn't a rejection. It's a flag for a human to investigate, since orla has no independent way to verify a tool's self-reported cost.

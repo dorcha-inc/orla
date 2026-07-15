@@ -53,6 +53,7 @@ type ProxyMetrics interface {
 	IncRequest(stage, backend, status string)
 	ObserveBackendLatency(backend string, seconds float64)
 	IncSchedulerRejection(backend, reason string)
+	IncCostAnomaly(backend string)
 }
 
 // ProxyDeps bundles the dependencies of the proxy handler. Mappings
