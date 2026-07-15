@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/openai/openai-go v1.12.0
-	github.com/pressly/goose/v3 v3.27.1
+	github.com/pressly/goose/v3 v3.27.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/sethvargo/go-envconfig v1.3.0
 	github.com/spf13/cobra v1.10.2
@@ -49,8 +49,8 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
-	github.com/moby/moby/api v1.54.2 // indirect
-	github.com/moby/moby/client v0.4.1 // indirect
+	github.com/moby/moby/api v1.55.0 // indirect
+	github.com/moby/moby/client v0.5.0 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
@@ -82,8 +82,8 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
