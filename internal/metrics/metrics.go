@@ -21,7 +21,7 @@ type Metrics struct {
 	SchedulerRejectionsTotal *prometheus.CounterVec
 	PolicyDecisionsTotal     *prometheus.CounterVec
 	PolicyDecisionSeconds    *prometheus.HistogramVec
-	CostAnomalyTotal         *prometheus.CounterVec
+	ToolCostAnomalyTotal     *prometheus.CounterVec
 }
 
 // New constructs and registers all push-style metrics on reg.
@@ -79,10 +79,10 @@ func New(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"backend"},
 		),
-		CostAnomalyTotal: prometheus.NewCounterVec(
+		ToolCostAnomalyTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "orla",
-				Name:      "cost_anomaly_total",
+				Name:      "tool_cost_anomaly_total",
 				Help:      "Tool dispatches whose reported cost exceeded the sanity ceiling, by backend.",
 			},
 			[]string{"backend"},
@@ -95,7 +95,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		m.SchedulerRejectionsTotal,
 		m.PolicyDecisionsTotal,
 		m.PolicyDecisionSeconds,
-		m.CostAnomalyTotal,
+		m.ToolCostAnomalyTotal,
 	)
 	return m
 }
@@ -130,7 +130,7 @@ func (m *Metrics) ObservePolicyDecision(backend string, seconds float64) {
 	m.PolicyDecisionSeconds.WithLabelValues(backend).Observe(seconds)
 }
 
-// IncCostAnomaly is the api.ProxyMetrics adapter.
-func (m *Metrics) IncCostAnomaly(backend string) {
-	m.CostAnomalyTotal.WithLabelValues(backend).Inc()
+// IncToolCostAnomaly is the api.ProxyMetrics adapter.
+func (m *Metrics) IncToolCostAnomaly(backend string) {
+	m.ToolCostAnomalyTotal.WithLabelValues(backend).Inc()
 }

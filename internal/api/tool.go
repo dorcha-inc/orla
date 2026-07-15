@@ -229,22 +229,17 @@ func (h *toolHandler) recordToolCompletion(in *toolCompletionInputs) {
 // each (key, amount) in Usage of amount times the matching
 // Rates[key]. Returns nil when no usable cost signal is present.
 //
-// A reported CostUSD that is negative, NaN, or +/-Inf is dropped with
-// a logged warning rather than recorded verbatim, so a buggy upstream
-// cannot poison billing aggregates. The same drop policy applies to
-// dot-product results that come out non-finite (which is only
-// possible when usage or rate values are themselves non-finite, but
-// validation should have caught those upstream).
+// A negative, NaN, or infinite cost is dropped with a logged warning,
+// so a buggy upstream cannot poison billing aggregates. This covers
+// both a directly reported CostUSD and a non-finite dot-product result.
 //
 // When Usage and Rates have no overlapping keys, the function logs a
-// warning and returns nil. Silent zero would hide a misconfiguration
+// warning and returns nil. A silent zero would hide a misconfiguration
 // where the tool's reported keys do not match what the platform
 // engineer priced.
 //
-// A cost above toolCostAnomalyCeilingUSD is logged and counted as an
-// anomaly but still returned. Orla has no independent way to verify
-// tool-reported cost, so an implausible value is flagged for a human
-// to investigate, not silently dropped or corrected.
+// A cost above the sanity ceiling is flagged by flagIfCostAnomalous
+// and returned.
 func computeToolCost(
 	resp *provider.ToolResponse,
 	rates map[string]float64,
@@ -299,16 +294,15 @@ func computeToolCost(
 	return &total
 }
 
-// toolCostAnomalyCeilingUSD is a sanity backstop, not a budget. A
-// value above this is more likely a bug or a misbehaving tool
-// wrapper than real spend, but orla has no independent way to verify
-// tool-reported cost, so it's flagged, not rejected. The reported
-// value is still recorded either way.
+// toolCostAnomalyCeilingUSD is the threshold for flagging an
+// implausible tool-reported cost. A value above it usually means a bug
+// or a misbehaving tool wrapper. Orla cannot verify tool-reported cost
+// independently, so an anomalous value is recorded as usual and flagged
+// for a human to investigate.
 const toolCostAnomalyCeilingUSD = 1000.0
 
-// flagIfCostAnomalous logs and counts a cost that exceeds the sanity
-// ceiling. It never changes what the caller records. computeToolCost
-// still returns the reported value either way.
+// flagIfCostAnomalous logs and counts a cost above the sanity ceiling.
+// It never changes the returned cost.
 func flagIfCostAnomalous(metrics ProxyMetrics, backendName, completionID string, c float64) {
 	if c <= toolCostAnomalyCeilingUSD {
 		return
@@ -320,7 +314,7 @@ func flagIfCostAnomalous(metrics ProxyMetrics, backendName, completionID string,
 		"ceiling_usd", toolCostAnomalyCeilingUSD,
 	)
 	if metrics != nil {
-		metrics.IncCostAnomaly(backendName)
+		metrics.IncToolCostAnomaly(backendName)
 	}
 }
 

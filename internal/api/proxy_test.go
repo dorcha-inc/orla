@@ -61,7 +61,7 @@ func (f *fakeProxyMetrics) rejectionsSnapshot() []string {
 	return append([]string(nil), f.rejections...)
 }
 
-func (f *fakeProxyMetrics) IncCostAnomaly(backend string) {
+func (f *fakeProxyMetrics) IncToolCostAnomaly(backend string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.costAnomalies = append(f.costAnomalies, backend)

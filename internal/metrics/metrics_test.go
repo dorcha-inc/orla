@@ -64,14 +64,14 @@ func TestMetrics_CostAnomalyCounter(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := metrics.New(reg)
 
-	m.IncCostAnomaly("boltz")
-	m.IncCostAnomaly("boltz")
-	m.IncCostAnomaly("ad-vina")
+	m.IncToolCostAnomaly("boltz")
+	m.IncToolCostAnomaly("boltz")
+	m.IncToolCostAnomaly("ad-vina")
 
-	got := testutil.ToFloat64(m.CostAnomalyTotal.WithLabelValues("boltz"))
+	got := testutil.ToFloat64(m.ToolCostAnomalyTotal.WithLabelValues("boltz"))
 	assert.InDelta(t, 2.0, got, 1e-9)
 
-	gotOther := testutil.ToFloat64(m.CostAnomalyTotal.WithLabelValues("ad-vina"))
+	gotOther := testutil.ToFloat64(m.ToolCostAnomalyTotal.WithLabelValues("ad-vina"))
 	assert.InDelta(t, 1.0, gotOther, 1e-9)
 }
 

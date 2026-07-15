@@ -99,4 +99,4 @@ The `chat/completions` route falls back to the client-supplied `model` field whe
 
 These rejections do not increment `orla_requests_total`, which counts only requests that reach dispatch, so a total error rate must union both counters.
 
-Tool dispatches whose reported cost exceeds a $1,000 sanity ceiling are logged and counted in `orla_cost_anomaly_total{backend}`. The reported value is still recorded as-is either way. This isn't a rejection. It's a flag for a human to investigate, since orla has no independent way to verify a tool's self-reported cost.
+Tool dispatches whose reported cost exceeds a $1,000 sanity ceiling are logged and counted in `orla_tool_cost_anomaly_total{backend}`, and still recorded as-is. Orla has no independent way to verify a tool's self-reported cost, so the counter flags an implausible value for a human to investigate.
