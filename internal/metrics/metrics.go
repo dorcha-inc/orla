@@ -15,12 +15,13 @@ import (
 // Metrics is the set of push-style counters/histograms emitted by
 // proxy and feedback handlers.
 type Metrics struct {
-	RequestsTotal            *prometheus.CounterVec
-	BackendLatency           *prometheus.HistogramVec
-	FeedbackTotal            *prometheus.CounterVec
-	SchedulerRejectionsTotal *prometheus.CounterVec
-	PolicyDecisionsTotal     *prometheus.CounterVec
-	PolicyDecisionSeconds    *prometheus.HistogramVec
+	RequestsTotal              *prometheus.CounterVec
+	BackendLatency             *prometheus.HistogramVec
+	FeedbackTotal              *prometheus.CounterVec
+	SchedulerRejectionsTotal   *prometheus.CounterVec
+	PolicyDecisionsTotal       *prometheus.CounterVec
+	PolicyDecisionSeconds      *prometheus.HistogramVec
+	ControlPlaneMutationsTotal *prometheus.CounterVec
 }
 
 // New constructs and registers all push-style metrics on reg.
@@ -78,6 +79,14 @@ func New(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"backend"},
 		),
+		ControlPlaneMutationsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "orla",
+				Name:      "control_plane_mutations_total",
+				Help:      "Mutating requests to the /api/v1 control plane, by resource, method, and outcome (success|error).",
+			},
+			[]string{"resource", "method", "outcome"},
+		),
 	}
 	reg.MustRegister(
 		m.RequestsTotal,
@@ -86,6 +95,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		m.SchedulerRejectionsTotal,
 		m.PolicyDecisionsTotal,
 		m.PolicyDecisionSeconds,
+		m.ControlPlaneMutationsTotal,
 	)
 	return m
 }
@@ -118,4 +128,9 @@ func (m *Metrics) IncPolicyDecision(backend, outcome string) {
 // ObservePolicyDecision is the scheduler.PolicyMetrics adapter.
 func (m *Metrics) ObservePolicyDecision(backend string, seconds float64) {
 	m.PolicyDecisionSeconds.WithLabelValues(backend).Observe(seconds)
+}
+
+// IncControlPlaneMutation is the api.ControlPlaneAuditMetrics adapter.
+func (m *Metrics) IncControlPlaneMutation(resource, method, outcome string) {
+	m.ControlPlaneMutationsTotal.WithLabelValues(resource, method, outcome).Inc()
 }
