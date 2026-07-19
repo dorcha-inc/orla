@@ -29,7 +29,7 @@ func newMappingTestServer(t *testing.T) (*Server, *mappings.FakeRegistry) {
 		ListenAddress: "127.0.0.1:0",
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	RegisterMappingRoutes(srv.Router(), reg)
+	RegisterMappingRoutes(srv.Router(), reg, nil)
 	return srv, reg
 }
 
@@ -101,6 +101,32 @@ func TestMappingHandlers_DeleteThenGone(t *testing.T) {
 	rr = httptest.NewRecorder()
 	srv.Router().ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+// TestMappingHandlers_PutWithAuditMiddlewareRecordsMutation wires a real
+// AuditControlPlaneMutations middleware through RegisterMappingRoutes,
+// proving the r.Use inside the route block actually fires end to end
+// rather than just testing the middleware in isolation.
+func TestMappingHandlers_PutWithAuditMiddlewareRecordsMutation(t *testing.T) {
+	reg := mappings.NewFakeRegistry()
+	metrics := &fakeControlPlaneAuditMetrics{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := NewServer(ServerConfig{
+		ListenAddress: "127.0.0.1:0",
+		Logger:        logger,
+	})
+	RegisterMappingRoutes(srv.Router(), reg, AuditControlPlaneMutations(logger, metrics))
+
+	body := mustJSON(t, map[string]any{
+		"name":      "cand",
+		"overrides": map[string]string{"queryBuilder": "gpt-4.1"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mappings", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code)
+	assert.Equal(t, []string{"mappings|POST|success"}, metrics.snapshot())
 }
 
 // newVariantProxyEnv wires a proxy with two backends and a mappings

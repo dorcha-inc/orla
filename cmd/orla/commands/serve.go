@@ -115,16 +115,19 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Ready:             store.Ping,
 		PromRegistry:      promReg,
 	})
-	api.RegisterStageRoutes(srv.Router(), stageRegistry)
-	api.RegisterMappingRoutes(srv.Router(), mappingRegistry)
+	auditMW := api.AuditControlPlaneMutations(logger, m)
+	api.RegisterStageRoutes(srv.Router(), stageRegistry, auditMW)
+	api.RegisterMappingRoutes(srv.Router(), mappingRegistry, auditMW)
 	api.RegisterSchedulerRoutes(srv.Router(), api.SchedulerDeps{
-		Store:     policyStore,
-		Scheduler: sched,
+		Store:           policyStore,
+		Scheduler:       sched,
+		AuditMiddleware: auditMW,
 	})
 	api.RegisterBackendRoutes(srv.Router(), api.BackendDeps{
-		Registry:  backendRegistry,
-		Lifecycle: sched,
-		Manager:   sched,
+		Registry:        backendRegistry,
+		Lifecycle:       sched,
+		Manager:         sched,
+		AuditMiddleware: auditMW,
 	})
 	completionWriter := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{
 		Pool:   store.Pool(),

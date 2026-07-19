@@ -17,9 +17,12 @@ import (
 //	GET    /api/v1/mappings         list
 //	GET    /api/v1/mappings/{name}  read one
 //	DELETE /api/v1/mappings/{name}  remove
-func RegisterMappingRoutes(r chi.Router, reg mappings.Registry) {
+func RegisterMappingRoutes(r chi.Router, reg mappings.Registry, auditMW func(http.Handler) http.Handler) {
 	h := &mappingHandler{reg: reg}
 	r.Route("/api/v1/mappings", func(r chi.Router) {
+		if auditMW != nil {
+			r.Use(auditMW)
+		}
 		r.Post("/", h.put)
 		r.Get("/", h.list)
 		r.Route("/{name}", func(r chi.Router) {
