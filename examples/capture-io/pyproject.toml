@@ -1,0 +1,22 @@
+[project]
+name = "orla-example-capture-io"
+version = "0.1.0"
+description = "Capture per-stage request and response I/O through Orla and read it back."
+requires-python = ">=3.10"
+dependencies = [
+    "openai==2.44.0",
+    "pydantic==2.13.4",
+]
+
+[dependency-groups]
+dev = [
+    "ruff==0.15.20",
+    "ty==0.0.55",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

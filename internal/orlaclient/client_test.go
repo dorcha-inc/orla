@@ -14,8 +14,6 @@ import (
 	"github.com/harvard-cns/orla/internal/wire"
 )
 
-func strptr(s string) *string { return &s }
-
 func TestClient_CreateBackend(t *testing.T) {
 	var gotMethod, gotPath, gotContentType string
 	var gotBody wire.CreateBackendRequest
@@ -23,7 +21,7 @@ func TestClient_CreateBackend(t *testing.T) {
 		gotMethod, gotPath, gotContentType = r.Method, r.URL.Path, r.Header.Get("Content-Type")
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(wire.Backend{Name: gotBody.Name, Kind: "llm", ModelID: strptr(gotBody.ModelID)})
+		_ = json.NewEncoder(w).Encode(wire.Backend{Name: gotBody.Name, Kind: "llm", ModelID: new(gotBody.ModelID)})
 	}))
 	defer srv.Close()
 

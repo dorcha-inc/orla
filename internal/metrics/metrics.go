@@ -22,6 +22,7 @@ type Metrics struct {
 	PolicyDecisionsTotal       *prometheus.CounterVec
 	PolicyDecisionSeconds      *prometheus.HistogramVec
 	ControlPlaneMutationsTotal *prometheus.CounterVec
+	ToolCostAnomalyTotal       *prometheus.CounterVec
 }
 
 // New constructs and registers all push-style metrics on reg.
@@ -87,6 +88,14 @@ func New(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"resource", "method", "outcome"},
 		),
+		ToolCostAnomalyTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "orla",
+				Name:      "tool_cost_anomaly_total",
+				Help:      "Tool dispatches whose reported cost exceeded the sanity ceiling, by backend.",
+			},
+			[]string{"backend"},
+		),
 	}
 	reg.MustRegister(
 		m.RequestsTotal,
@@ -96,6 +105,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		m.PolicyDecisionsTotal,
 		m.PolicyDecisionSeconds,
 		m.ControlPlaneMutationsTotal,
+		m.ToolCostAnomalyTotal,
 	)
 	return m
 }
@@ -133,4 +143,9 @@ func (m *Metrics) ObservePolicyDecision(backend string, seconds float64) {
 // IncControlPlaneMutation is the api.ControlPlaneAuditMetrics adapter.
 func (m *Metrics) IncControlPlaneMutation(resource, method, outcome string) {
 	m.ControlPlaneMutationsTotal.WithLabelValues(resource, method, outcome).Inc()
+}
+
+// IncToolCostAnomaly is the api.ProxyMetrics adapter.
+func (m *Metrics) IncToolCostAnomaly(backend string) {
+	m.ToolCostAnomalyTotal.WithLabelValues(backend).Inc()
 }

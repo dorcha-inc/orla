@@ -38,15 +38,18 @@ CREATE TABLE stages (
     backend           TEXT NOT NULL DEFAULT '',
     reasoning_effort  TEXT NOT NULL DEFAULT '',
     prompt            TEXT NOT NULL DEFAULT '',
+    capture_io        BOOLEAN NOT NULL DEFAULT false,
     labels            JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 
-Auto-created on first sighting with empty fields. The platform engineer fills in `backend` and optionally `reasoning_effort`, `prompt`, and `labels` via `PUT /api/v1/stages/{id}`.
+Auto-created on first sighting with empty fields. The platform engineer fills in `backend` and optionally `reasoning_effort`, `prompt`, `capture_io`, and `labels` via `PUT /api/v1/stages/{id}`.
 
 `prompt` is the stage's system-prompt override. Empty is the "not set" state and the client's own prompt passes through untouched. When non-empty the proxy substitutes it for the leading instruction message, the system or developer message the request opens with. See [`prompts.md`](prompts.md).
+
+`capture_io` is a per-stage switch that turns request and response capture on. It is off by default. When on, the proxy records the request and response content of every call tagged with the stage into the separate `completion_io` table. This is a diagnostic aid for attributing an outcome to one stage, not part of the metadata write path. Toggle it at runtime with `orlactl stage capture STAGE on`.
 
 `labels` is intentionally free-form JSONB. The mapper encodes its own state there, such as last action timestamp, exploration flag, or arm-pull counters, without schema migrations. JSONB lets the mapper query directly:
 
@@ -136,6 +139,28 @@ LLM rows populate `prompt_tokens` and `completion_tokens` and leave `usage` as t
 
 A GIN index on `tags` is not added by default. Most mapper queries filter on `stage_id` first, which the b-tree already covers. Add `CREATE INDEX idx_completion_tags ON completion_records USING gin (tags)` if profiling shows tag-filtered queries are hot.
 
+### `completion_io`
+
+Captured request and response content, isolated from the metadata channel.
+
+```sql
+CREATE TABLE completion_io (
+    completion_id    TEXT PRIMARY KEY,
+    workflow_run     TEXT,
+    stage_id         TEXT NOT NULL,
+    request_content  TEXT,
+    response_content TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_completion_io_workflow ON completion_io(workflow_run) WHERE workflow_run IS NOT NULL;
+```
+
+One row per dispatch whose stage has `capture_io` on. Stages with capture off contribute no rows, so this table stays empty until an operator opts a stage in. Content lives here rather than on `completion_records` so the two have separate access control, retention, and purge. There is no foreign key to `completion_records`. The `completion_id` link is soft, which avoids coupling this best-effort write to the ordering of the async metadata write. `workflow_run` and `stage_id` are denormalized so one workflow run's captured I/O is a single indexed query, served by `GET /api/v1/workflows/{run}/completions`.
+
+`request_content` is the raw request body. `response_content` is the full response JSON on the non-streaming path and the concatenated assistant text on the streaming path. Either side is NULL when the proxy captured only the other, for example an errored call that never produced a response.
+
+The write is best-effort. A failure to insert here logs and moves on. It never rolls back or blocks the metadata write. Rows lost this way are counted in the `orla_completion_io_drops_total` Prometheus metric, so an operator running a capture can tell whether any content is being dropped.
+
 ### `feedback`
 
 ```sql
@@ -203,6 +228,9 @@ CREATE ROLE orla_reader LOGIN PASSWORD '...';
 GRANT CONNECT ON DATABASE orla TO orla_reader;
 GRANT USAGE ON SCHEMA public TO orla_reader;
 GRANT SELECT ON stages, backends, mapping_variants, completion_records, feedback TO orla_reader;
+-- completion_io holds captured request and response bodies. Grant it
+-- separately so a reader that only needs metrics never sees content.
+GRANT SELECT ON completion_io TO orla_reader;
 ```
 
 The REST API stays authoritative for common patterns. Direct SQL is the escape hatch for heavy analytical queries that do not deserve a new endpoint.

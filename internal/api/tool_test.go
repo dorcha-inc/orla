@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,12 +36,23 @@ func (m *mockTool) Invoke(_ context.Context, req provider.ToolRequest) (*provide
 }
 
 type recordingSink struct {
+	mu  sync.Mutex
 	got []*telemetry.CompletionRecord
 }
 
 func (s *recordingSink) Submit(rec *telemetry.CompletionRecord) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.got = append(s.got, rec)
 	return true
+}
+
+// records returns a snapshot of the submitted records under lock, safe to
+// call from a test goroutine while a server goroutine may still be writing.
+func (s *recordingSink) records() []*telemetry.CompletionRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]*telemetry.CompletionRecord(nil), s.got...)
 }
 
 func newToolTestEnv(t *testing.T, tool *mockTool, b *backends.Backend) (*Server, *backends.FakeRegistry, *recordingSink, *fakeProxyMetrics) {
@@ -147,6 +160,7 @@ func TestTool_InvokeSuccess(t *testing.T) {
 	reqs := metrics.requestsSnapshot()
 	require.Len(t, reqs, 1)
 	assert.Equal(t, "predict|boltz|success", reqs[0])
+	assert.Empty(t, metrics.costAnomaliesSnapshot(), "cost is well within the sanity ceiling")
 }
 
 func TestTool_RequiresStageHeader(t *testing.T) {
@@ -287,4 +301,112 @@ func TestTool_SchedulerUnknownBackendRecordsRejectionMetric(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadGateway, rr.Code, rr.Body.String())
 	assert.Equal(t, []string{unregisteredBackendLabel + "/unknown_backend"}, metrics.rejectionsSnapshot())
+}
+
+func TestComputeToolCost_Outcomes(t *testing.T) {
+	tests := []struct {
+		name          string
+		resp          *provider.ToolResponse
+		rates         map[string]float64
+		wantCost      *float64
+		wantAnomalous bool
+	}{
+		{
+			name:     "reported cost within ceiling",
+			resp:     &provider.ToolResponse{CostUSD: new(5.0)},
+			wantCost: new(5.0),
+		},
+		{
+			name:          "reported cost exceeds ceiling but is still returned",
+			resp:          &provider.ToolResponse{CostUSD: new(toolCostAnomalyCeilingUSD + 0.01)},
+			wantCost:      new(toolCostAnomalyCeilingUSD + 0.01),
+			wantAnomalous: true,
+		},
+		{
+			name:     "dot product within ceiling",
+			resp:     &provider.ToolResponse{Usage: map[string]float64{"gpu_seconds": 5.0}},
+			rates:    map[string]float64{"gpu_seconds": 0.001},
+			wantCost: new(0.005),
+		},
+		{
+			name:          "dot product exceeds ceiling but is still returned",
+			resp:          &provider.ToolResponse{Usage: map[string]float64{"gpu_seconds": 2_000_000}},
+			rates:         map[string]float64{"gpu_seconds": 0.001},
+			wantCost:      new(2000.0),
+			wantAnomalous: true,
+		},
+		{
+			name:     "nil response",
+			resp:     nil,
+			wantCost: nil,
+		},
+		{
+			name:     "non-finite reported cost is dropped, not flagged",
+			resp:     &provider.ToolResponse{CostUSD: new(math.NaN())},
+			wantCost: nil,
+		},
+		{
+			name:     "negative reported cost is dropped, not flagged",
+			resp:     &provider.ToolResponse{CostUSD: new(-1.0)},
+			wantCost: nil,
+		},
+		{
+			name:     "usage keys do not overlap rates",
+			resp:     &provider.ToolResponse{Usage: map[string]float64{"calls": 1}},
+			rates:    map[string]float64{"gpu_seconds": 0.001},
+			wantCost: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeProxyMetrics{}
+			got := computeToolCost(tt.resp, tt.rates, "boltz", "cmpl-1", fake)
+			if tt.wantCost == nil {
+				assert.Nil(t, got)
+			} else {
+				require.NotNil(t, got)
+				assert.InDelta(t, *tt.wantCost, *got, 1e-9)
+			}
+			if tt.wantAnomalous {
+				assert.Equal(t, []string{"boltz"}, fake.costAnomaliesSnapshot())
+			} else {
+				assert.Empty(t, fake.costAnomaliesSnapshot())
+			}
+		})
+	}
+}
+
+// TestFlagIfCostAnomalous_Boundary covers the exact edge of the
+// ceiling comparison (<=), which TestComputeToolCost_Outcomes's cases
+// don't pin down. Those use values clearly above or clearly below.
+func TestFlagIfCostAnomalous_Boundary(t *testing.T) {
+	tests := []struct {
+		name          string
+		cost          float64
+		wantAnomalous bool
+	}{
+		{name: "just below ceiling", cost: toolCostAnomalyCeilingUSD - 0.01, wantAnomalous: false},
+		{name: "exactly at ceiling", cost: toolCostAnomalyCeilingUSD, wantAnomalous: false},
+		{name: "just above ceiling", cost: toolCostAnomalyCeilingUSD + 0.01, wantAnomalous: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeProxyMetrics{}
+			flagIfCostAnomalous(fake, "boltz", "cmpl-1", tt.cost)
+			if tt.wantAnomalous {
+				assert.Equal(t, []string{"boltz"}, fake.costAnomaliesSnapshot())
+			} else {
+				assert.Empty(t, fake.costAnomaliesSnapshot())
+			}
+		})
+	}
+}
+
+// TestFlagIfCostAnomalous_NilMetrics confirms the nil-metrics guard
+// doesn't panic, matching the same gap already covered for
+// statusForSchedulerErr's identical nil-check shape.
+func TestFlagIfCostAnomalous_NilMetrics(t *testing.T) {
+	assert.NotPanics(t, func() {
+		flagIfCostAnomalous(nil, "boltz", "cmpl-1", toolCostAnomalyCeilingUSD+1)
+	})
 }

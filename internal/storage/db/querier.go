@@ -11,6 +11,9 @@ import (
 )
 
 type Querier interface {
+	// Captured request and response content for every captured stage of one
+	// workflow run, in stage order. Written only for stages with capture_io on.
+	CompletionIOByWorkflowRun(ctx context.Context, workflowRun *string) ([]CompletionIo, error)
 	// Total cost and dispatch count grouped by mapping variant, optionally
 	// filtered by created_at > since. The live critical path aggregates
 	// under the empty mapping, each shadow variant under its own name.

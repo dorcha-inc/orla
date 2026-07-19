@@ -63,6 +63,7 @@ A mapping is the answer to "which backend should serve stage X right now?". It l
   "backend": "qwen3-next-80b",
   "reasoning_effort": "",
   "prompt": "",
+  "capture_io": false,
   "labels": {}
 }
 ```
@@ -76,6 +77,12 @@ Mappings are persistent. Orla rehydrates them from Postgres on startup, so a res
 The stage record also carries a `prompt`. It is the second lever on how a stage behaves. The mapping decides which model serves the stage. The prompt decides the instructions that model runs under.
 
 When a stage's prompt is non-empty, orla substitutes it for the leading instruction message, the system or developer message the request opens with, on every call tagged with that stage. The rest of the conversation is left alone. The override is opt-in, an empty prompt forwards the agent's own messages untouched. This lets a platform engineer or an optimizer manage a stage's prompt centrally, the same way they manage its backend, and change it without redeploying the agent. See [`prompts.md`](prompts.md).
+
+## Capturing stage I/O
+
+The stage record carries one more knob, `capture_io`. It is off by default. When an operator turns it on for a stage, orla records the request and response content of every call tagged with that stage, keyed by completion and grouped by workflow run. Turn it on with `orlactl stage capture STAGE on`, read a run's captured I/O with `GET /api/v1/workflows/{run}/completions`, and turn it off when the investigation is done.
+
+This is for attribution. The metadata channel tells you a stage was slow or expensive. Capture tells you what that stage actually saw and produced, so you can tell a retrieval miss from a composer mistake. Content is stored in a separate table with its own access control and retention, and the capture write never blocks or fails the call. See [`proxy.md`](proxy.md) and [`storage.md`](storage.md).
 
 ## Mapping variants and shadow testing
 

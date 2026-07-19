@@ -73,6 +73,21 @@ func TestMetrics_PolicyDecisionsCounter(t *testing.T) {
 	assert.InDelta(t, 2.0, got, 1e-9)
 }
 
+func TestMetrics_CostAnomalyCounter(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := metrics.New(reg)
+
+	m.IncToolCostAnomaly("boltz")
+	m.IncToolCostAnomaly("boltz")
+	m.IncToolCostAnomaly("ad-vina")
+
+	got := testutil.ToFloat64(m.ToolCostAnomalyTotal.WithLabelValues("boltz"))
+	assert.InDelta(t, 2.0, got, 1e-9)
+
+	gotOther := testutil.ToFloat64(m.ToolCostAnomalyTotal.WithLabelValues("ad-vina"))
+	assert.InDelta(t, 1.0, gotOther, 1e-9)
+}
+
 type fakeStatsSource struct{ stats []scheduler.Stats }
 
 func (f *fakeStatsSource) Stats() []scheduler.Stats { return f.stats }
@@ -153,4 +168,13 @@ func TestBatchWriterCollector_Emits(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, 6, count)
+}
+
+type fakeIODropsStats struct{ ioDrops int64 }
+
+func (f *fakeIODropsStats) IODrops() int64 { return f.ioDrops }
+
+func TestCompletionIOCollector_Emits(t *testing.T) {
+	c := metrics.NewCompletionIOCollector(&fakeIODropsStats{ioDrops: 3})
+	assert.Equal(t, float64(3), testutil.ToFloat64(c))
 }

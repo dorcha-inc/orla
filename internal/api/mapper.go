@@ -18,6 +18,7 @@ type MapperReader interface {
 	ListStageFeedback(ctx context.Context, stageID string, since time.Time, limit int32) ([]*telemetry.Feedback, error)
 	StageMetrics(ctx context.Context, stageID string, since time.Time) ([]*telemetry.CompletionMetrics, error)
 	CostByMapping(ctx context.Context, since time.Time) ([]*telemetry.MappingCost, error)
+	WorkflowIO(ctx context.Context, workflowRun string) ([]*telemetry.CompletionIO, error)
 }
 
 // MapperDeps bundles the mapper read-endpoint dependencies.
@@ -45,6 +46,7 @@ func RegisterMapperRoutes(r chi.Router, deps MapperDeps) {
 	r.Get("/api/v1/stages/{id}/feedback", h.listFeedback)
 	r.Get("/api/v1/stages/{id}/metrics", h.metrics)
 	r.Get("/api/v1/costs", h.costByMapping)
+	r.Get("/api/v1/workflows/{run}/completions", h.workflowIO)
 }
 
 type mapperHandler struct {
@@ -115,6 +117,23 @@ func (h *mapperHandler) costByMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"costs": rows})
+}
+
+// workflowIO serves GET /api/v1/workflows/{run}/completions, the captured
+// request and response content for every captured stage of one workflow
+// run. Stages without capture_io on contribute no rows.
+func (h *mapperHandler) workflowIO(w http.ResponseWriter, r *http.Request) {
+	run := chi.URLParam(r, "run")
+	if run == "" {
+		writeErrorMsg(w, http.StatusBadRequest, "run is required")
+		return
+	}
+	rows, err := h.deps.Reader.WorkflowIO(r.Context(), run)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"completions": rows})
 }
 
 // parseSince reads ?since=<rfc3339>. Empty means no filter (zero time).

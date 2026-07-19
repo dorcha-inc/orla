@@ -55,6 +55,14 @@ Every dispatched request results in one row in `completion_records` with the fol
 
 This is the mapper's primary observation channel. See [`storage.md`](storage.md).
 
+## Per-stage request and response capture
+
+A stage can carry `capture_io`. When it is on the proxy records the request and response content of every call tagged with the stage into the `completion_io` table, keyed by `completion_id` and grouped by `workflow_run`. It is off by default, so no content is stored until an operator opts a stage in with `orlactl stage capture STAGE on`.
+
+Capture is a diagnostic aid, not part of the metadata write path. It answers "what did this one stage see and produce on this workflow run" when attributing an outcome to a stage. The content lives in a separate table with its own access control and retention, and the write is best-effort. A capture that fails to store logs and moves on without touching the metadata write or the response to the client.
+
+The request side is the raw request body. The response side is the full response JSON for a non-streaming call and the concatenated assistant text for a streaming call, accumulated from the delta chunks only when capture is on. Read one workflow run's captured I/O with `GET /api/v1/workflows/{run}/completions`. See [`storage.md`](storage.md).
+
 ## Streaming semantics
 
 For `stream: true`:
@@ -90,3 +98,5 @@ Some requests fail before dispatch and never reach `completion_records`. These a
 The `chat/completions` route falls back to the client-supplied `model` field when a stage has no backend mapping, so an unknown backend name can be arbitrary client input. To keep the metric from minting unbounded label series, the `unknown_backend` case records a fixed `backend="unregistered"` label. The real name still appears in the error body and logs.
 
 These rejections do not increment `orla_requests_total`, which counts only requests that reach dispatch, so a total error rate must union both counters.
+
+Tool dispatches whose reported cost exceeds a $1,000 sanity ceiling are logged and counted in `orla_tool_cost_anomaly_total{backend}`, and still recorded as-is. Orla has no independent way to verify a tool's self-reported cost, so the counter flags an implausible value for a human to investigate.

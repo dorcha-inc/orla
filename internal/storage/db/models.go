@@ -25,6 +25,15 @@ type Backend struct {
 	UpdatedAt           pgtype.Timestamptz
 }
 
+type CompletionIo struct {
+	CompletionID    string
+	WorkflowRun     *string
+	StageID         string
+	RequestContent  *string
+	ResponseContent *string
+	CreatedAt       pgtype.Timestamptz
+}
+
 type CompletionRecord struct {
 	CompletionID     string
 	StageID          string
@@ -76,4 +85,5 @@ type Stage struct {
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
 	Prompt          string
+	CaptureIo       bool
 }

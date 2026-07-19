@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -44,6 +45,17 @@ type CompletionRecord struct {
 	Tags             map[string]string  `json:"tags,omitempty"`
 	Mapping          string             `json:"mapping,omitempty"`
 	CreatedAt        time.Time          `json:"created_at"`
+
+	// IO is non-nil only when the stage has capture_io on.
+	IO *CapturedIO `json:"-"`
+}
+
+// CapturedIO is the request and response content the proxy captured for one
+// completion. It is written to the separate completion_io table, keyed by the
+// completion id and grouped by workflow run, never to completion_records.
+type CapturedIO struct {
+	Request  string
+	Response string
 }
 
 // CompletionWriterConfig is the input to NewCompletionWriter.
@@ -59,7 +71,8 @@ type CompletionWriterConfig struct {
 // completion records. Submit is non-blocking, overflows are dropped
 // and counted in Drops.
 type CompletionWriter struct {
-	bw *storage.BatchWriter[*CompletionRecord]
+	bw      *storage.BatchWriter[*CompletionRecord]
+	ioDrops atomic.Int64
 }
 
 // NewCompletionWriter starts a background flusher that uses pgx.CopyFrom
@@ -68,15 +81,16 @@ func NewCompletionWriter(cfg CompletionWriterConfig) *CompletionWriter {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	bw := storage.NewBatchWriter[*CompletionRecord](storage.BatchWriterConfig[*CompletionRecord]{
+	w := &CompletionWriter{}
+	w.bw = storage.NewBatchWriter(storage.BatchWriterConfig[*CompletionRecord]{
 		Name:       "completion_records",
 		BufferSize: cfg.BufferSize,
 		BatchSize:  cfg.BatchSize,
 		Interval:   cfg.Interval,
-		Flush:      flushCompletions(cfg.Pool, cfg.Logger),
+		Flush:      flushCompletions(cfg.Pool, cfg.Logger, &w.ioDrops),
 		Logger:     cfg.Logger,
 	})
-	return &CompletionWriter{bw: bw}
+	return w
 }
 
 // Submit enqueues a record. Returns false if the writer is closed or
@@ -94,12 +108,16 @@ func (w *CompletionWriter) Flushes() int64 { return w.bw.Flushes() }
 // Failures returns the cumulative count of failed flush attempts.
 func (w *CompletionWriter) Failures() int64 { return w.bw.Failures() }
 
+// IODrops returns the cumulative count of captured completion_io rows lost
+// to a failed best-effort write. Metadata writes are unaffected.
+func (w *CompletionWriter) IODrops() int64 { return w.ioDrops.Load() }
+
 // Close drains the buffer and waits for the final flush, bounded by ctx.
 func (w *CompletionWriter) Close(ctx context.Context) error {
 	return w.bw.Close(ctx)
 }
 
-func flushCompletions(pool *pgxpool.Pool, logger *slog.Logger) storage.FlushFunc[*CompletionRecord] {
+func flushCompletions(pool *pgxpool.Pool, logger *slog.Logger, ioDrops *atomic.Int64) storage.FlushFunc[*CompletionRecord] {
 	columns := []string{
 		"completion_id", "stage_id", "workflow_run", "backend", "status",
 		"prompt_tokens", "completion_tokens", "latency_ms", "cost_usd",
@@ -142,7 +160,51 @@ func flushCompletions(pool *pgxpool.Pool, logger *slog.Logger) storage.FlushFunc
 		if err != nil {
 			return fmt.Errorf("copy completions: %w", err)
 		}
+
+		flushCompletionIO(ctx, conn.Conn(), items, logger, ioDrops)
 		return nil
+	}
+}
+
+var completionIOColumns = []string{
+	"completion_id", "workflow_run", "stage_id",
+	"request_content", "response_content", "created_at",
+}
+
+// flushCompletionIO writes captured request and response content into the
+// separate completion_io table. It is best-effort. A failure here logs and
+// returns without touching the metadata write, which has already committed.
+func flushCompletionIO(ctx context.Context, conn *pgx.Conn, items []*CompletionRecord, logger *slog.Logger, ioDrops *atomic.Int64) {
+	rows := make([][]any, 0)
+	for _, rec := range items {
+		if rec.IO == nil {
+			continue
+		}
+		rows = append(rows, []any{
+			rec.CompletionID,
+			nullableString(rec.WorkflowRun),
+			rec.StageID,
+			nullableString(rec.IO.Request),
+			nullableString(rec.IO.Response),
+			rec.CreatedAt,
+		})
+	}
+	if len(rows) == 0 {
+		return
+	}
+	_, err := conn.CopyFrom(ctx,
+		pgx.Identifier{"completion_io"},
+		completionIOColumns,
+		pgx.CopyFromRows(rows),
+	)
+	if err != nil {
+		ioDrops.Add(int64(len(rows)))
+		if logger != nil {
+			logger.Warn("telemetry: dropping captured completion_io batch",
+				"rows", len(rows),
+				"error", err.Error(),
+			)
+		}
 	}
 }
 

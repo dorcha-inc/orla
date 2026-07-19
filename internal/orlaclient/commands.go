@@ -216,11 +216,44 @@ func newStageCmd(client func() *Client) *cobra.Command {
 	cmd.AddCommand(
 		newStageMapCmd(client),
 		newStagePromptCmd(client),
+		newStageCaptureCmd(client),
 		newStageListCmd(client),
 		newStageGetCmd(client),
 		newStageRmCmd(client),
 	)
 	return cmd
+}
+
+func newStageCaptureCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "capture STAGE {on|off}",
+		Short: "Toggle per-stage request and response capture",
+		Long: "Turn capture_io on or off for a stage. When on, the proxy stores " +
+			"the request and response content of every call tagged with the stage " +
+			"in the completion_io table, readable per workflow run. Off by default.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var on bool
+			switch args[1] {
+			case "on":
+				on = true
+			case "off":
+				on = false
+			default:
+				return fmt.Errorf("second argument must be on or off, got %q", args[1])
+			}
+			s, err := client().PatchStage(cmd.Context(), args[0], wire.PatchStageRequest{CaptureIO: &on})
+			if err != nil {
+				return err
+			}
+			state := "off"
+			if s.CaptureIO {
+				state = "on"
+			}
+			fmt.Printf("capture for stage %q is %s\n", s.ID, state)
+			return nil
+		},
+	}
 }
 
 func newStagePromptCmd(client func() *Client) *cobra.Command {
@@ -302,13 +335,17 @@ func newStageListCmd(client func() *Client) *cobra.Command {
 				return printJSON(ss)
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-			_, _ = fmt.Fprintln(tw, "STAGE\tBACKEND\tPROMPT")
+			_, _ = fmt.Fprintln(tw, "STAGE\tBACKEND\tPROMPT\tCAPTURE")
 			for _, s := range ss {
 				prompt := "-"
 				if s.Prompt != "" {
 					prompt = "set"
 				}
-				_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", s.ID, cmp.Or(s.Backend, "-"), prompt)
+				capture := "off"
+				if s.CaptureIO {
+					capture = "on"
+				}
+				_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", s.ID, cmp.Or(s.Backend, "-"), prompt, capture)
 			}
 			return tw.Flush()
 		},

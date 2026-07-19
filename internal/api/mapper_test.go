@@ -24,6 +24,7 @@ type fakeReader struct {
 	feedback    map[string][]*telemetry.Feedback
 	metrics     map[string][]*telemetry.CompletionMetrics
 	costs       []*telemetry.MappingCost
+	workflowIO  map[string][]*telemetry.CompletionIO
 	err         error
 }
 
@@ -85,12 +86,22 @@ func (f *fakeReader) CostByMapping(_ context.Context, _ time.Time) ([]*telemetry
 	return f.costs, nil
 }
 
+func (f *fakeReader) WorkflowIO(_ context.Context, run string) ([]*telemetry.CompletionIO, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.workflowIO[run], nil
+}
+
 func newMapperTestServer(t *testing.T) (*Server, *fakeReader) {
 	t.Helper()
 	r := &fakeReader{
 		completions: map[string][]*telemetry.CompletionRecord{},
 		feedback:    map[string][]*telemetry.Feedback{},
 		metrics:     map[string][]*telemetry.CompletionMetrics{},
+		workflowIO:  map[string][]*telemetry.CompletionIO{},
 	}
 	srv := NewServer(ServerConfig{
 		ListenAddress: "127.0.0.1:0",
@@ -117,6 +128,43 @@ func TestMapper_ListCompletions(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
 	assert.Len(t, body.Completions, 2)
+}
+
+func TestMapper_WorkflowIO(t *testing.T) {
+	srv, r := newMapperTestServer(t)
+	reqC, respC := `{"messages":[]}`, `{"choices":[]}`
+	r.workflowIO["wf-1"] = []*telemetry.CompletionIO{
+		{CompletionID: "a", WorkflowRun: "wf-1", StageID: "retrieval", RequestContent: &reqC, CreatedAt: time.Now()},
+		{CompletionID: "b", WorkflowRun: "wf-1", StageID: "composer", ResponseContent: &respC, CreatedAt: time.Now()},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workflows/wf-1/completions", nil)
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var body struct {
+		Completions []*telemetry.CompletionIO `json:"completions"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Completions, 2)
+	assert.Equal(t, "retrieval", body.Completions[0].StageID)
+	require.NotNil(t, body.Completions[0].RequestContent)
+	assert.Equal(t, "composer", body.Completions[1].StageID)
+	require.NotNil(t, body.Completions[1].ResponseContent)
+}
+
+func TestMapper_WorkflowIO_Empty(t *testing.T) {
+	srv, _ := newMapperTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workflows/unknown/completions", nil)
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var body struct {
+		Completions []*telemetry.CompletionIO `json:"completions"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Empty(t, body.Completions)
 }
 
 func TestMapper_ListCompletions_RespectsLimit(t *testing.T) {

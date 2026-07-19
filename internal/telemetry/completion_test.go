@@ -115,6 +115,61 @@ func TestCompletionWriter_RoundTrip(t *testing.T) {
 	assert.Contains(t, string(tags), `"tenant"`)
 }
 
+func TestCompletionWriter_CaptureIORoundTrip(t *testing.T) {
+	pool := freshPool(t)
+	w := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{
+		Pool:      pool,
+		BatchSize: 2,
+		Interval:  50 * time.Millisecond,
+	})
+	t.Cleanup(func() { _ = w.Close(context.Background()) })
+
+	// One captured record, one uncaptured. Both land in
+	// completion_records, only the captured one lands in completion_io.
+	require.True(t, w.Submit(&telemetry.CompletionRecord{
+		CompletionID: "cap-1",
+		StageID:      "composer",
+		WorkflowRun:  "wf-cap",
+		Backend:      "gpt4o",
+		Status:       "success",
+		CreatedAt:    time.Now(),
+		IO: &telemetry.CapturedIO{
+			Request:  `{"messages":[{"role":"user","content":"hi"}]}`,
+			Response: `{"choices":[{"message":{"content":"hello"}}]}`,
+		},
+	}))
+	require.True(t, w.Submit(&telemetry.CompletionRecord{
+		CompletionID: "nocap-1",
+		StageID:      "composer",
+		WorkflowRun:  "wf-cap",
+		Backend:      "gpt4o",
+		Status:       "success",
+		CreatedAt:    time.Now(),
+	}))
+	waitForFlush(t, w, 1)
+
+	reader := telemetry.NewReader(pool)
+	ios, err := reader.WorkflowIO(context.Background(), "wf-cap")
+	require.NoError(t, err)
+	require.Len(t, ios, 1, "only the captured stage is stored")
+	assert.Equal(t, "cap-1", ios[0].CompletionID)
+	assert.Equal(t, "composer", ios[0].StageID)
+	assert.Equal(t, "wf-cap", ios[0].WorkflowRun)
+	require.NotNil(t, ios[0].RequestContent)
+	assert.Contains(t, *ios[0].RequestContent, "hi")
+	require.NotNil(t, ios[0].ResponseContent)
+	assert.Contains(t, *ios[0].ResponseContent, "hello")
+
+	// The metadata row for the uncaptured record still exists.
+	var count int
+	row := pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM completion_records WHERE completion_id = $1`, "nocap-1")
+	require.NoError(t, row.Scan(&count))
+	assert.Equal(t, 1, count)
+
+	assert.Zero(t, w.IODrops(), "a successful capture write drops nothing")
+}
+
 func TestReader_CostByMapping(t *testing.T) {
 	pool := freshPool(t)
 	w := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{

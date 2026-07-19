@@ -103,6 +103,7 @@ func TestPostgresRegistry_ReplaceThenGet(t *testing.T) {
 		Backend:         "gpt-4o",
 		ReasoningEffort: "high",
 		Prompt:          "You are a careful planner.",
+		CaptureIO:       true,
 		Labels:          map[string]any{"owner": "core", "epsilon": 0.1},
 	}
 	_, err := reg.Replace(ctx, want)
@@ -113,6 +114,7 @@ func TestPostgresRegistry_ReplaceThenGet(t *testing.T) {
 	assert.Equal(t, want.Backend, got.Backend)
 	assert.Equal(t, want.ReasoningEffort, got.ReasoningEffort)
 	assert.Equal(t, want.Prompt, got.Prompt)
+	assert.True(t, got.CaptureIO)
 	assert.Equal(t, "core", got.Labels["owner"])
 	// JSON numbers come back as float64.
 	assert.InDelta(t, 0.1, got.Labels["epsilon"], 0.0001)
@@ -147,6 +149,31 @@ func TestPostgresRegistry_Patch_PartialUpdate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "patched prompt", got.Prompt)
 	assert.Equal(t, "gpt-4o-mini", got.Backend, "untouched backend preserved")
+}
+
+func TestPostgresRegistry_Patch_CaptureIO(t *testing.T) {
+	pool := freshStore(t)
+	reg := stages.NewPostgresRegistry(pool)
+	ctx := context.Background()
+
+	created, err := reg.GetOrCreate(ctx, "composer")
+	require.NoError(t, err)
+	assert.False(t, created.CaptureIO, "capture defaults off")
+
+	on := true
+	got, err := reg.Patch(ctx, "composer", stages.PatchRequest{CaptureIO: &on})
+	require.NoError(t, err)
+	assert.True(t, got.CaptureIO)
+
+	off := false
+	got, err = reg.Patch(ctx, "composer", stages.PatchRequest{CaptureIO: &off})
+	require.NoError(t, err)
+	assert.False(t, got.CaptureIO)
+
+	prompt := "unrelated"
+	got, err = reg.Patch(ctx, "composer", stages.PatchRequest{Prompt: &prompt})
+	require.NoError(t, err)
+	assert.False(t, got.CaptureIO, "capture untouched by an unrelated patch")
 }
 
 func TestPostgresRegistry_Patch_NotFound(t *testing.T) {
@@ -208,6 +235,12 @@ func TestFakeRegistry_BehavesLikePostgresAtTheBoundaries(t *testing.T) {
 	patched, err := reg.Patch(ctx, "auto", stages.PatchRequest{Prompt: &prompt})
 	require.NoError(t, err)
 	assert.Equal(t, "fake prompt", patched.Prompt)
+
+	on := true
+	patched, err = reg.Patch(ctx, "auto", stages.PatchRequest{CaptureIO: &on})
+	require.NoError(t, err)
+	assert.True(t, patched.CaptureIO)
+	assert.Equal(t, "fake prompt", patched.Prompt, "capture patch leaves prompt")
 
 	require.NoError(t, reg.Delete(ctx, "auto"))
 	assert.ErrorIs(t, reg.Delete(ctx, "auto"), stages.ErrNotFound)
