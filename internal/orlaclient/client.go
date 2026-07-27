@@ -176,6 +176,21 @@ func (c *Client) SetSchedulerPolicy(ctx context.Context, req wire.SchedulerPolic
 	return p, err
 }
 
+// GetStageMapper returns the active stage mapper.
+func (c *Client) GetStageMapper(ctx context.Context) (wire.StageMapper, error) {
+	var p wire.StageMapper
+	err := c.do(ctx, http.MethodGet, "/api/v1/stage-mapper", nil, &p)
+	return p, err
+}
+
+// SetStageMapper replaces the active stage mapper. An empty URL
+// reverts to static stage routing.
+func (c *Client) SetStageMapper(ctx context.Context, req wire.StageMapper) (wire.StageMapper, error) {
+	var p wire.StageMapper
+	err := c.do(ctx, http.MethodPut, "/api/v1/stage-mapper", req, &p)
+	return p, err
+}
+
 // GetCostPolicy returns the active cost policy.
 func (c *Client) GetCostPolicy(ctx context.Context) (wire.CostPolicy, error) {
 	var p wire.CostPolicy

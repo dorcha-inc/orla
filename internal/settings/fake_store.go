@@ -29,6 +29,30 @@ func (s *FakePolicyStore) Set(_ context.Context, cfg PolicyConfig) error {
 	return nil
 }
 
+// FakeMapperStore is an in-memory MapperStore for tests. The zero
+// value is ready to use and returns the static-routing default until
+// Set is called.
+type FakeMapperStore struct {
+	mu  sync.Mutex
+	cfg MapperConfig
+}
+
+// Compile-time interface check.
+var _ MapperStore = (*FakeMapperStore)(nil)
+
+func (s *FakeMapperStore) Get(_ context.Context) (MapperConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cfg, nil
+}
+
+func (s *FakeMapperStore) Set(_ context.Context, cfg MapperConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg = cfg
+	return nil
+}
+
 // FakeCostStore is an in-memory CostStore for tests. The zero value is
 // ready to use and returns DefaultCostRefreshInterval until Set is
 // called.

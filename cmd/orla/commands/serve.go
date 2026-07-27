@@ -129,6 +129,22 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	})
 	costPolicyStore := settings.NewPostgresCostStore(store.Pool())
 	api.RegisterCostRoutes(srv.Router(), api.CostDeps{Store: costPolicyStore})
+
+	// Restore the stage mapper last set through orlactl.
+	stageMapperStore := settings.NewPostgresMapperStore(store.Pool())
+	stageMapperHolder := &mappings.MapperHolder{}
+	mapperCfg, err := stageMapperStore.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("load stage mapper: %w", err)
+	}
+	api.ApplyStageMapper(stageMapperHolder, mapperCfg)
+	if mapperCfg.Enabled() {
+		logger.Info("stage mapper enabled", "url", mapperCfg.URL, "timeout", mapperCfg.Timeout)
+	}
+	api.RegisterStageMapperRoutes(srv.Router(), api.StageMapperDeps{
+		Store:  stageMapperStore,
+		Holder: stageMapperHolder,
+	})
 	completionWriter := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{
 		Pool:   store.Pool(),
 		Logger: logger,
@@ -161,6 +177,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		CompletionSink: completionWriter,
 		Metrics:        m,
 		Costs:          costStore,
+		StageMapper:    stageMapperHolder,
 	})
 	api.RegisterFeedbackRoutes(srv.Router(), api.FeedbackDeps{
 		Sink:    feedbackWriter,

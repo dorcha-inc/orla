@@ -127,6 +127,16 @@ type CostPolicy struct {
 	RefreshIntervalMS int `json:"refresh_interval_ms"`
 }
 
+// StageMapper is the GET and PUT /api/v1/stage-mapper body. An
+// empty URL means stages route by their static mapping. TimeoutMS
+// bounds a single routing decision. Enabled is derived on responses
+// and ignored on input.
+type StageMapper struct {
+	URL       string `json:"url"`
+	TimeoutMS int    `json:"timeout_ms"`
+	Enabled   bool   `json:"enabled"`
+}
+
 // FeedbackRequest is the POST /v1/feedback body. CompletionID and StageID
 // are required. Rating, when set, must be between 0 and 1. Agents post
 // this after a call so the mapper has an outcome signal.

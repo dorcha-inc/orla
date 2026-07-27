@@ -31,6 +31,7 @@ type Querier interface {
 	GetMappingOverride(ctx context.Context, arg GetMappingOverrideParams) (string, error)
 	GetSchedulerPolicy(ctx context.Context) (GetSchedulerPolicyRow, error)
 	GetStage(ctx context.Context, id string) (Stage, error)
+	GetStageMapper(ctx context.Context) (GetStageMapperRow, error)
 	InsertBackend(ctx context.Context, arg InsertBackendParams) (Backend, error)
 	// Every override across all variants, ordered so a caller can group
 	// consecutive rows by name.
@@ -58,6 +59,7 @@ type Querier interface {
 	// no row when the conflict fires, which loses the "fetch existing"
 	// behavior we want here.)
 	UpsertStageDefault(ctx context.Context, id string) (Stage, error)
+	UpsertStageMapper(ctx context.Context, arg UpsertStageMapperParams) error
 }
 
 var _ Querier = (*Queries)(nil)

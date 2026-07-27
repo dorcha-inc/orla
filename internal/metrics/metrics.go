@@ -23,6 +23,9 @@ type Metrics struct {
 	PolicyDecisionSeconds    *prometheus.HistogramVec
 	ToolCostAnomalyTotal     *prometheus.CounterVec
 	CostFetchFailuresTotal   *prometheus.CounterVec
+
+	StageMapperDecisionsTotal  *prometheus.CounterVec
+	StageMapperDecisionSeconds prometheus.Histogram
 }
 
 // New constructs and registers all push-style metrics on reg.
@@ -96,6 +99,23 @@ func New(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"backend"},
 		),
+		StageMapperDecisionsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "orla",
+				Name:      "stage_mapper_decisions_total",
+				Help:      "Stage mapper decisions by outcome: ok, declined, or a fallback_* reason.",
+			},
+			[]string{"outcome"},
+		),
+		StageMapperDecisionSeconds: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: "orla",
+				Name:      "stage_mapper_decision_seconds",
+				Help:      "Latency of a stage mapper decision in seconds.",
+				// 1ms .. ~1s
+				Buckets: prometheus.ExponentialBuckets(0.001, 2, 11),
+			},
+		),
 	}
 	reg.MustRegister(
 		m.RequestsTotal,
@@ -106,6 +126,8 @@ func New(reg prometheus.Registerer) *Metrics {
 		m.PolicyDecisionSeconds,
 		m.ToolCostAnomalyTotal,
 		m.CostFetchFailuresTotal,
+		m.StageMapperDecisionsTotal,
+		m.StageMapperDecisionSeconds,
 	)
 	return m
 }
@@ -148,4 +170,14 @@ func (m *Metrics) IncToolCostAnomaly(backend string) {
 // IncCostFetchFailure is the costs.PollerMetrics adapter.
 func (m *Metrics) IncCostFetchFailure(backend string) {
 	m.CostFetchFailuresTotal.WithLabelValues(backend).Inc()
+}
+
+// IncStageMapperDecision is the api.ProxyMetrics adapter.
+func (m *Metrics) IncStageMapperDecision(outcome string) {
+	m.StageMapperDecisionsTotal.WithLabelValues(outcome).Inc()
+}
+
+// ObserveStageMapperDecision is the api.ProxyMetrics adapter.
+func (m *Metrics) ObserveStageMapperDecision(seconds float64) {
+	m.StageMapperDecisionSeconds.Observe(seconds)
 }

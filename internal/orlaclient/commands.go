@@ -213,6 +213,70 @@ func newSchedulerPolicyDisableCmd(client func() *Client) *cobra.Command {
 	}
 }
 
+func newStageMapperCmd(client func() *Client) *cobra.Command {
+	cmd := &cobra.Command{Use: "mapper", Short: "Manage the dynamic stage mapper"}
+	cmd.AddCommand(
+		newStageMapperShowCmd(client),
+		newStageMapperSetCmd(client),
+		newStageMapperDisableCmd(client),
+	)
+	return cmd
+}
+
+func newStageMapperShowCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show",
+		Short: "Show the active dynamic stage mapper",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := client().GetStageMapper(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return printJSON(p)
+		},
+	}
+}
+
+func newStageMapperSetCmd(client func() *Client) *cobra.Command {
+	var (
+		mapperURL string
+		timeoutMS int
+	)
+	cmd := &cobra.Command{
+		Use:   "set --url URL [--timeout-ms N]",
+		Short: "Route stages through an external mapper service, per request",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := client().SetStageMapper(cmd.Context(), wire.StageMapper{
+				URL:       mapperURL,
+				TimeoutMS: timeoutMS,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("stage mapper set: url=%s timeout_ms=%d\n", p.URL, p.TimeoutMS)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&mapperURL, "url", "", "mapper service URL (required)")
+	cmd.Flags().IntVar(&timeoutMS, "timeout-ms", 0, "per-decision timeout in milliseconds (default 50)")
+	_ = cmd.MarkFlagRequired("url")
+	return cmd
+}
+
+func newStageMapperDisableCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "disable",
+		Short: "Revert to static stage routing",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if _, err := client().SetStageMapper(cmd.Context(), wire.StageMapper{URL: ""}); err != nil {
+				return err
+			}
+			fmt.Println("stage mapper disabled, stages route by their static mapping")
+			return nil
+		},
+	}
+}
+
 func newCostsCmd(client func() *Client) *cobra.Command {
 	cmd := &cobra.Command{Use: "costs", Short: "Manage cost polling"}
 	policy := &cobra.Command{Use: "policy", Short: "Manage the cost policy"}
@@ -264,6 +328,7 @@ func newStageCmd(client func() *Client) *cobra.Command {
 	cmd := &cobra.Command{Use: "stage", Short: "Manage stage mappings"}
 	cmd.AddCommand(
 		newStageMapCmd(client),
+		newStageMapperCmd(client),
 		newStagePromptCmd(client),
 		newStageCaptureCmd(client),
 		newStageListCmd(client),

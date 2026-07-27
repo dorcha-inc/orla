@@ -17,7 +17,7 @@ The handler runs these checks in order. Each is a 400 unless noted.
 1. **Decode body.** Body too large, over 10 MB, returns 400.
 2. **`messages` non-empty.**
 3. **Stage extracted.** From `X-Orla-Stage` header, falling back to `metadata.orla.stage` in the body. Missing returns 400.
-4. **Resolve backend.** `registry.GetOrCreate(stage)` auto-creates a default stage record on first sighting. If the request carries `X-Orla-Mapping` and that variant overrides this stage, use the variant's backend. Otherwise use `stage.Backend`. If that is empty, fall back to `req.Model`. If neither is set, return 400.
+4. **Resolve backend.** `registry.GetOrCreate(stage)` auto-creates a default stage record on first sighting. If the request carries `X-Orla-Mapping` and that variant overrides this stage, use the variant's backend, and the stage mapper is not consulted. Otherwise, if a dynamic stage mapper is configured, ask it (see below). Otherwise use `stage.Backend`. If that is empty, fall back to `req.Model`. If nothing resolves, return 400.
 5. **Apply inference policy** from the stage record. This sets `reasoning_effort` and, when the stage has a `prompt`, substitutes it for the leading instruction message.
 6. **Convert messages and tools** to the internal model types.
 7. **Dispatch** via `LayerExecute`, then `BackendManager.ScheduleChat`, into the per-backend queue and a worker that calls the openai-go provider.
@@ -54,6 +54,33 @@ Every dispatched request results in one row in `completion_records` with the fol
 - `prompt_tokens`, `completion_tokens`, `latency_ms`, `cost_usd`, `status`, `created_at`
 
 This is the mapper's primary observation channel. See [`storage.md`](storage.md).
+
+## Dynamic stage mapper
+
+A stage's backend is normally the static mapping set with `orlactl stage map`. A dynamic stage mapper makes that choice per request instead, by asking an external service to map the stage. Configure it with `orlactl stage mapper set --url http://mapper:8091/v1/map --timeout-ms 50`, read it back with `orlactl stage mapper show`, and revert to static routing with `orlactl stage mapper disable`. The setting is control-plane state, restored at boot, and a change takes effect on the next request without a restart.
+
+For each request the proxy POSTs the decision context to the URL. Candidates are every registered LLM backend, priced the way the completion will be billed: the live polled price when one is held and the static columns otherwise. Queue depth, in-flight count, capacity, and circuit state come from the scheduler at that moment.
+
+```json
+{
+  "stage": "hop",
+  "tags": {"tenant": "acme"},
+  "current": "caiso-np15",
+  "candidates": [
+    {"name": "caiso-np15", "quality": 0.9, "input_cost_per_mtoken": 0.00039,
+     "output_cost_per_mtoken": 0.0039, "queue_depth": 2, "in_flight": 1,
+     "capacity": 64, "circuit": "closed"}
+  ]
+}
+```
+
+The service answers with one backend name, or an empty string to decline, which routes the stage by its static mapping:
+
+```json
+{"backend": "miso-louisiana"}
+```
+
+A mapper is a routing hint and never gates availability. A timeout, an error, or a name the proxy did not offer falls back to the static mapping with a warning, and `orla_stage_mapper_decisions_total{outcome}` counts every decision by outcome so an operator can see a failing mapper service. An explicit `X-Orla-Mapping` variant wins over the mapper, since a variant is a per-request pin for shadow testing.
 
 ## Dynamic cost sources
 

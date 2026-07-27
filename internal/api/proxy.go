@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
 
+	"github.com/harvard-cns/orla/internal/backends"
 	"github.com/harvard-cns/orla/internal/costs"
 	"github.com/harvard-cns/orla/internal/mappings"
 	"github.com/harvard-cns/orla/internal/scheduler"
@@ -55,6 +57,8 @@ type ProxyMetrics interface {
 	ObserveBackendLatency(backend string, seconds float64)
 	IncSchedulerRejection(backend, reason string)
 	IncToolCostAnomaly(backend string)
+	IncStageMapperDecision(outcome string)
+	ObserveStageMapperDecision(seconds float64)
 }
 
 // LiveCosts serves the current polled price for a backend. Implemented
@@ -66,7 +70,8 @@ type LiveCosts interface {
 // ProxyDeps bundles the dependencies of the proxy handler. Mappings
 // may be nil, then no request can select a variant and the live stage
 // mapping always resolves. Costs may be nil, then every backend prices
-// through its static columns.
+// through its static columns. StageMapper may be nil, then every
+// stage routes by its static mapping.
 type ProxyDeps struct {
 	Stages         stages.Registry
 	Mappings       mappings.Registry
@@ -74,6 +79,7 @@ type ProxyDeps struct {
 	CompletionSink CompletionSink
 	Metrics        ProxyMetrics
 	Costs          LiveCosts
+	StageMapper    *mappings.MapperHolder
 }
 
 // RegisterProxyRoutes mounts POST /v1/chat/completions.
@@ -144,11 +150,19 @@ func (h *proxyHandler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	backendName := stage.Backend
 	// A shadow request selects a mapping variant. When the variant
-	// overrides this stage, its backend wins over the live mapping.
-	// A stage absent from the variant falls through to stage.Backend.
+	// overrides this stage, its backend wins over the live mapping and
+	// the stage mapper, since a variant is an explicit per-request
+	// pin. A stage absent from the variant falls through.
+	variantOverride := false
 	if rc.Mapping != "" && h.deps.Mappings != nil {
 		if override, ok := h.deps.Mappings.Resolve(r.Context(), rc.Mapping, rc.Stage); ok {
 			backendName = override
+			variantOverride = true
+		}
+	}
+	if !variantOverride {
+		if decided, ok := h.askStageMapper(r.Context(), rc, backendName); ok {
+			backendName = decided
 		}
 	}
 	if backendName == "" {
@@ -180,6 +194,101 @@ func (h *proxyHandler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.serveNonStreaming(w, r, rc, backendName, params)
+}
+
+// askStageMapper asks the stage mapper which backend should serve
+// this request and reports whether it chose one. Any failure falls
+// back to the static mapping, so a broken mapper service degrades
+// routing rather than availability. A decision naming a backend the
+// proxy did not offer is treated the same way.
+func (h *proxyHandler) askStageMapper(ctx context.Context, rc *requestContext, current string) (string, bool) {
+	if h.deps.StageMapper == nil {
+		return "", false
+	}
+	mapper := h.deps.StageMapper.Get()
+	if mapper == nil {
+		return "", false
+	}
+
+	candidates := h.mapperCandidates()
+	if len(candidates) == 0 {
+		return "", false
+	}
+
+	start := time.Now()
+	decided, err := mapper.Decide(ctx, mappings.DecideRequest{
+		Stage:      rc.Stage,
+		Tags:       rc.Tags,
+		Current:    current,
+		Candidates: candidates,
+	})
+	h.observeMapperDecision(time.Since(start).Seconds())
+
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		h.incMapperDecision("fallback_timeout")
+	case err != nil:
+		h.incMapperDecision("fallback_error")
+	case decided == "":
+		h.incMapperDecision("declined")
+		return "", false
+	case !slices.ContainsFunc(candidates, func(c mappings.Candidate) bool { return c.Name == decided }):
+		h.incMapperDecision("fallback_invalid")
+		err = fmt.Errorf("mapper chose %q, which was not offered", decided)
+	default:
+		h.incMapperDecision("ok")
+		return decided, true
+	}
+	slog.Default().Warn("proxy: stage mapper fell back to the static mapping",
+		"stage", rc.Stage,
+		"error", err,
+	)
+	return "", false
+}
+
+// mapperCandidates lists every LLM backend the mapper may choose,
+// priced the way the completion will be billed. A live polled price
+// wins over the static columns.
+func (h *proxyHandler) mapperCandidates() []mappings.Candidate {
+	stats := h.deps.Scheduler.Stats()
+	candidates := make([]mappings.Candidate, 0, len(stats))
+	for _, s := range stats {
+		b, ok := h.deps.Scheduler.BackendOf(s.Backend)
+		if !ok || b.Kind != backends.KindLLM {
+			continue
+		}
+		in, out := b.InputCostPerMtoken, b.OutputCostPerMtoken
+		if h.deps.Costs != nil {
+			if p, ok := h.deps.Costs.Get(s.Backend); ok {
+				in, out = &p.InputPerMtoken, &p.OutputPerMtoken
+			}
+		}
+		candidates = append(candidates, mappings.Candidate{
+			Name:                s.Backend,
+			Quality:             b.Quality,
+			InputCostPerMtoken:  in,
+			OutputCostPerMtoken: out,
+			QueueDepth:          s.QueueDepth,
+			InFlight:            s.InFlight,
+			Capacity:            s.Capacity,
+			Circuit:             s.CircuitState,
+		})
+	}
+	return candidates
+}
+
+// incMapperDecision and observeMapperDecision are no-ops when
+// ProxyMetrics is nil.
+func (h *proxyHandler) incMapperDecision(outcome string) {
+	if h.deps.Metrics != nil {
+		h.deps.Metrics.IncStageMapperDecision(outcome)
+	}
+}
+
+func (h *proxyHandler) observeMapperDecision(seconds float64) {
+	if h.deps.Metrics != nil {
+		h.deps.Metrics.ObserveStageMapperDecision(seconds)
+	}
 }
 
 // reattachJSONSchema restores a json_schema response format onto params.

@@ -94,3 +94,10 @@ type Stage struct {
 	Prompt          string
 	CaptureIo       bool
 }
+
+type StageMapper struct {
+	ID        bool
+	Url       string
+	TimeoutMs int32
+	UpdatedAt pgtype.Timestamptz
+}
