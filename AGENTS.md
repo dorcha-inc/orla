@@ -87,9 +87,15 @@ honored.
 - **No semicolons in prose.** Use a period and start a new sentence.
 - **No unnecessary parentheses.** Parenthetical asides that pause the
   reader for a thought you could have put in its own sentence should
-  go in its own sentence. Parens are fine for genuine clarifications
-  (e.g., abbreviations on first use) but not as a substitute for a
-  comma or period.
+  go in its own sentence. A one-word gloss such as an abbreviation on
+  first use is fine. Anything longer is a sentence you have not
+  written yet, and parens are never a substitute for a comma or a
+  period.
+- **Don't pack settings into parentheses.** A run of
+  `NAME (default X), OTHER (default Y)` is unreadable, and a second
+  clause tacked on after a semicolon makes it worse. Put environment
+  variables, flags, and their defaults in a table with a column for
+  the name, the default, and the meaning.
 - **No ASCII diagrams.** Describe relationships in prose. ASCII boxes
   and arrows are hard to maintain and rarely earn their space.
 - **No emoji** unless the user explicitly asks for them.
@@ -140,6 +146,12 @@ The rules under "Writing prose" apply, plus:
   for a specific upstream bug, behavior that would surprise a reader.
 - **Don't describe what the code does.** The code does that.
   "Increments the counter" above `c++` is noise.
+- **Describe what the code does do, not what it avoids.** A comment
+  that lists rejected alternatives or absent behavior goes stale the
+  moment the code changes. State the behavior that exists and the
+  reason for it. Name an absence only when it is a load-bearing
+  constraint a maintainer would otherwise violate, such as a retry
+  that must not happen, and give the why.
 - **Don't reference the past.** "Renamed from X", "formerly Y",
   "was previously fooBar" all rot. Comments describe the present
   state. If the reader needs migration history they can `git log`.
@@ -299,6 +311,28 @@ Rules:
   authorized.
 
 ## Go style
+
+### Principles
+
+Follow the priorities of [Google's Go style guide](https://google.github.io/styleguide/go/):
+code should be correct first, clear second, and concise third. Never
+trade an earlier property for a later one. Judge clarity from the
+reader's seat, not the writer's.
+
+Aim for the simplest design that solves the problem. Simple sometimes
+means clever. A well-chosen invariant can delete a page of special
+cases. Simple never means convoluted. Code that a reader must
+simulate in their head before trusting it is not simple yet.
+
+When two designs are otherwise equal, pick the one with less
+mechanism. Fewer moving parts, fewer knobs, less code, and less for
+an operator to run and monitor.
+
+Avoid grab-bag packages. Names like util, common, and helpers say
+nothing about what a package contains, and both the
+[Go blog](https://go.dev/blog/package-names) and Google's style guide
+reject them. Shared code belongs in the package that owns its
+concept.
 
 ### Naming
 
@@ -487,14 +521,23 @@ That turns a config mistake into a delayed outage under load. Validate
 it at the wiring boundary or make it a genuinely optional dependency
 that no-ops when absent, the way the proxy treats its metrics sink.
 
-### Use the standard library
+### Don't reinvent the wheel
 
-Prefer something already built, the standard library or a vetted
-dependency, over code you write yourself. A mature package or a
-stdlib helper is almost always more correct and better tested than a
-version written under deadline. A good dependency is welcome. What is
-not welcome is hand-rolling logic that an existing library already
-solves. Reinvent only when nothing fits.
+Before writing any non-trivial logic, look for something already
+built. Search the standard library first, then the deps already in
+go.mod, then the wider module ecosystem. A mature package is almost
+always more correct and better tested than a version written under
+deadline, and every line not written is a line nobody has to review,
+test, or maintain. Hand-rolling what a library already solves does
+not just cost the lines, it adds a design of our own that we now own
+forever.
+
+Judge a candidate dependency by its maintenance and adoption. Recent
+releases, responsive maintainers, wide use in serious projects, and a
+focused scope are the signals that matter. Stars and download counts
+are hints, not verdicts. A good dependency is welcome. Reinvent only
+when nothing fits or the dependency would weigh far more than the
+problem it solves.
 
 Go 1.26's standard library covers most of the helpers a new contributor
 would otherwise hand-roll. Reach for these before writing your own:
@@ -625,14 +668,14 @@ only the non-obvious why.
 
 ### Don't reinvent the wheel
 
-Prefer something already built, the standard library or a
-well-maintained dependency, over code you write yourself. A vetted
+Before writing any non-trivial logic, look for something already
+built, in the standard library first and then on PyPI. A vetted
 package or a stdlib helper is almost always more correct and better
-tested than a version written under deadline. A good external
-dependency is welcome. What is not welcome is hand-rolling logic that
-a mature library already solves. Reach for your own implementation
-only when nothing fits, or when the dependency would weigh far more
-than the problem it solves.
+tested than a version written under deadline. Judge a candidate by
+the same signals as a Go dependency: maintenance, adoption, and a
+focused scope. A good external dependency is welcome. Reach for your
+own implementation only when nothing fits, or when the dependency
+would weigh far more than the problem it solves.
 
 ### Talking to Orla
 
@@ -704,7 +747,11 @@ Two channels exist on backends:
 - LLM backends price through `input_cost_per_mtoken` and
   `output_cost_per_mtoken` (per million tokens). The proxy computes
   `cost_usd = (prompt_tokens × input + completion_tokens × output) /
-  1_000_000` and records it on every completion.
+  1_000_000` and records it on every completion. An LLM backend whose
+  price changes over time can set `cost_source`, a URL the daemon
+  polls for the current per-mtoken costs. A live polled price
+  overrides the static columns for cost accounting without rewriting
+  them. See `internal/costs` and [`docs/proxy.md`](docs/proxy.md).
 - Tool backends price through the `rates` JSONB map. Each key is a
   resource name (`gpu_seconds`, `cpu_seconds`, `calls`, …) and the
   value is USD per unit. Tool wrappers report a parallel `usage` map
