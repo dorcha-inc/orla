@@ -300,10 +300,21 @@ Rules:
 
 ## Git practices
 
+- **Never commit without asking. Never push without asking.** Both are
+  separate acts and each needs its own approval. Propose the commit,
+  name the files and the message, then wait for the user to say yes.
+  Leave the work uncommitted until they do.
+- **Approval never carries forward.** A yes for one commit is not a
+  yes for the next one, and a yes to commit is not a yes to push. Ask
+  again every time, however routine the change looks and however many
+  times the user has already agreed in the session.
+- **Approval to do work is not approval to commit it.** "Sounds good",
+  "go ahead", and "yes" in reply to a plan mean write the code. They
+  do not mean commit it, and they never mean push it. When the user
+  approves an implementation, finish it, run the quality gate, and
+  stop with a clean summary and a commit proposal.
 - Use whatever git identity the user has configured. Never pass
   `-c user.email` or `-c user.name`.
-- Don't push without explicit authorization. The user often wants to
-  review the local commit chain before it leaves the machine.
 - For PR merges, prefer `gh pr merge <num> --squash --delete-branch`.
 - Before any destructive operation (`git reset --hard`, force-push,
   `git rm -r .`, branch delete), confirm with the user. Use
@@ -669,13 +680,19 @@ only the non-obvious why.
 ### Don't reinvent the wheel
 
 Before writing any non-trivial logic, look for something already
-built, in the standard library first and then on PyPI. A vetted
-package or a stdlib helper is almost always more correct and better
-tested than a version written under deadline. Judge a candidate by
-the same signals as a Go dependency: maintenance, adoption, and a
-focused scope. A good external dependency is welcome. Reach for your
-own implementation only when nothing fits, or when the dependency
-would weigh far more than the problem it solves.
+built. Search the standard library first, then the deps already in
+`pyproject.toml`, then PyPI. A mature package is almost always more
+correct and better tested than a version written under deadline, and
+every line not written is a line nobody has to review, test, or
+maintain. Hand-rolling what a library already solves does not just
+cost the lines, it adds a design of our own that we now own forever.
+
+Judge a candidate dependency by its maintenance and adoption. Recent
+releases, responsive maintainers, wide use in serious projects, and a
+focused scope are the signals that matter. Stars and download counts
+are hints, not verdicts. A good dependency is welcome. Reinvent only
+when nothing fits or the dependency would weigh far more than the
+problem it solves.
 
 ### Talking to Orla
 
