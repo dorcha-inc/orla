@@ -12,6 +12,10 @@ prices:
 backend:
     uv run uvicorn sim_backend:app --host 127.0.0.1 --port 9200
 
+# Serve the stage mapper that routes the dynamic arm (port 8092).
+mapper:
+    uv run uvicorn cheapest_mapper:app --host 127.0.0.1 --port 8092
+
 # Run the experiment (needs both services and a running Orla daemon).
 run:
     uv run experiment.py

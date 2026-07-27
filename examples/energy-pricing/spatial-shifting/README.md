@@ -38,7 +38,15 @@ so Orla prices every completion at the electricity cost of wherever it ran. The
 totals in the table come from Orla's own cost accounting, read back through
 `GET /api/v1/stages/{stage}/metrics`.
 
-Three pieces make it runnable in minutes rather than 13 hours:
+The routing itself is Orla's dynamic stage mapper. On every request Orla asks
+the mapper service which backend should serve the stage, sending each region as
+a candidate priced at the value Orla is holding for it. The mapper answers with
+the cheapest region for the dynamic arm's stages and declines for the pinned
+arms, whose stages then route by their static mapping. One global mapper drives
+all five arms, and the decision lands on the same price the completion is
+billed at.
+
+Four pieces make it runnable in minutes rather than 13 hours:
 
 The price service replays the recorded prices against a virtual clock. It
 converts dollars per megawatt-hour into dollars per million tokens through an
@@ -50,10 +58,13 @@ The stand-in backend replaces inference. It reports the token usage the caller
 asks for instead of generating anything, which is what makes the policies
 comparable: identical work, so cost differences are routing alone.
 
-The experiment walks the price intervals, and at each one re-maps the dynamic
-arm's stages to the cheapest region and dispatches that interval's share of the
-workload for all five policies. Running the policies together means the wait for
-Orla to refresh its prices is paid once per interval instead of once per policy.
+The mapper service answers Orla's routing question with the cheapest healthy
+candidate for `dynamic-*` stages, and declines for everything else.
+
+The experiment walks the price intervals, advancing the clock and dispatching
+each interval's share of the workload for all five arms. Running the arms
+together means the wait for Orla to refresh its prices is paid once per
+interval instead of once per arm.
 
 ## Run it
 
@@ -64,11 +75,12 @@ services in their own terminals, then run the experiment.
 ```bash
 just prices     # regional prices on port 9100
 just backend    # stand-in inference on port 9200
+just mapper     # the stage mapper on port 8092
 just run        # the experiment
 ```
 
-The experiment registers its own backends and stages, so there is nothing to set
-up by hand. It waits until Orla is holding a fresh price for every region before
+The experiment registers its own backends and stages and installs the stage
+mapper, so there is nothing to set up by hand. It waits until Orla is holding a fresh price for every region before
 dispatching anything, because a call made before then would be priced at
 nothing and would silently understate that policy.
 
@@ -81,6 +93,7 @@ nothing and would silently understate that policy.
 | `ORLA_API` | `http://localhost:8081` | Orla's API root. |
 | `PRICE_URL` | `http://127.0.0.1:9100` | Where the price service listens. |
 | `SIM_URL` | `http://127.0.0.1:9200/v1` | Where the stand-in backend listens. |
+| `MAPPER_URL` | `http://127.0.0.1:8092/v1/map` | Where the stage mapper listens. |
 
 ## Scope
 

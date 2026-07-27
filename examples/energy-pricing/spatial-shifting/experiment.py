@@ -14,9 +14,8 @@ arm.
     uv run experiment.py
 
 Environment: ORLA_API (default http://localhost:8081), ORLA_BASE_URL,
-PRICE_URL (default http://127.0.0.1:9100), SIM_URL (default
-http://127.0.0.1:9200/v1), TRACE (recorded workload), QUESTIONS (workload
-size), STRIDE (price intervals to skip), CONCURRENCY.
+PRICE_URL, SIM_URL, MAPPER_URL, TRACE (recorded workload), QUESTIONS
+(workload size), STRIDE (price intervals to skip), CONCURRENCY.
 """
 
 from __future__ import annotations
@@ -39,6 +38,7 @@ ORLA_API = os.environ.get("ORLA_API", "http://localhost:8081")
 ORLA_BASE_URL = os.environ.get("ORLA_BASE_URL", "http://localhost:8081/v1")
 PRICE_URL = os.environ.get("PRICE_URL", "http://127.0.0.1:9100")
 SIM_URL = os.environ.get("SIM_URL", "http://127.0.0.1:9200/v1")
+MAPPER_URL = os.environ.get("MAPPER_URL", "http://127.0.0.1:8092/v1/map")
 TRACE = Path(os.environ.get("TRACE", "../data/workload.jsonl"))
 QUESTIONS = int(os.environ.get("QUESTIONS", "1560"))
 STRIDE = int(os.environ.get("STRIDE", "1"))
@@ -102,6 +102,7 @@ def setup() -> None:
         api("PUT", f"/api/v1/stages/{stage_name(DYNAMIC, stage)}", {"backend": REGIONS[0]})
 
     api("PUT", "/api/v1/costs/policy", {"refresh_interval_ms": int(REFRESH * 1000)})
+    api("PUT", "/api/v1/stage-mapper", {"url": MAPPER_URL, "timeout_ms": 250})
 
 
 def load_workload(path: Path, limit: int) -> list[list[dict]]:
@@ -118,23 +119,18 @@ def load_workload(path: Path, limit: int) -> list[list[dict]]:
 AGE_METRIC = re.compile(r'^orla_cost_price_age_seconds\{backend="([^"]+)"\}\s+(\S+)', re.MULTILINE)
 
 
-def price_ages() -> dict[str, float]:
-    """Seconds since Orla last refreshed each backend's price."""
-    with urllib.request.urlopen(f"{ORLA_API}/metrics", timeout=30) as resp:
-        text = resp.read().decode()
-    return {m.group(1): float(m.group(2)) for m in AGE_METRIC.finditer(text)}
-
-
 def wait_for_live_prices(timeout: float = 120.0) -> None:
     """Block until Orla holds a fresh price for every region.
 
     The daemon re-reads its refresh interval only when the current one
-    elapses, so the first poll after registering these backends can be a full
-    old interval away. Dispatching before then prices those calls at nothing.
+    elapses, so the first poll after registering backends can be a full
+    old interval away. Dispatching before then prices calls at nothing.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        ages = price_ages()
+        with urllib.request.urlopen(f"{ORLA_API}/metrics", timeout=30) as resp:
+            text = resp.read().decode()
+        ages = {m.group(1): float(m.group(2)) for m in AGE_METRIC.finditer(text)}
         if all(ages.get(region, timeout) < REFRESH * 3 for region in REGIONS):
             return
         time.sleep(1.0)
@@ -152,11 +148,6 @@ def set_clock(index: int) -> None:
         method="POST",
     )
     urllib.request.urlopen(req, timeout=30).close()
-
-
-def cheapest_region() -> str:
-    prices = {r: get_json(f"{PRICE_URL}/price/{r}")["input_cost_per_mtoken"] for r in REGIONS}
-    return min(prices, key=prices.__getitem__)
 
 
 def dispatch(client: OpenAI, arm: str, call: dict) -> None:
@@ -216,27 +207,21 @@ def main() -> None:
         per_slot[slots[i % len(slots)]].append(calls)
 
     client = OpenAI(base_url=ORLA_BASE_URL, api_key="orla", max_retries=3)
-    chosen = defaultdict(int)
 
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
         for n, slot in enumerate(slots, 1):
             set_clock(slot)
             time.sleep(SETTLE)
 
-            cheapest = cheapest_region()
-            chosen[cheapest] += 1
-            for stage in STAGES:
-                api("PUT", f"/api/v1/stages/{stage_name(DYNAMIC, stage)}", {"backend": cheapest})
-
             jobs = [(arm, call) for calls in per_slot[slot] for arm in ARMS for call in calls]
             list(pool.map(lambda job: dispatch(client, *job), jobs))
             if n % 20 == 0:
                 print(f"  interval {n}/{len(slots)}", flush=True)
 
-    report(chosen, started)
+    report(started)
 
 
-def report(chosen: dict[str, int], since: str) -> None:
+def report(since: str) -> None:
     # Cost records are written asynchronously, so let the batch writer drain.
     time.sleep(3)
     costs = {arm: arm_cost(arm, since) for arm in ARMS}
@@ -249,10 +234,16 @@ def report(chosen: dict[str, int], since: str) -> None:
     saving = (baseline - costs[DYNAMIC]) / baseline * 100 if baseline else 0.0
     print(f"  {'price-aware routing':<24}{costs[DYNAMIC]:>14.6f}{saving:>17.1f}%")
 
-    print("\n  cheapest region by interval:")
-    total = sum(chosen.values()) or 1
-    for region, count in sorted(chosen.items(), key=lambda kv: -kv[1]):
-        print(f"    {region:<20}{count:>5} of {total} ({count / total:.0%})")
+    print("\n  dynamic arm served by:")
+    served: dict[str, int] = defaultdict(int)
+    query = urllib.parse.urlencode({"since": since})
+    for stage in STAGES:
+        metrics = api("GET", f"/api/v1/stages/{stage_name(DYNAMIC, stage)}/metrics?{query}")
+        for row in metrics["metrics"]:
+            served[row["backend"]] += row["count"]
+    total = sum(served.values()) or 1
+    for region, count in sorted(served.items(), key=lambda kv: -kv[1]):
+        print(f"    {region:<20}{count:>6} calls ({count / total:.0%})")
 
 
 if __name__ == "__main__":
