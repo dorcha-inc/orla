@@ -1,11 +1,17 @@
-"""Run the HotpotQA distractor agent on a sample, score answer F1, and feed each
-score back to Orla so it can adapt the per-stage routing.
+"""Run the HotpotQA distractor agent, score answer F1, and feed each score back
+to Orla so it can adapt the per-stage routing.
 
-    uv run run.py            # 10 validation questions (default)
-    N=200 uv run run.py      # a larger sample
+Every question is appended to a JSONL trace holding its score and the token
+counts of all three calls. The trace doubles as a resume log, so re-running
+after an interruption picks up where it stopped, and as the workload input for
+the energy-pricing examples.
+
+    uv run run.py                  # 10 validation questions
+    N=all CONCURRENCY=12 uv run run.py   # the full validation split
 
 Environment: ORLA_BASE_URL (default http://localhost:8081/v1), ORLA_API
-(default http://localhost:8081), N (sample size).
+(default http://localhost:8081), N (sample size or "all"), CONCURRENCY
+(parallel questions), TRACE (output path).
 """
 
 from __future__ import annotations
@@ -17,15 +23,31 @@ import re
 import string
 import sys
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import NoReturn
 
 from datasets import load_dataset
 from openai import BadRequestError
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from agent import HotpotAgent
+from agent import Call, HotpotAgent
 
 ORLA_API = os.environ.get("ORLA_API", "http://localhost:8081")
+TRACE_PATH = Path(os.environ.get("TRACE", "trace.jsonl"))
+
+
+class TraceRecord(BaseModel):
+    """One answered question. The file of these is the benchmark result, the
+    resume log, and the workload the energy-pricing examples replay."""
+
+    id: str
+    question: str
+    gold: str
+    pred: str
+    f1: float
+    em: int
+    calls: list[Call]
 
 
 def normalize(s: str) -> str:
@@ -64,7 +86,7 @@ def post_feedback(completion_id: str, stage: str, rating: float) -> None:
     try:
         urllib.request.urlopen(req, timeout=10).close()
     except Exception as e:
-        print(f"  feedback failed for {stage}: {type(e).__name__}")
+        print(f"  feedback failed for {stage}: {type(e).__name__}", file=sys.stderr)
 
 
 def _structured_output_error() -> NoReturn:
@@ -80,33 +102,97 @@ def _structured_output_error() -> NoReturn:
     raise SystemExit(1)
 
 
-def main() -> None:
-    n = int(os.environ.get("N", "10"))
-    ds = load_dataset("hotpotqa/hotpot_qa", "distractor", split=f"validation[:{n}]")
-    agent = HotpotAgent()
-
-    total, em = 0.0, 0
-    for ex in ds:
-        paragraphs = list(zip(ex["context"]["title"], ex["context"]["sentences"], strict=True))
+def read_trace(path: Path) -> list[TraceRecord]:
+    """Every valid record in the trace. A partial last line from an interrupted
+    run is skipped rather than failing the read."""
+    if not path.exists():
+        return []
+    records = []
+    for line in path.read_text().splitlines():
         try:
-            pred, calls = agent.answer(ex["question"], paragraphs)
+            records.append(TraceRecord.model_validate_json(line))
         except ValidationError:
-            _structured_output_error()
-        except BadRequestError as e:
-            if "response_format" in str(e) or "json_schema" in str(e):
-                _structured_output_error()
-            raise
-        score = f1(pred, ex["answer"])
-        total += score
-        em += int(normalize(pred) == normalize(ex["answer"]))
-        # Broadcast the task reward to every stage that produced this answer, a
-        # simple credit assignment that lets Orla score each stage's backend.
-        for stage, cid in calls:
-            post_feedback(cid, stage, score)
-        print(f"F1 {score:.2f}  pred={pred!r:32.32}  gold={ex['answer']!r}")
+            continue
+    return records
 
-    k = max(len(ds), 1)
-    print(f"\n{len(ds)} questions  |  EM {em / k:.0%}  |  answer F1 {total / k:.3f}")
+
+def answer_one(agent: HotpotAgent, ex: dict) -> TraceRecord:
+    paragraphs = list(zip(ex["context"]["title"], ex["context"]["sentences"], strict=True))
+    try:
+        pred, calls = agent.answer(ex["question"], paragraphs)
+    except ValidationError:
+        _structured_output_error()
+    except BadRequestError as e:
+        if "response_format" in str(e) or "json_schema" in str(e):
+            _structured_output_error()
+        raise
+
+    score = f1(pred, ex["answer"])
+    # Broadcast the task reward to every stage that produced this answer, a
+    # simple credit assignment that lets Orla score each stage's backend.
+    for call in calls:
+        post_feedback(call.completion_id, call.stage, score)
+
+    return TraceRecord(
+        id=ex["id"],
+        question=ex["question"],
+        gold=ex["answer"],
+        pred=pred,
+        f1=score,
+        em=int(normalize(pred) == normalize(ex["answer"])),
+        calls=calls,
+    )
+
+
+def main() -> None:
+    n = os.environ.get("N", "10")
+    split = "validation" if n == "all" else f"validation[:{int(n)}]"
+    concurrency = int(os.environ.get("CONCURRENCY", "4"))
+
+    ds = load_dataset("hotpotqa/hotpot_qa", "distractor", split=split)
+    done = {r.id for r in read_trace(TRACE_PATH)}
+    todo = [ex for ex in ds if ex["id"] not in done]
+    if done:
+        print(f"resuming: {len(done)} already in {TRACE_PATH}, {len(todo)} to go")
+
+    agent = HotpotAgent()
+    failures: collections.Counter[str] = collections.Counter()
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = [pool.submit(answer_one, agent, ex) for ex in todo]
+        with TRACE_PATH.open("a") as f:
+            for i, future in enumerate(as_completed(futures), 1):
+                # One question failing upstream must not end the run. The
+                # question stays out of the trace, so a later resume retries it.
+                try:
+                    record = future.result()
+                except Exception as e:
+                    failures[type(e).__name__] += 1
+                    continue
+                f.write(record.model_dump_json() + "\n")
+                f.flush()
+                if i % 50 == 0:
+                    print(f"  {i}/{len(todo)} answered", flush=True)
+
+    if failures:
+        detail = ", ".join(f"{n}x {name}" for name, n in failures.most_common())
+        print(f"\n{sum(failures.values())} questions failed ({detail}); re-run to retry them")
+    report(TRACE_PATH)
+
+
+def report(path: Path) -> None:
+    """Score and token totals over everything in the trace."""
+    records = read_trace(path)
+    if not records:
+        print("no results")
+        return
+    n = len(records)
+    em = sum(r.em for r in records) / n
+    answer_f1 = sum(r.f1 for r in records) / n
+    calls = [c for r in records for c in r.calls]
+    prompt = sum(c.prompt_tokens for c in calls)
+    completion = sum(c.completion_tokens for c in calls)
+    print(f"\n{n} questions  |  EM {em:.1%}  |  answer F1 {answer_f1:.3f}")
+    print(f"{len(calls)} calls  |  {prompt:,} prompt tokens  |  {completion:,} completion tokens")
 
 
 if __name__ == "__main__":
