@@ -76,13 +76,16 @@ CREATE TABLE backends (
     output_cost_per_mtoken  DOUBLE PRECISION,
     rates                   JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    cost_source             TEXT
 );
 ```
 
 `kind` discriminates the two backend flavors.
 
 - `'llm'` backends speak OpenAI-compatible chat completions. `model_id` is required. Cost comes from `input_cost_per_mtoken` and `output_cost_per_mtoken`. The orla proxy computes `cost_usd` at write time as `(prompt_tokens × input_cost + completion_tokens × output_cost) / 1_000_000`. The `rates` column is unused for LLM backends and rejected at registration time.
+
+- `cost_source` is an optional URL the daemon polls for the backend's current per-million-token costs, for prices that change over time. NULL means the static columns price the backend. While a fetched price is live it overrides the static columns for cost accounting, but the columns themselves are never rewritten. Only `'llm'` backends may set it. See [`proxy.md`](proxy.md) for the polling contract.
 
 - `'tool'` backends speak a kind-specific JSON RPC over HTTP. `tool_kind` identifies the family (`'structure-prediction'`, `'docking'`, and so on). `model_id` is unused. Cost comes from the `rates` JSONB, a map of `resource_name` to USD-per-unit. The tool wrapper reports a parallel `usage` map on each response, and orla computes `cost_usd` as the dot product of the two maps. A tool can also short-circuit by setting `cost_usd` directly on its response, which is recorded verbatim after a non-negative-finite sanity check.
 

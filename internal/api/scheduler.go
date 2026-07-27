@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -61,8 +60,8 @@ func (h *schedulerHandler) set(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.URL != "" {
-		if err := validateSchedulerURL(req.URL); err != nil {
-			writeError(w, http.StatusBadRequest, err)
+		if err := validateHTTPURL(req.URL); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("url %w", err))
 			return
 		}
 	}
@@ -100,21 +99,4 @@ func policyToWire(cfg settings.PolicyConfig) wire.SchedulerPolicy {
 		TimeoutMS: int(cfg.Timeout.Milliseconds()),
 		Enabled:   cfg.Enabled(),
 	}
-}
-
-// validateSchedulerURL rejects a URL orla could never POST a decision
-// to, so a bad value is caught at the API boundary rather than falling
-// back to fcfs on every request without anyone noticing.
-func validateSchedulerURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("url is not valid: %w", err)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("url must be http or https, got %q", u.Scheme)
-	}
-	if u.Host == "" {
-		return fmt.Errorf("url must include a host, got %q", raw)
-	}
-	return nil
 }

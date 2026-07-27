@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -119,9 +118,19 @@ func (h *backendHandler) create(w http.ResponseWriter, r *http.Request) {
 				"rates is only valid for kind=tool; LLM backends use input_cost_per_mtoken and output_cost_per_mtoken")
 			return
 		}
+		if req.CostSource != "" {
+			if err := validateHTTPURL(req.CostSource); err != nil {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("cost_source %w", err))
+				return
+			}
+		}
 	case backends.KindTool:
 		if req.ToolKind == "" {
 			writeErrorMsg(w, http.StatusBadRequest, "tool_kind is required for kind=tool")
+			return
+		}
+		if req.CostSource != "" {
+			writeErrorMsg(w, http.StatusBadRequest, "cost_source is only valid for kind=llm")
 			return
 		}
 	default:
@@ -132,21 +141,24 @@ func (h *backendHandler) create(w http.ResponseWriter, r *http.Request) {
 
 	b := &backends.Backend{
 		Name:                req.Name,
-		Endpoint:             req.Endpoint,
-		APIKeyEnvVar:         req.APIKeyEnvVar,
-		MaxConcurrency:       req.MaxConcurrency,
-		InputCostPerMtoken:   req.InputCostPerMtoken,
-		OutputCostPerMtoken:  req.OutputCostPerMtoken,
-		Quality:              req.Quality,
-		RatePerSecond:        req.RatePerSecond,
-		Kind:                 kind,
-		Rates:                req.Rates,
+		Endpoint:            req.Endpoint,
+		APIKeyEnvVar:        req.APIKeyEnvVar,
+		MaxConcurrency:      req.MaxConcurrency,
+		InputCostPerMtoken:  req.InputCostPerMtoken,
+		OutputCostPerMtoken: req.OutputCostPerMtoken,
+		Quality:             req.Quality,
+		RatePerSecond:       req.RatePerSecond,
+		Kind:                kind,
+		Rates:               req.Rates,
 	}
 	if req.ModelID != "" {
 		b.ModelID = &req.ModelID
 	}
 	if req.ToolKind != "" {
 		b.ToolKind = &req.ToolKind
+	}
+	if req.CostSource != "" {
+		b.CostSource = &req.CostSource
 	}
 	b, err := h.deps.Registry.Insert(r.Context(), b)
 	if err != nil {
@@ -225,6 +237,25 @@ func (h *backendHandler) patch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.CostSource != nil && *req.CostSource != "" {
+		if err := validateHTTPURL(*req.CostSource); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("cost_source %w", err))
+			return
+		}
+		current, err := h.deps.Registry.Get(r.Context(), name)
+		if err != nil {
+			if errors.Is(err, backends.ErrNotFound) {
+				writeError(w, http.StatusNotFound, err)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if current.Kind != backends.KindLLM {
+			writeErrorMsg(w, http.StatusBadRequest, "cost_source is only valid for kind=llm")
+			return
+		}
+	}
 	b, err := h.deps.Registry.Patch(r.Context(), name, req)
 	if err != nil {
 		if errors.Is(err, backends.ErrNotFound) {
@@ -256,22 +287,4 @@ func (h *backendHandler) delete(w http.ResponseWriter, r *http.Request) {
 		h.deps.Lifecycle.Deregister(name)
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// isFiniteNonNegative reports whether v is a finite non-negative
-// number. NaN, +Inf, -Inf, and negative values fail.
-func isFiniteNonNegative(v float64) bool {
-	return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0
-}
-
-// validateRates checks that every value in the rates map is a
-// non-negative finite number. Returns an empty string on success and
-// a human-readable error message otherwise.
-func validateRates(m map[string]float64) string {
-	for k, v := range m {
-		if !isFiniteNonNegative(v) {
-			return fmt.Sprintf("rates[%q] must be a non-negative finite number, got %v", k, v)
-		}
-	}
-	return ""
 }

@@ -108,6 +108,14 @@ func (r *FakeRegistry) Patch(_ context.Context, name string, p PatchRequest) (*B
 	if p.Rates != nil {
 		updated.Rates = maps.Clone(*p.Rates)
 	}
+	if p.CostSource != nil {
+		if *p.CostSource == "" {
+			updated.CostSource = nil
+		} else {
+			v := *p.CostSource
+			updated.CostSource = &v
+		}
+	}
 	updated.UpdatedAt = r.now()
 	r.backends[name] = &updated
 	return cloneBackend(&updated), nil
@@ -140,6 +148,10 @@ func cloneBackend(b *Backend) *Backend {
 	if b.RatePerSecond != nil {
 		v := *b.RatePerSecond
 		out.RatePerSecond = &v
+	}
+	if b.CostSource != nil {
+		v := *b.CostSource
+		out.CostSource = &v
 	}
 	out.Rates = maps.Clone(b.Rates)
 	return &out

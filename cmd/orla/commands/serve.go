@@ -18,6 +18,7 @@ import (
 	"github.com/harvard-cns/orla/internal/api"
 	"github.com/harvard-cns/orla/internal/backends"
 	"github.com/harvard-cns/orla/internal/config"
+	"github.com/harvard-cns/orla/internal/costs"
 	"github.com/harvard-cns/orla/internal/mappings"
 	"github.com/harvard-cns/orla/internal/metrics"
 	"github.com/harvard-cns/orla/internal/provider"
@@ -126,6 +127,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Lifecycle: sched,
 		Manager:   sched,
 	})
+	costPolicyStore := settings.NewPostgresCostStore(store.Pool())
+	api.RegisterCostRoutes(srv.Router(), api.CostDeps{Store: costPolicyStore})
 	completionWriter := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{
 		Pool:   store.Pool(),
 		Logger: logger,
@@ -140,12 +143,22 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}))
 	promReg.MustRegister(metrics.NewCompletionIOCollector(completionWriter))
 
+	costStore := costs.NewStore()
+	costPoller := costs.NewPoller(costs.PollerConfig{
+		Registry: backendRegistry,
+		Store:    costStore,
+		Policy:   costPolicyStore,
+		Logger:   logger,
+	})
+	costPoller.Start()
+
 	api.RegisterProxyRoutes(srv.Router(), api.ProxyDeps{
 		Stages:         stageRegistry,
 		Mappings:       mappingRegistry,
 		Scheduler:      sched,
 		CompletionSink: completionWriter,
 		Metrics:        m,
+		Costs:          costStore,
 	})
 	api.RegisterFeedbackRoutes(srv.Router(), api.FeedbackDeps{
 		Sink:    feedbackWriter,
@@ -187,6 +200,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	if err := sched.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		logger.Error("scheduler shutdown error", "error", err)
+	}
+	if err := costPoller.Close(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		logger.Error("cost poller shutdown error", "error", err)
 	}
 	if err := completionWriter.Close(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		logger.Error("completion writer shutdown error", "error", err)

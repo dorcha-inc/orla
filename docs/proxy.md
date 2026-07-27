@@ -55,6 +55,20 @@ Every dispatched request results in one row in `completion_records` with the fol
 
 This is the mapper's primary observation channel. See [`storage.md`](storage.md).
 
+## Dynamic cost sources
+
+A backend's per-million-token costs are usually the static `input_cost_per_mtoken` and `output_cost_per_mtoken` columns. A backend whose price changes over time can instead carry a `cost_source` URL. The daemon polls every configured source on one interval and holds the latest price in memory. When the proxy computes `cost_usd` for a completion it uses the live price if one is held and the static columns otherwise. The static columns are never rewritten.
+
+The polling cadence is control-plane state, not startup configuration. Read it with `GET /api/v1/costs/policy` and change it with `PUT /api/v1/costs/policy` or `orlactl costs policy set --refresh-interval 30s`. It defaults to 60s. The poller re-reads it before every round, so a change takes effect within one round without a restart.
+
+The source must answer GET with both fields, priced in USD per million tokens:
+
+```json
+{"input_cost_per_mtoken": 0.09, "output_cost_per_mtoken": 0.29}
+```
+
+Both fields are required and must be finite and non-negative. A fetch that fails, times out, or returns an invalid body keeps the last known price and logs a warning, so a flapping cost service degrades to slightly stale prices rather than missing cost records. Clearing `cost_source` returns the backend to its static columns on the next polling round. `cost_source` is only valid for LLM backends, and the API returns 400 otherwise.
+
 ## Per-stage request and response capture
 
 A stage can carry `capture_io`. When it is on the proxy records the request and response content of every call tagged with the stage into the `completion_io` table, keyed by `completion_id` and grouped by `workflow_run`. It is off by default, so no content is stored until an operator opts a stage in with `orlactl stage capture STAGE on`.

@@ -84,6 +84,7 @@ func (r *PostgresRegistry) Insert(ctx context.Context, b *Backend) (*Backend, er
 		Kind:                string(kind),
 		ToolKind:            b.ToolKind,
 		Rates:               ratesBytes,
+		CostSource:          b.CostSource,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -171,6 +172,13 @@ func (r *PostgresRegistry) Patch(ctx context.Context, name string, p PatchReques
 		}
 		current.Rates = b
 	}
+	if p.CostSource != nil {
+		if *p.CostSource == "" {
+			current.CostSource = nil
+		} else {
+			current.CostSource = p.CostSource
+		}
+	}
 
 	updated, err := q.UpdateBackend(ctx, db.UpdateBackendParams{
 		Name:                current.Name,
@@ -185,6 +193,7 @@ func (r *PostgresRegistry) Patch(ctx context.Context, name string, p PatchReques
 		Kind:                current.Kind,
 		ToolKind:            current.ToolKind,
 		Rates:               current.Rates,
+		CostSource:          current.CostSource,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("backends: patch: write: %w", err)
@@ -232,6 +241,7 @@ func toBackend(row db.Backend) (*Backend, error) {
 		Kind:                Kind(row.Kind),
 		ToolKind:            row.ToolKind,
 		Rates:               rates,
+		CostSource:          row.CostSource,
 		CreatedAt:           row.CreatedAt.Time,
 		UpdatedAt:           row.UpdatedAt.Time,
 	}, nil

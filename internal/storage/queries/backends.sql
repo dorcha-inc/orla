@@ -6,7 +6,7 @@
 SELECT name, endpoint, model_id, api_key_env_var, max_concurrency,
        rate_per_second, quality, kind, tool_kind,
        input_cost_per_mtoken, output_cost_per_mtoken, rates,
-       created_at, updated_at
+       created_at, updated_at, cost_source
 FROM backends
 WHERE name = $1;
 
@@ -14,7 +14,7 @@ WHERE name = $1;
 SELECT name, endpoint, model_id, api_key_env_var, max_concurrency,
        rate_per_second, quality, kind, tool_kind,
        input_cost_per_mtoken, output_cost_per_mtoken, rates,
-       created_at, updated_at
+       created_at, updated_at, cost_source
 FROM backends
 ORDER BY name;
 
@@ -22,13 +22,13 @@ ORDER BY name;
 INSERT INTO backends (
     name, endpoint, model_id, api_key_env_var, max_concurrency,
     rate_per_second, quality, kind, tool_kind,
-    input_cost_per_mtoken, output_cost_per_mtoken, rates
+    input_cost_per_mtoken, output_cost_per_mtoken, rates, cost_source
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING name, endpoint, model_id, api_key_env_var, max_concurrency,
           rate_per_second, quality, kind, tool_kind,
           input_cost_per_mtoken, output_cost_per_mtoken, rates,
-          created_at, updated_at;
+          created_at, updated_at, cost_source;
 
 -- name: UpdateBackend :one
 UPDATE backends
@@ -43,12 +43,13 @@ SET endpoint = $2,
     input_cost_per_mtoken = $10,
     output_cost_per_mtoken = $11,
     rates = $12,
+    cost_source = $13,
     updated_at = now()
 WHERE name = $1
 RETURNING name, endpoint, model_id, api_key_env_var, max_concurrency,
           rate_per_second, quality, kind, tool_kind,
           input_cost_per_mtoken, output_cost_per_mtoken, rates,
-          created_at, updated_at;
+          created_at, updated_at, cost_source;
 
 -- name: DeleteBackend :execrows
 DELETE FROM backends WHERE name = $1;

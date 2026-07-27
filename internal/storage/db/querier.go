@@ -25,6 +25,7 @@ type Querier interface {
 	// Keeping that order lets sqlc reuse the db.Backend row type instead of
 	// emitting a per-query row type.
 	GetBackend(ctx context.Context, name string) (Backend, error)
+	GetCostPolicy(ctx context.Context) (GetCostPolicyRow, error)
 	// The backend override for one (variant, stage). No row means the
 	// request falls through to the stage's live backend.
 	GetMappingOverride(ctx context.Context, arg GetMappingOverrideParams) (string, error)
@@ -48,6 +49,7 @@ type Querier interface {
 	// don't have to deal with NULLs.
 	StageMetricsByBackend(ctx context.Context, arg StageMetricsByBackendParams) ([]StageMetricsByBackendRow, error)
 	UpdateBackend(ctx context.Context, arg UpdateBackendParams) (Backend, error)
+	UpsertCostPolicy(ctx context.Context, refreshIntervalMs int32) error
 	UpsertMappingOverride(ctx context.Context, arg UpsertMappingOverrideParams) error
 	UpsertSchedulerPolicy(ctx context.Context, arg UpsertSchedulerPolicyParams) error
 	// Auto-create a stage with empty fields on first sighting. If the row

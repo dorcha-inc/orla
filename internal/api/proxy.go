@@ -18,6 +18,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/shared"
 
+	"github.com/harvard-cns/orla/internal/costs"
 	"github.com/harvard-cns/orla/internal/mappings"
 	"github.com/harvard-cns/orla/internal/scheduler"
 	"github.com/harvard-cns/orla/internal/stages"
@@ -56,15 +57,23 @@ type ProxyMetrics interface {
 	IncToolCostAnomaly(backend string)
 }
 
+// LiveCosts serves the current polled price for a backend. Implemented
+// by costs.Store.
+type LiveCosts interface {
+	Get(name string) (costs.Price, bool)
+}
+
 // ProxyDeps bundles the dependencies of the proxy handler. Mappings
 // may be nil, then no request can select a variant and the live stage
-// mapping always resolves.
+// mapping always resolves. Costs may be nil, then every backend prices
+// through its static columns.
 type ProxyDeps struct {
 	Stages         stages.Registry
 	Mappings       mappings.Registry
 	Scheduler      *scheduler.Scheduler
 	CompletionSink CompletionSink
 	Metrics        ProxyMetrics
+	Costs          LiveCosts
 }
 
 // RegisterProxyRoutes mounts POST /v1/chat/completions.
@@ -414,24 +423,31 @@ func rechunkWithModel(raw string, modelJSON json.RawMessage) string {
 }
 
 // computeLLMCost rolls token counts and the backend's per-million-
-// token rates into a dollar amount. Returns nil if the backend has no
-// configured rates or the scheduler does not know about this backend
-// name. A non-finite result is dropped with a log line so a
-// configuration error cannot poison cost aggregates.
+// token rates into a dollar amount. A live polled price takes
+// precedence over the backend's static columns. Returns nil if the
+// backend has no configured rates or the scheduler does not know
+// about this backend name. A non-finite result is dropped with a log
+// line so a configuration error cannot poison cost aggregates.
 func (h *proxyHandler) computeLLMCost(backendName string, promptTokens, completionTokens int, completionID string) *float64 {
 	b, ok := h.deps.Scheduler.BackendOf(backendName)
 	if !ok {
 		return nil
 	}
-	if b.InputCostPerMtoken == nil && b.OutputCostPerMtoken == nil {
+	in, out := b.InputCostPerMtoken, b.OutputCostPerMtoken
+	if h.deps.Costs != nil {
+		if p, ok := h.deps.Costs.Get(backendName); ok {
+			in, out = &p.InputPerMtoken, &p.OutputPerMtoken
+		}
+	}
+	if in == nil && out == nil {
 		return nil
 	}
 	var cost float64
-	if b.InputCostPerMtoken != nil {
-		cost += float64(promptTokens) * (*b.InputCostPerMtoken) / 1_000_000.0
+	if in != nil {
+		cost += float64(promptTokens) * (*in) / 1_000_000.0
 	}
-	if b.OutputCostPerMtoken != nil {
-		cost += float64(completionTokens) * (*b.OutputCostPerMtoken) / 1_000_000.0
+	if out != nil {
+		cost += float64(completionTokens) * (*out) / 1_000_000.0
 	}
 	if math.IsNaN(cost) || math.IsInf(cost, 0) || cost < 0 {
 		slog.Default().Warn("proxy: LLM cost computation produced non-finite or negative value",
