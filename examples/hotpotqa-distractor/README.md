@@ -39,14 +39,18 @@ done
 ## Run
 
 ```bash
-uv run run.py            # 10 validation questions (default)
+uv run run.py            # the default 10 validation questions
 N=200 uv run run.py      # a larger sample
 ```
 
-Environment variables: `ORLA_BASE_URL` (default `http://localhost:8081/v1`),
-`ORLA_API` (default `http://localhost:8081`), `N` (sample size), and
-`ORLA_MAX_TOKENS` (per-call output cap, default 2048; raise it if a reasoning
-backend comes back empty).
+The run reads these environment variables.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ORLA_BASE_URL` | `http://localhost:8081/v1` | Orla's OpenAI-compatible endpoint. |
+| `ORLA_API` | `http://localhost:8081` | Orla's API root, where feedback is posted. |
+| `N` | 10 | How many validation questions to run. |
+| `ORLA_MAX_TOKENS` | 2048 | Per-call output cap. Raise it if a reasoning backend comes back empty. |
 
 The script scores each answer's token F1 against the gold answer and posts that
 score back to Orla as feedback for every stage that produced the answer. F1 is
