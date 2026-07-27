@@ -1,13 +1,16 @@
 package metrics_test
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/harvard-cns/orla/internal/costs"
 	"github.com/harvard-cns/orla/internal/metrics"
 	"github.com/harvard-cns/orla/internal/scheduler"
 )
@@ -164,4 +167,30 @@ func (f *fakeIODropsStats) IODrops() int64 { return f.ioDrops }
 func TestCompletionIOCollector_Emits(t *testing.T) {
 	c := metrics.NewCompletionIOCollector(&fakeIODropsStats{ioDrops: 3})
 	assert.Equal(t, float64(3), testutil.ToFloat64(c))
+}
+
+type fakeCostStats struct{ stats []costs.Stat }
+
+func (f *fakeCostStats) Stats() []costs.Stat { return f.stats }
+
+func TestCostCollector_EmitsPriceAgeAndPrices(t *testing.T) {
+	c := metrics.NewCostCollector(&fakeCostStats{stats: []costs.Stat{
+		{
+			Backend: "gpt4o",
+			Price:   costs.Price{InputPerMtoken: 0.5, OutputPerMtoken: 1.5},
+			Age:     90 * time.Second,
+		},
+	}})
+
+	assert.Equal(t, 3, testutil.CollectAndCount(c))
+	assert.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(`
+# HELP orla_cost_price_age_seconds Seconds since the backend's live price was last fetched from its cost source.
+# TYPE orla_cost_price_age_seconds gauge
+orla_cost_price_age_seconds{backend="gpt4o"} 90
+`), "orla_cost_price_age_seconds"))
+}
+
+func TestCostCollector_EmitsNothingWithoutPrices(t *testing.T) {
+	c := metrics.NewCostCollector(&fakeCostStats{})
+	assert.Equal(t, 0, testutil.CollectAndCount(c))
 }

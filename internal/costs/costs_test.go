@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,6 +36,78 @@ func TestStore_GetSetRetain(t *testing.T) {
 	assert.False(t, ok)
 	_, ok = s.Get("b")
 	assert.True(t, ok)
+}
+
+func TestStore_StatsReportPriceAge(t *testing.T) {
+	s := NewStore()
+	clock := time.Unix(1000, 0)
+	s.now = func() time.Time { return clock }
+
+	s.Set("b1", Price{InputPerMtoken: 1, OutputPerMtoken: 2})
+	clock = clock.Add(90 * time.Second)
+	s.Set("b2", Price{InputPerMtoken: 3, OutputPerMtoken: 4})
+
+	stats := s.Stats()
+	require.Len(t, stats, 2)
+	// Ordered by backend name, so b1 first.
+	assert.Equal(t, "b1", stats[0].Backend)
+	assert.Equal(t, 90*time.Second, stats[0].Age, "a price that is not refreshed keeps aging")
+	assert.Equal(t, Price{InputPerMtoken: 1, OutputPerMtoken: 2}, stats[0].Price)
+	assert.Equal(t, "b2", stats[1].Backend)
+	assert.Equal(t, time.Duration(0), stats[1].Age)
+}
+
+func TestStore_SetResetsAge(t *testing.T) {
+	s := NewStore()
+	clock := time.Unix(1000, 0)
+	s.now = func() time.Time { return clock }
+
+	s.Set("b1", Price{InputPerMtoken: 1})
+	clock = clock.Add(time.Minute)
+	s.Set("b1", Price{InputPerMtoken: 1})
+
+	stats := s.Stats()
+	require.Len(t, stats, 1)
+	assert.Equal(t, time.Duration(0), stats[0].Age, "a refetch restamps even when the price is unchanged")
+}
+
+// countingMetrics records fetch failures per backend.
+type countingMetrics struct {
+	mu       sync.Mutex
+	failures map[string]int
+}
+
+func (m *countingMetrics) IncCostFetchFailure(backend string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failures == nil {
+		m.failures = map[string]int{}
+	}
+	m.failures[backend]++
+}
+
+func (m *countingMetrics) count(backend string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.failures[backend]
+}
+
+func TestPoller_CountsFetchFailures(t *testing.T) {
+	srv := priceServer(t, "", http.StatusInternalServerError)
+
+	reg := backends.NewFakeRegistry()
+	_, err := reg.Insert(context.Background(), sourcedBackend("b1", srv.URL))
+	require.NoError(t, err)
+
+	mx := &countingMetrics{}
+	p := NewPoller(PollerConfig{
+		Registry: reg, Store: NewStore(), Policy: &settings.FakeCostStore{},
+		Metrics: mx, Logger: testLogger(),
+	})
+	p.poll()
+	p.poll()
+
+	assert.Equal(t, 2, mx.count("b1"), "each failed round must be counted")
 }
 
 func testLogger() *slog.Logger {

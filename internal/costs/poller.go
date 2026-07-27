@@ -36,12 +36,19 @@ type CostPolicy interface {
 	Get(ctx context.Context) (settings.CostConfig, error)
 }
 
+// PollerMetrics counts fetch failures so an operator can alert on a
+// cost source that has stopped answering.
+type PollerMetrics interface {
+	IncCostFetchFailure(backend string)
+}
+
 // PollerConfig configures a Poller. Registry, Store, and Policy are
-// required.
+// required. Metrics is optional.
 type PollerConfig struct {
 	Registry Lister
 	Store    *Store
 	Policy   CostPolicy
+	Metrics  PollerMetrics
 	Logger   *slog.Logger
 }
 
@@ -54,6 +61,7 @@ type Poller struct {
 	registry Lister
 	store    *Store
 	policy   CostPolicy
+	metrics  PollerMetrics
 	logger   *slog.Logger
 	client   *http.Client
 	interval time.Duration
@@ -74,6 +82,7 @@ func NewPoller(cfg PollerConfig) *Poller {
 		registry: cfg.Registry,
 		store:    cfg.Store,
 		policy:   cfg.Policy,
+		metrics:  cfg.Metrics,
 		logger:   logger,
 		client:   &http.Client{Timeout: fetchTimeout},
 		interval: settings.DefaultCostRefreshInterval,
@@ -157,6 +166,9 @@ func (p *Poller) poll() {
 		sourced[b.Name] = true
 		price, err := p.fetch(ctx, *b.CostSource)
 		if err != nil {
+			if p.metrics != nil {
+				p.metrics.IncCostFetchFailure(b.Name)
+			}
 			p.logger.Warn("costs: fetch failed, keeping last known price",
 				"backend", b.Name,
 				"cost_source", *b.CostSource,

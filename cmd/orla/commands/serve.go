@@ -148,9 +148,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Registry: backendRegistry,
 		Store:    costStore,
 		Policy:   costPolicyStore,
+		Metrics:  m,
 		Logger:   logger,
 	})
 	costPoller.Start()
+	promReg.MustRegister(metrics.NewCostCollector(costStore))
 
 	api.RegisterProxyRoutes(srv.Router(), api.ProxyDeps{
 		Stages:         stageRegistry,

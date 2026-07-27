@@ -11,7 +11,9 @@ package costs
 
 import (
 	"maps"
+	"slices"
 	"sync"
+	"time"
 )
 
 // Price is one backend's live per-million-token costs.
@@ -20,17 +22,32 @@ type Price struct {
 	OutputPerMtoken float64
 }
 
+// Stat reports one backend's held price and how long ago it was
+// fetched. A price that keeps aging means the cost source is failing
+// and completions are being priced from stale data.
+type Stat struct {
+	Backend string
+	Price   Price
+	Age     time.Duration
+}
+
+type entry struct {
+	price     Price
+	fetchedAt time.Time
+}
+
 // Store holds the live price for each backend with a cost source.
 // The zero value is not usable, construct with NewStore. Safe for
 // concurrent use.
 type Store struct {
-	mu     sync.RWMutex
-	prices map[string]Price
+	mu      sync.RWMutex
+	now     func() time.Time
+	entries map[string]entry
 }
 
 // NewStore returns an empty store.
 func NewStore() *Store {
-	return &Store{prices: make(map[string]Price)}
+	return &Store{now: time.Now, entries: make(map[string]entry)}
 }
 
 // Get returns the live price for the named backend and whether one is
@@ -38,15 +55,16 @@ func NewStore() *Store {
 func (s *Store) Get(name string) (Price, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	p, ok := s.prices[name]
-	return p, ok
+	e, ok := s.entries[name]
+	return e.price, ok
 }
 
-// Set records the live price for the named backend.
+// Set records the live price for the named backend and stamps it with
+// the current time.
 func (s *Store) Set(name string, p Price) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.prices[name] = p
+	s.entries[name] = entry{price: p, fetchedAt: s.now()}
 }
 
 // Retain drops every entry whose backend is not in keep, so a backend
@@ -54,7 +72,24 @@ func (s *Store) Set(name string, p Price) {
 func (s *Store) Retain(keep map[string]bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	maps.DeleteFunc(s.prices, func(name string, _ Price) bool {
+	maps.DeleteFunc(s.entries, func(name string, _ entry) bool {
 		return !keep[name]
 	})
+}
+
+// Stats returns one Stat per held price, ordered by backend name.
+func (s *Store) Stats() []Stat {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	now := s.now()
+	out := make([]Stat, 0, len(s.entries))
+	for _, name := range slices.Sorted(maps.Keys(s.entries)) {
+		e := s.entries[name]
+		out = append(out, Stat{
+			Backend: name,
+			Price:   e.price,
+			Age:     now.Sub(e.fetchedAt),
+		})
+	}
+	return out
 }

@@ -67,7 +67,9 @@ The source must answer GET with both fields, priced in USD per million tokens:
 {"input_cost_per_mtoken": 0.09, "output_cost_per_mtoken": 0.29}
 ```
 
-Both fields are required and must be finite and non-negative. A fetch that fails, times out, or returns an invalid body keeps the last known price and logs a warning, so a flapping cost service degrades to slightly stale prices rather than missing cost records. Clearing `cost_source` returns the backend to its static columns on the next polling round. `cost_source` is only valid for LLM backends, and the API returns 400 otherwise.
+Both fields are required and must be finite and non-negative. A fetch that fails, times out, or returns an invalid body keeps the last known price and logs a warning, so a flapping cost service degrades to a stale price rather than to missing cost records. Clearing `cost_source` returns the backend to its static columns on the next polling round. `cost_source` is only valid for LLM backends, and the API returns 400 otherwise.
+
+Nothing bounds how stale a kept price may become, so a cost source that stays down means completions keep being priced from the last value it served. Three metrics make that visible. `orla_cost_fetch_failures_total{backend}` counts failed reads, `orla_cost_price_age_seconds{backend}` reports how long ago the held price was fetched, and `orla_cost_input_per_mtoken_usd{backend}` with `orla_cost_output_per_mtoken_usd{backend}` report the price itself. Alert on a price age that climbs past a few refresh intervals.
 
 ## Per-stage request and response capture
 

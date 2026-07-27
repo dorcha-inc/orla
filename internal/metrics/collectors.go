@@ -3,6 +3,7 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/harvard-cns/orla/internal/costs"
 	"github.com/harvard-cns/orla/internal/scheduler"
 )
 
@@ -104,10 +105,11 @@ type BatchWriterCollector struct {
 }
 
 // NewBatchWriterCollector takes a map of writer-kind to stats source.
-// Typical usage: NewBatchWriterCollector(map[string]BatchWriterStats{
-//     "completion_records": completionWriter,
-//     "feedback":           feedbackWriter,
-// }).
+//
+//	Typical usage: NewBatchWriterCollector(map[string]BatchWriterStats{
+//	    "completion_records": completionWriter,
+//	    "feedback":           feedbackWriter,
+//	}).
 func NewBatchWriterCollector(writers map[string]BatchWriterStats) *BatchWriterCollector {
 	return &BatchWriterCollector{
 		writers: writers,
@@ -175,4 +177,57 @@ func (c *CompletionIOCollector) Describe(ch chan<- *prometheus.Desc) {
 
 func (c *CompletionIOCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(c.drops, prometheus.CounterValue, float64(c.src.IODrops()))
+}
+
+// CostStatsSource is the subset of costs.Store used by CostCollector.
+type CostStatsSource interface {
+	Stats() []costs.Stat
+}
+
+// CostCollector emits the age of each backend's live price at scrape
+// time. A price whose age keeps climbing past the refresh interval
+// means the cost source is failing and completions are being priced
+// from stale data.
+type CostCollector struct {
+	src CostStatsSource
+
+	priceAge    *prometheus.Desc
+	inputPrice  *prometheus.Desc
+	outputPrice *prometheus.Desc
+}
+
+// NewCostCollector reads live prices from the cost store.
+func NewCostCollector(src CostStatsSource) *CostCollector {
+	return &CostCollector{
+		src: src,
+		priceAge: prometheus.NewDesc(
+			"orla_cost_price_age_seconds",
+			"Seconds since the backend's live price was last fetched from its cost source.",
+			[]string{"backend"}, nil,
+		),
+		inputPrice: prometheus.NewDesc(
+			"orla_cost_input_per_mtoken_usd",
+			"Live input price in USD per million tokens, per backend.",
+			[]string{"backend"}, nil,
+		),
+		outputPrice: prometheus.NewDesc(
+			"orla_cost_output_per_mtoken_usd",
+			"Live output price in USD per million tokens, per backend.",
+			[]string{"backend"}, nil,
+		),
+	}
+}
+
+func (c *CostCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- c.priceAge
+	ch <- c.inputPrice
+	ch <- c.outputPrice
+}
+
+func (c *CostCollector) Collect(ch chan<- prometheus.Metric) {
+	for _, s := range c.src.Stats() {
+		ch <- prometheus.MustNewConstMetric(c.priceAge, prometheus.GaugeValue, s.Age.Seconds(), s.Backend)
+		ch <- prometheus.MustNewConstMetric(c.inputPrice, prometheus.GaugeValue, s.Price.InputPerMtoken, s.Backend)
+		ch <- prometheus.MustNewConstMetric(c.outputPrice, prometheus.GaugeValue, s.Price.OutputPerMtoken, s.Backend)
+	}
 }

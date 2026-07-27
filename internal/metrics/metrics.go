@@ -22,6 +22,7 @@ type Metrics struct {
 	PolicyDecisionsTotal     *prometheus.CounterVec
 	PolicyDecisionSeconds    *prometheus.HistogramVec
 	ToolCostAnomalyTotal     *prometheus.CounterVec
+	CostFetchFailuresTotal   *prometheus.CounterVec
 }
 
 // New constructs and registers all push-style metrics on reg.
@@ -87,6 +88,14 @@ func New(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"backend"},
 		),
+		CostFetchFailuresTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "orla",
+				Name:      "cost_fetch_failures_total",
+				Help:      "Failed reads of a backend's cost source, by backend. A rising count means completions are priced from a stale price.",
+			},
+			[]string{"backend"},
+		),
 	}
 	reg.MustRegister(
 		m.RequestsTotal,
@@ -96,6 +105,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		m.PolicyDecisionsTotal,
 		m.PolicyDecisionSeconds,
 		m.ToolCostAnomalyTotal,
+		m.CostFetchFailuresTotal,
 	)
 	return m
 }
@@ -133,4 +143,9 @@ func (m *Metrics) ObservePolicyDecision(backend string, seconds float64) {
 // IncToolCostAnomaly is the api.ProxyMetrics adapter.
 func (m *Metrics) IncToolCostAnomaly(backend string) {
 	m.ToolCostAnomalyTotal.WithLabelValues(backend).Inc()
+}
+
+// IncCostFetchFailure is the costs.PollerMetrics adapter.
+func (m *Metrics) IncCostFetchFailure(backend string) {
+	m.CostFetchFailuresTotal.WithLabelValues(backend).Inc()
 }
