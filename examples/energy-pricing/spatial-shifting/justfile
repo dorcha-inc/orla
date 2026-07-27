@@ -1,0 +1,35 @@
+# Tasks for the spatial shifting experiment. Requires uv.
+
+# List recipes.
+default:
+    @just --list
+
+# Serve regional electricity prices as Orla cost sources.
+prices:
+    uv run price_service.py
+
+# Serve the stand-in inference backend.
+backend:
+    uv run sim_backend.py
+
+# Run the experiment (needs both services and a running Orla daemon).
+run:
+    uv run experiment.py
+
+# Format the code with ruff.
+fmt:
+    uv run ruff format .
+
+# Lint with ruff (use `just lint --fix` to apply fixes).
+lint *args:
+    uv run ruff check {{ args }} .
+
+# Type-check with ty.
+typecheck:
+    uv run ty check .
+
+# Read-only checks, the way CI would run them.
+check:
+    uv run ruff format --check .
+    uv run ruff check .
+    uv run ty check .

@@ -11,3 +11,5 @@ not change when the routing does.
   time-varying backend prices.
 - [capture-io](capture-io/README.md): capture each stage's request and response
   and read them back, a retrieve-answer pipeline.
+- [energy-pricing](energy-pricing/README.md): serving an LLM workload for less
+  electricity, starting with routing between grid regions by live price.

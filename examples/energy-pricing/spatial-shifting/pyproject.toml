@@ -1,0 +1,23 @@
+[project]
+name = "orla-example-spatial-shifting"
+version = "0.1.0"
+description = "Route an LLM workload between grid regions by live electricity price."
+requires-python = ">=3.10"
+dependencies = [
+    "openai==2.44.0",
+    "fastapi==0.122.1",
+    "uvicorn==0.42.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff==0.15.20",
+    "ty==0.0.55",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
