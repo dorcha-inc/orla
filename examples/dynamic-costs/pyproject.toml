@@ -3,7 +3,11 @@ name = "orla-example-dynamic-costs"
 version = "0.1.0"
 description = "A toy cost service Orla polls for time-varying backend prices."
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "fastapi==0.122.1",
+    "uvicorn==0.42.0",
+    "pydantic==2.13.4",
+]
 
 [dependency-groups]
 dev = [

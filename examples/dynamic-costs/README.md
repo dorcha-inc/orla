@@ -20,14 +20,14 @@ of polling rounds.
 ## Run
 
 ```bash
-uv run service.py
+just run
 ```
 
-The service reads these environment variables.
+The port is set by the `just run` recipe. The price itself is set by
+these environment variables.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `PORT` | 9090 | Port the service listens on. |
 | `INPUT_COST` | 0.10 | Base input price in dollars per million tokens. |
 | `OUTPUT_COST` | 0.40 | Base output price in dollars per million tokens. |
 | `PERIOD` | 120 | Seconds in one full off-peak and peak cycle. |

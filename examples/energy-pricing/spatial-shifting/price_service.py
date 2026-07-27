@@ -11,10 +11,10 @@ assumed energy cost per token. The service holds a virtual clock so a run can
 replay thirteen hours of price movement in a couple of minutes: POST /clock
 advances it to a given interval and every /price response moves with it.
 
-    uv run price_service.py
+Run it with `just prices` (uvicorn on :9100).
 
-Environment: PORT (default 9100), DATA (path to the hub CSV),
-JOULES_PER_PROMPT_TOKEN, JOULES_PER_COMPLETION_TOKEN.
+Environment: DATA (path to the hub CSV), JOULES_PER_PROMPT_TOKEN,
+JOULES_PER_COMPLETION_TOKEN.
 """
 
 from __future__ import annotations
@@ -24,11 +24,9 @@ import os
 from collections import defaultdict
 from pathlib import Path
 
-import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-PORT = int(os.environ.get("PORT", "9100"))
 DATA = Path(os.environ.get("DATA", "../data/hub_lmps_2026-07-17.csv"))
 
 # Energy drawn per token, including datacenter overhead. Prefill is far cheaper
@@ -99,10 +97,10 @@ def load_series(path: Path) -> tuple[list[str], dict[str, list[Price]]]:
 TIMES, SERIES = load_series(DATA)
 current_index = 0
 
-app = FastAPI()
+app = FastAPI(title="orla-regional-prices-example")
 
 
-@app.get("/price/{region}")
+@app.get("/price/{region}", response_model=Price)
 def price(region: str) -> Price:
     if region not in SERIES:
         raise HTTPException(status_code=404, detail=f"unknown region {region}")
@@ -121,11 +119,6 @@ def set_clock(request: ClockRequest) -> ClockState:
     return get_clock()
 
 
-def main() -> None:
-    print(f"price service on http://127.0.0.1:{PORT}, {len(TIMES)} intervals")
-    print(f"regions: {', '.join(SERIES)}")
-    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
-
-
-if __name__ == "__main__":
-    main()
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}

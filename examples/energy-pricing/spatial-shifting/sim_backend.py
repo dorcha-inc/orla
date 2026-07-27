@@ -11,22 +11,16 @@ The caller states the usage to report in the system message, as
 counts is what makes the policy arms comparable: every arm does identical
 work, so any cost difference between them comes from routing alone.
 
-    uv run sim_backend.py
-
-Environment: PORT (default 9200).
+Run it with `just backend` (uvicorn on :9200).
 """
 
 from __future__ import annotations
 
-import os
 import time
 import uuid
 
-import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
-
-PORT = int(os.environ.get("PORT", "9200"))
 
 
 class Message(BaseModel):
@@ -48,7 +42,7 @@ def requested_usage(messages: list[Message]) -> tuple[int, int]:
     return 0, 0
 
 
-app = FastAPI()
+app = FastAPI(title="orla-simulated-backend-example")
 
 
 @app.post("/v1/chat/completions")
@@ -74,10 +68,6 @@ def completions(request: CompletionRequest) -> dict:
     }
 
 
-def main() -> None:
-    print(f"simulated backend on http://127.0.0.1:{PORT}")
-    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
-
-
-if __name__ == "__main__":
-    main()
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}

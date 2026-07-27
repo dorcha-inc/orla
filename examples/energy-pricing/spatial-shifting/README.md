@@ -40,17 +40,17 @@ totals in the table come from Orla's own cost accounting, read back through
 
 Three pieces make it runnable in minutes rather than 13 hours:
 
-`price_service.py` replays the recorded prices against a virtual clock. It
+The price service replays the recorded prices against a virtual clock. It
 converts dollars per megawatt-hour into dollars per million tokens through an
 assumed energy draw per token, and `POST /clock` advances every region's price
 together. The energy-per-token constants scale all costs linearly and cancel out
 of the percentage, so they are declared parameters rather than measurements.
 
-`sim_backend.py` stands in for inference. It reports the token usage the caller
+The stand-in backend replaces inference. It reports the token usage the caller
 asks for instead of generating anything, which is what makes the policies
 comparable: identical work, so cost differences are routing alone.
 
-`experiment.py` walks the price intervals, and at each one re-maps the dynamic
+The experiment walks the price intervals, and at each one re-maps the dynamic
 arm's stages to the cheapest region and dispatches that interval's share of the
 workload for all five policies. Running the policies together means the wait for
 Orla to refresh its prices is paid once per interval instead of once per policy.

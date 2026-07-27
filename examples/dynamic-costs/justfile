@@ -6,7 +6,7 @@ default:
 
 # Run the cost service on port 9090.
 run:
-    uv run service.py
+    uv run uvicorn service:app --host 127.0.0.1 --port 9090
 
 # Format the code with ruff.
 fmt:

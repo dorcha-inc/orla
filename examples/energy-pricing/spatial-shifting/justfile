@@ -6,11 +6,11 @@ default:
 
 # Serve regional electricity prices as Orla cost sources.
 prices:
-    uv run price_service.py
+    uv run uvicorn price_service:app --host 127.0.0.1 --port 9100
 
 # Serve the stand-in inference backend.
 backend:
-    uv run sim_backend.py
+    uv run uvicorn sim_backend:app --host 127.0.0.1 --port 9200
 
 # Run the experiment (needs both services and a running Orla daemon).
 run:
