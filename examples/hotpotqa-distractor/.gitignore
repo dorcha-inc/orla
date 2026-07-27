@@ -3,3 +3,4 @@ __pycache__/
 .venv/
 .ruff_cache/
 .ty_cache/
+trace.jsonl
