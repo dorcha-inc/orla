@@ -7,5 +7,7 @@ not change when the routing does.
 
 - [hotpotqa-distractor](hotpotqa-distractor/README.md): multi-hop QA on HotpotQA,
   a fixed select-hop-answer pipeline.
+- [dynamic-costs](dynamic-costs/README.md): a toy cost service Orla polls for
+  time-varying backend prices.
 - [capture-io](capture-io/README.md): capture each stage's request and response
   and read them back, a retrieve-answer pipeline.
