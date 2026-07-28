@@ -5,17 +5,25 @@ priced by region and by the minute, so the same tokens cost different amounts
 depending on where and when they are served. Orla decides where a stage runs, so
 it is the layer that can act on that.
 
-The energy literature calls moving work to cheaper power **load shifting**, in
-two forms. Moving it in space means routing to a region where power is cheap
-right now. Moving it in time means deferring until power is cheap later.
+The energy literature calls moving work to cheaper power **load shifting**.
+Moving it in space means routing to a region where power is cheap right now,
+which is a choice Orla's stage mapper already makes on every request.
 
-- [spatial-shifting](spatial-shifting/README.md) routes between grid regions at
-  the same instant. Orla already does this, so the experiment needs no new
-  daemon feature.
+- [spatial-shifting](spatial-shifting/README.md) replays a recorded workload
+  across four grid regions and compares the electricity bill against staying in
+  one region.
 
-Temporal shifting is not here yet. Deferring work by hours cannot be expressed
-over a synchronous request that a caller is waiting on, so it needs an
-asynchronous submission path that Orla does not have.
+## Current results
+
+Replaying 1,560 questions across 13 hours of recorded prices, routing to
+whichever region is cheapest at each moment cuts the electricity bill by 13.5%
+against Louisiana, the cheapest single region over the window, and by 30%
+against New England, the most expensive. Louisiana is only the cheapest in
+hindsight. An operator picking one region up front does not know which it will
+be, so 13.5% is the saving against a baseline nobody can actually choose. Orla's
+own cost accounting produces those totals, and the
+[experiment](spatial-shifting/README.md#result) carries the per-region
+breakdown.
 
 ## The data
 
