@@ -352,34 +352,3 @@ func TestBackendHandlers_ListOrderedByName(t *testing.T) {
 	assert.Equal(t, []string{"alpha", "mu", "zeta"},
 		[]string{body.Backends[0].Name, body.Backends[1].Name, body.Backends[2].Name})
 }
-
-// TestBackendHandlers_CreateWithAuditMiddlewareRecordsMutation wires a
-// real AuditControlPlaneMutations middleware through RegisterBackendRoutes,
-// proving the r.Use inside the route block actually fires end to end
-// rather than just testing the middleware in isolation.
-func TestBackendHandlers_CreateWithAuditMiddlewareRecordsMutation(t *testing.T) {
-	reg := backends.NewFakeRegistry()
-	metrics := &fakeControlPlaneAuditMetrics{}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewServer(ServerConfig{
-		ListenAddress: "127.0.0.1:0",
-		Logger:        logger,
-	})
-	RegisterBackendRoutes(srv.Router(), BackendDeps{
-		Registry:        reg,
-		AuditMiddleware: AuditControlPlaneMutations(logger, metrics),
-	})
-
-	body := mustJSON(t, map[string]any{
-		"name":            "gpt4o",
-		"endpoint":        "https://api.openai.com/v1",
-		"model_id":        "openai:gpt-4o",
-		"max_concurrency": 8,
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/backends", bytes.NewReader(body))
-	rr := httptest.NewRecorder()
-	srv.Router().ServeHTTP(rr, req)
-
-	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
-	assert.Equal(t, []string{"backends|POST|success"}, metrics.snapshot())
-}

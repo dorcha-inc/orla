@@ -32,13 +32,19 @@ When deploying orla:
 - Run orla behind an authenticating reverse proxy such as nginx, Cloudflare, or a service mesh. Orla itself does not enforce authentication on its API.
 - Use Postgres credentials with the minimum privileges orla requires. Read and write on its own database is enough, and no superuser is needed.
 - Protect the upstream LLM and tool API keys orla holds in environment variables. Restrict who can read the process environment, and avoid committing `.env` files.
-- Monitor `/metrics` and structured logs for anomalous request patterns. `orla_control_plane_mutations_total{resource, method, outcome}` and the `"control plane mutation"` warn-level log line cover every write to `/api/v1/*`, see item 1 below.
+- Monitor `/metrics` and structured logs for anomalous request patterns. Every write to the control plane is counted and logged. See the control-plane audit section below.
 
 ## known security considerations
 
-1. **No built-in auth.** The HTTP API trusts every caller. A reverse proxy or service mesh must enforce identity, and must also authorize by path: `/api/v1/*` (control plane, backends, stages, mappings, scheduler policy) should generally be restricted to platform-engineer callers, separately from `/v1/*` (data plane). Authenticating the caller alone does not stop a data-plane caller from reaching control-plane routes, since orla itself applies no per-path authorization. Orla does emit a detective control for this gap: every mutating request to `/api/v1/*` is logged at warn level (`"control plane mutation"`, with the resource, caller's remote address, and `X-Forwarded-For` if present) and counted in `orla_control_plane_mutations_total{resource, method, outcome}`. This is visibility, not enforcement, orla still lets the request through either way.
+1. **No built-in auth.** The HTTP API trusts every caller. A reverse proxy or service mesh must enforce identity, and it must also authorize by path. Orla applies no per-path authorization of its own, so authenticating the caller does not stop an agent that reached `/v1/*` from also reaching `/api/v1/*` and rewriting the mapping every other agent runs on. Restrict the control plane to platform-engineer callers separately from the data plane.
 2. **API key fan-out.** Orla holds outbound credentials for every backend. Compromise of the orla process exposes all of them.
 3. **Rate limiting is per-instance.** `rate_per_second` is enforced per orla process. Multiple replicas multiply the effective cap.
 4. **Tenant isolation is advisory.** Tenancy is carried by request headers such as `X-Orla-Tag-Tenant` and used for fair-share scheduling. It is not a security boundary on its own.
+
+## control-plane audit
+
+Orla reports every write to the control plane and serves all of them. Reporting is what makes the missing authorization boundary visible to an operator. Every request to `/api/v1/*` other than a read is counted in `orla_control_plane_mutations_total{resource, method, outcome}`, where `outcome` separates a write that changed state from one the API rejected.
+
+The request log answers who. Every request line carries `remote_addr` and `forwarded_for` alongside the method, path, and status. Orla authenticates nobody, so both addresses are whatever the caller claimed. Use the pair to correlate a write with a source you already trust, and alert on control-plane writes arriving from anywhere but your platform-engineer path.
 
 Thank you for helping keep orla secure!

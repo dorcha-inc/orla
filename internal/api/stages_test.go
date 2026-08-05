@@ -24,7 +24,7 @@ func newStageTestServer(t *testing.T) (*Server, *stages.FakeRegistry) {
 		ListenAddress: "127.0.0.1:0",
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	RegisterStageRoutes(srv.Router(), reg, nil)
+	RegisterStageRoutes(srv.Router(), reg)
 	return srv, reg
 }
 
@@ -251,30 +251,4 @@ func TestStageHandlers_PatchRejectsOversizePrompt(t *testing.T) {
 	srv.Router().ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
-}
-
-// TestStageHandlers_PatchWithAuditMiddlewareRecordsMutation wires a real
-// AuditControlPlaneMutations middleware through RegisterStageRoutes,
-// proving the r.Use inside the route block actually fires end to end
-// rather than just testing the middleware in isolation.
-func TestStageHandlers_PatchWithAuditMiddlewareRecordsMutation(t *testing.T) {
-	reg := stages.NewFakeRegistry()
-	_, err := reg.Replace(context.Background(), &stages.Stage{ID: "planning", Backend: "gpt-4o"})
-	require.NoError(t, err)
-
-	metrics := &fakeControlPlaneAuditMetrics{}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewServer(ServerConfig{
-		ListenAddress: "127.0.0.1:0",
-		Logger:        logger,
-	})
-	RegisterStageRoutes(srv.Router(), reg, AuditControlPlaneMutations(logger, metrics))
-
-	body := mustJSON(t, map[string]any{"backend": "gpt-4o-mini"})
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/stages/planning", bytes.NewReader(body))
-	rr := httptest.NewRecorder()
-	srv.Router().ServeHTTP(rr, req)
-
-	require.Equal(t, http.StatusOK, rr.Code)
-	assert.Equal(t, []string{"stages|PATCH|success"}, metrics.snapshot())
 }

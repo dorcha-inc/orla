@@ -23,12 +23,9 @@ import (
 // implicitly inside the proxy when a request arrives for an unknown
 // stage. The mapper is expected to use PUT/PATCH for explicit
 // configuration.
-func RegisterStageRoutes(r chi.Router, reg stages.Registry, auditMW func(http.Handler) http.Handler) {
+func RegisterStageRoutes(r chi.Router, reg stages.Registry) {
 	h := &stageHandler{reg: reg}
 	r.Route("/api/v1/stages", func(r chi.Router) {
-		if auditMW != nil {
-			r.Use(auditMW)
-		}
 		r.Get("/", h.list)
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", h.get)

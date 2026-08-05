@@ -136,19 +136,17 @@ func setupOrlaStack(t *testing.T) *orlaStack {
 		Logger:        logger,
 		Ready:         store.Ping,
 		PromRegistry:  promReg,
+		AuditMetrics:  m,
 	})
-	auditMW := api.AuditControlPlaneMutations(logger, m)
 	policyStore := settings.NewPostgresStore(store.Pool())
-	api.RegisterStageRoutes(srv.Router(), stageReg, auditMW)
+	api.RegisterStageRoutes(srv.Router(), stageReg)
 	api.RegisterBackendRoutes(srv.Router(), api.BackendDeps{
-		Registry:        backendReg,
-		Lifecycle:       sched,
-		AuditMiddleware: auditMW,
+		Registry:  backendReg,
+		Lifecycle: sched,
 	})
 	api.RegisterSchedulerRoutes(srv.Router(), api.SchedulerDeps{
-		Store:           policyStore,
-		Scheduler:       sched,
-		AuditMiddleware: auditMW,
+		Store:     policyStore,
+		Scheduler: sched,
 	})
 
 	completionW := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{
@@ -319,9 +317,8 @@ func TestIntegration_FullLoop(t *testing.T) {
 		`orla_requests_total{backend="fake-backend",stage="planning",status="success"} 1`),
 		"expected requests_total to reflect the dispatch:\n%s", string(promBody))
 
-	// 8. The audit middleware fired for the backend-create and stage-map
-	// mutations above, proving the real serve.go-shaped wiring works end
-	// to end against real storage, not just the isolated middleware test.
+	// 8. The audit middleware recorded the backend create and the stage
+	// map above.
 	assert.True(t, strings.Contains(string(promBody),
 		`orla_control_plane_mutations_total{method="POST",outcome="success",resource="backends"} 1`),
 		"expected a control-plane mutation for the backend create:\n%s", string(promBody))
@@ -369,9 +366,7 @@ func TestIntegration_SchedulerPolicy(t *testing.T) {
 	assert.Equal(t, "http://sched:8090/next", reloaded.URL)
 	assert.Equal(t, 75*time.Millisecond, reloaded.Timeout)
 
-	// The audit middleware fired for the PUT above, proving the real
-	// serve.go-shaped SchedulerDeps.AuditMiddleware wiring works end to
-	// end against real storage.
+	// The audit middleware recorded the PUT above.
 	promResp := getResp(t, base+"/metrics")
 	require.Equal(t, http.StatusOK, promResp.StatusCode)
 	promBody, _ := io.ReadAll(promResp.Body)

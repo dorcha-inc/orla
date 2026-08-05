@@ -33,9 +33,6 @@ type BackendDeps struct {
 	Registry  backends.Registry
 	Lifecycle BackendLifecycle
 	Manager   LLMBackendManager
-
-	// AuditMiddleware audits control-plane mutations. Nil disables it.
-	AuditMiddleware func(http.Handler) http.Handler
 }
 
 // backendView is the HTTP response shape for a single backend. It embeds
@@ -58,9 +55,6 @@ type backendView struct {
 func RegisterBackendRoutes(r chi.Router, deps BackendDeps) {
 	h := &backendHandler{deps: deps}
 	r.Route("/api/v1/backends", func(r chi.Router) {
-		if deps.AuditMiddleware != nil {
-			r.Use(deps.AuditMiddleware)
-		}
 		r.Post("/", h.create)
 		r.Get("/", h.list)
 		r.Route("/{name}", func(r chi.Router) {

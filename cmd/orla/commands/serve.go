@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 
@@ -116,15 +115,18 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Logger:            logger,
 		Ready:             store.Ping,
 		PromRegistry:      promReg,
+		AuditMetrics:      m,
 	})
-	registerControlPlaneRoutes(srv.Router(), controlPlaneDeps{
-		Logger:      logger,
-		Metrics:     m,
-		Stages:      stageRegistry,
-		Mappings:    mappingRegistry,
-		Backends:    backendRegistry,
-		PolicyStore: policyStore,
-		Scheduler:   sched,
+	api.RegisterStageRoutes(srv.Router(), stageRegistry)
+	api.RegisterMappingRoutes(srv.Router(), mappingRegistry)
+	api.RegisterSchedulerRoutes(srv.Router(), api.SchedulerDeps{
+		Store:     policyStore,
+		Scheduler: sched,
+	})
+	api.RegisterBackendRoutes(srv.Router(), api.BackendDeps{
+		Registry:  backendRegistry,
+		Lifecycle: sched,
+		Manager:   sched,
 	})
 	costPolicyStore := settings.NewPostgresCostStore(store.Pool())
 	api.RegisterCostRoutes(srv.Router(), api.CostDeps{Store: costPolicyStore})
@@ -231,40 +233,6 @@ func runServe(cmd *cobra.Command, _ []string) error {
 
 	logger.Info("orla stopped")
 	return nil
-}
-
-// controlPlaneDeps bundles the dependencies registerControlPlaneRoutes
-// needs to build the audit middleware and mount the four control-plane
-// route groups.
-type controlPlaneDeps struct {
-	Logger      *slog.Logger
-	Metrics     *metrics.Metrics
-	Stages      stages.Registry
-	Mappings    mappings.Registry
-	Backends    backends.Registry
-	PolicyStore settings.PolicyStore
-	Scheduler   *scheduler.Scheduler
-}
-
-// registerControlPlaneRoutes builds the control-plane audit middleware
-// and mounts the four control-plane route groups, stages, mappings,
-// scheduler policy, and backends, on r. It takes its dependencies as
-// arguments so it can be tested without a database or HTTP listener.
-func registerControlPlaneRoutes(r chi.Router, deps controlPlaneDeps) {
-	auditMW := api.AuditControlPlaneMutations(deps.Logger, deps.Metrics)
-	api.RegisterStageRoutes(r, deps.Stages, auditMW)
-	api.RegisterMappingRoutes(r, deps.Mappings, auditMW)
-	api.RegisterSchedulerRoutes(r, api.SchedulerDeps{
-		Store:           deps.PolicyStore,
-		Scheduler:       deps.Scheduler,
-		AuditMiddleware: auditMW,
-	})
-	api.RegisterBackendRoutes(r, api.BackendDeps{
-		Registry:        deps.Backends,
-		Lifecycle:       deps.Scheduler,
-		Manager:         deps.Scheduler,
-		AuditMiddleware: auditMW,
-	})
 }
 
 // newLogger constructs a slog.Logger writing to stderr. format is

@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -125,29 +123,4 @@ func TestSchedulerPolicy_RejectsNegativeTimeout(t *testing.T) {
 	r.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
-}
-
-// TestSchedulerPolicy_SetWithAuditMiddlewareRecordsMutation wires a real
-// AuditControlPlaneMutations middleware through RegisterSchedulerRoutes,
-// proving the r.Use inside the route block actually fires end to end
-// rather than just testing the middleware in isolation.
-func TestSchedulerPolicy_SetWithAuditMiddlewareRecordsMutation(t *testing.T) {
-	store := &settings.FakePolicyStore{}
-	setter := &recordingSetter{}
-	metrics := &fakeControlPlaneAuditMetrics{}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	r := chi.NewRouter()
-	RegisterSchedulerRoutes(r, SchedulerDeps{
-		Store:           store,
-		Scheduler:       setter,
-		AuditMiddleware: AuditControlPlaneMutations(logger, metrics),
-	})
-
-	body, _ := json.Marshal(wire.SchedulerPolicy{URL: "http://sched:8090/next", TimeoutMS: 120})
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/scheduler/policy", bytes.NewReader(body))
-	rr := httptest.NewRecorder()
-	r.ServeHTTP(rr, req)
-
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	assert.Equal(t, []string{"scheduler|PUT|success"}, metrics.snapshot())
 }

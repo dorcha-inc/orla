@@ -26,9 +26,6 @@ type SchedulerPolicySetter interface {
 type SchedulerDeps struct {
 	Store     settings.PolicyStore
 	Scheduler SchedulerPolicySetter
-
-	// AuditMiddleware audits control-plane mutations. Nil disables it.
-	AuditMiddleware func(http.Handler) http.Handler
 }
 
 // RegisterSchedulerRoutes mounts the scheduling-policy endpoints onto r.
@@ -39,9 +36,6 @@ type SchedulerDeps struct {
 func RegisterSchedulerRoutes(r chi.Router, deps SchedulerDeps) {
 	h := &schedulerHandler{deps: deps}
 	r.Route("/api/v1/scheduler/policy", func(r chi.Router) {
-		if deps.AuditMiddleware != nil {
-			r.Use(deps.AuditMiddleware)
-		}
 		r.Get("/", h.get)
 		r.Put("/", h.set)
 	})
