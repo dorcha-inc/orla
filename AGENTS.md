@@ -99,6 +99,19 @@ honored.
 - **No ASCII diagrams.** Describe relationships in prose. ASCII boxes
   and arrows are hard to maintain and rarely earn their space.
 - **No emoji** unless the user explicitly asks for them.
+- **Don't define a thing by what it is not.** "X, not Y" and its
+  variants, "X rather than Y", "X and never Y", tell the reader what
+  to erase instead of what to hold. Say what the thing does and stop.
+  "The audit is a visibility aid, not an access gate" becomes "The
+  audit records every write and lets all of them through." State a
+  limit outright when it is load-bearing, as its own sentence, in
+  terms of what happens: "Orla still serves the request."
+- **No vague back-references.** Do not open a sentence with "This",
+  "That", "These", "Those", "Their", or "It" pointing at a noun from
+  an earlier sentence. Name the noun again. "This is the wrong
+  baseline" becomes "The best region in hindsight is the wrong
+  baseline." The reader should never have to look backward to resolve
+  what a pronoun stands for.
 
 ### Soft rules
 
@@ -108,6 +121,11 @@ honored.
   stage" beats "When a request arrives, the proxy looks up the
   stage."
 - Define jargon on first use, even if you think the reader knows it.
+- Do not write in fragments or in a punchy, aphoristic style. Short
+  clipped clauses strung together read like a parable, not like
+  documentation. "No key, no cost, runs on a laptop" is wrong.
+  "Ollama runs models locally, so it needs no API key and costs
+  nothing to call" is right.
 - Don't write multi-paragraph code docstrings. One short paragraph
   per exported identifier is the ceiling.
 
@@ -151,7 +169,9 @@ The rules under "Writing prose" apply, plus:
   moment the code changes. State the behavior that exists and the
   reason for it. Name an absence only when it is a load-bearing
   constraint a maintainer would otherwise violate, such as a retry
-  that must not happen, and give the why.
+  that must not happen, and give the why. Write that absence as
+  behavior, not as a contrast. "The mapper falls back to the static
+  mapping on any error" beats "the mapper is a hint, not a gate."
 - **Don't reference the past.** "Renamed from X", "formerly Y",
   "was previously fooBar" all rot. Comments describe the present
   state. If the reader needs migration history they can `git log`.
@@ -192,6 +212,28 @@ The conventions that matter here:
 - State a type's concurrency guarantees and any useful zero value when
   they are not obvious.
 - Mark a removal with a `Deprecated:` paragraph so tooling can flag it.
+
+## Writing documentation
+
+The docs under `docs/`, the tutorials on the site, and every example
+README are read top to bottom by someone following along. The prose
+rules above apply, plus a few that matter for a page with commands in
+it.
+
+- **Explain every code block.** Never drop a command or snippet
+  without saying what it does and what every meaningful flag means.
+  Show output too, and say what its columns or fields mean.
+- **Headings name content, and are not narration.** "Dynamic stage
+  mapper" and "Cost, latency, and feedback" are good. "Now we register
+  the backends" narrates the act instead of naming the subject. "What
+  makes a workflow static" poses a question the prose should just
+  answer.
+- **Do not over-chunk.** A heading breaks the reader's flow. Add one
+  only where a genuinely new section begins. Merge two short sections
+  that are really one idea and let a sentence carry the transition.
+- **Cut filler.** Remove words that earn nothing. If "static" already
+  carries the meaning, do not also write "fixed". Do not lean on one
+  adjective across a passage.
 
 ## Writing tests
 
@@ -613,9 +655,12 @@ Each example is a self-contained uv project under
   tools like ruff and ty go in `[dependency-groups].dev` per
   PEP 735. `uv run` installs the dev group by default, so a
   contributor gets the linters without a second command.
-- Pin exact versions with `==` and commit `uv.lock`. An example is a
-  thing you run, not a library someone imports, so reproducibility
-  beats flexibility. A library would use floors with `>=` instead.
+- Pin every direct dependency to an exact version with `==` and commit
+  `uv.lock`. The lockfile resolves the full tree with hashes, so
+  installs are both reproducible and verified against supply-chain
+  tampering. An example is a thing you run, not a library someone
+  imports, so pinning beats flexibility. A library would use floors
+  with `>=` instead.
 - The lockfile is committed and never hand-edited. uv owns it.
   `.gitignore` covers `.venv/`, `__pycache__/`, `.ruff_cache/`, and
   `.ty_cache/`.
@@ -640,6 +685,14 @@ build.
   model or a dataclass. Do not pass bare dicts whose shape lives
   only in your head. This is the Python form of the Go rule about
   field-named struct literals.
+
+### Imports
+
+Every import goes at the top of the module. A function-level import
+hides a dependency from both the reader and the tooling, and it defers
+an ImportError from startup to call time. Import inside a function
+only to break a genuine circular import or to keep an optional
+dependency optional, and name the reason in a comment.
 
 ### Naming
 
