@@ -136,6 +136,7 @@ func setupOrlaStack(t *testing.T) *orlaStack {
 		Logger:        logger,
 		Ready:         store.Ping,
 		PromRegistry:  promReg,
+		AuditMetrics:  m,
 	})
 	policyStore := settings.NewPostgresStore(store.Pool())
 	api.RegisterStageRoutes(srv.Router(), stageReg)
@@ -149,14 +150,14 @@ func setupOrlaStack(t *testing.T) *orlaStack {
 	})
 
 	completionW := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{
-		Pool:     store.Pool(),
-		Logger:   logger,
+		Pool:      store.Pool(),
+		Logger:    logger,
 		BatchSize: 1, // flush eagerly so tests see records quickly
 		Interval:  20 * time.Millisecond,
 	})
 	feedbackW := telemetry.NewFeedbackWriter(telemetry.FeedbackWriterConfig{
-		Pool:     store.Pool(),
-		Logger:   logger,
+		Pool:      store.Pool(),
+		Logger:    logger,
 		BatchSize: 1,
 		Interval:  20 * time.Millisecond,
 	})
@@ -315,6 +316,15 @@ func TestIntegration_FullLoop(t *testing.T) {
 	assert.True(t, strings.Contains(string(promBody),
 		`orla_requests_total{backend="fake-backend",stage="planning",status="success"} 1`),
 		"expected requests_total to reflect the dispatch:\n%s", string(promBody))
+
+	// 8. The audit middleware recorded the backend create and the stage
+	// map above.
+	assert.True(t, strings.Contains(string(promBody),
+		`orla_control_plane_mutations_total{method="POST",outcome="success",resource="backends"} 1`),
+		"expected a control-plane mutation for the backend create:\n%s", string(promBody))
+	assert.True(t, strings.Contains(string(promBody),
+		`orla_control_plane_mutations_total{method="PUT",outcome="success",resource="stages"} 1`),
+		"expected a control-plane mutation for the stage map:\n%s", string(promBody))
 }
 
 // TestIntegration_SchedulerPolicy wires the real Postgres-backed policy
@@ -355,6 +365,15 @@ func TestIntegration_SchedulerPolicy(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "http://sched:8090/next", reloaded.URL)
 	assert.Equal(t, 75*time.Millisecond, reloaded.Timeout)
+
+	// The audit middleware recorded the PUT above.
+	promResp := getResp(t, base+"/metrics")
+	require.Equal(t, http.StatusOK, promResp.StatusCode)
+	promBody, _ := io.ReadAll(promResp.Body)
+	_ = promResp.Body.Close()
+	assert.True(t, strings.Contains(string(promBody),
+		`orla_control_plane_mutations_total{method="PUT",outcome="success",resource="scheduler"} 1`),
+		"expected a control-plane mutation for the policy set:\n%s", string(promBody))
 }
 
 func mustMarshal(t *testing.T, v any) []byte {

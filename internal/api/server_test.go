@@ -1,11 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -93,4 +95,26 @@ func TestServer_RequestIDPresent(t *testing.T) {
 
 	assert.NotEmpty(t, resp.Header.Get("X-Request-Id"),
 		"chi middleware should set X-Request-Id")
+}
+
+// TestServer_AccessLogRecordsCaller covers the client address on the
+// access log, which is the forensic half of the control-plane audit.
+// Orla authenticates nobody, so both fields are whatever the caller
+// claimed.
+func TestServer_AccessLogRecordsCaller(t *testing.T) {
+	var buf bytes.Buffer
+	srv := NewServer(ServerConfig{
+		ListenAddress: "127.0.0.1:0",
+		Logger:        slog.New(slog.NewTextHandler(&buf, nil)),
+	})
+	srv.Router().Put("/api/v1/stages/{id}", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/stages/planning", nil)
+	req.Header.Set("X-Forwarded-For", "10.1.2.3")
+	srv.Router().ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Contains(t, buf.String(), "remote_addr="+req.RemoteAddr)
+	assert.Contains(t, buf.String(), "forwarded_for=10.1.2.3")
 }

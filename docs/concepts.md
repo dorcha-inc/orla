@@ -158,6 +158,8 @@ Each role has its own API surface. The developer uses the OpenAI-compatible prox
 
 This separation is what makes runtime adaptation safe. Routing changes do not require an agent redeploy. Agent changes do not require a platform-engineer review. The mapping in Postgres is the shared boundary.
 
+The two surfaces are a routing convention. Orla mounts them on the same router with no authorization layer between them, so anything that can reach one can reach the other. The separation above holds only if the reverse proxy in front of orla authorizes the control plane separately from the data plane. Authenticating the caller leaves the gap open. Orla counts every control-plane write so an operator can see it. See [`SECURITY.md`](../SECURITY.md).
+
 ## Identity tags
 
 Every call can carry arbitrary tags via headers:
@@ -176,7 +178,7 @@ Tags land in `completion_records.tags_json` and are available to the mapper. The
 - **Not an agent framework.** Orla does not parse tool calls, run loops, or do orchestration. It serves OpenAI-compatible requests, full stop. Your agent framework stays exactly as it is, whether that is LangGraph, LangChain, the raw OpenAI SDK, or anything custom.
 - **Not a model gateway.** Orla does not pick backends based on prompt content, cost thresholds, or token counts. The mapping is the platform engineer's lever. Orla just executes it.
 - **Not a retry/fallback chain.** If the resolved backend fails after retries, the call fails. Fallback chains are policy, and policy belongs to the mapper.
-- **Not an auth gateway.** Run orla behind nginx, Cloudflare, or a service mesh that handles auth. See [`SECURITY.md`](../SECURITY.md).
+- **Not an auth gateway.** Run orla behind nginx, Cloudflare, or a service mesh that handles auth. The fronting layer must authorize by path, not just authenticate the caller. See [`SECURITY.md`](../SECURITY.md).
 
 ## What to read next
 

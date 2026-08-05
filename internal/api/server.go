@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -44,6 +45,9 @@ type ServerConfig struct {
 	// PromRegistry, if non-nil, mounts /metrics using a handler that
 	// scrapes this registry.
 	PromRegistry prometheus.Gatherer
+
+	// AuditMetrics, if non-nil, counts control-plane mutations.
+	AuditMetrics ControlPlaneAuditMetrics
 }
 
 // Server wraps an *http.Server and the chi router. Construct with
@@ -64,7 +68,7 @@ func NewServer(cfg ServerConfig) *Server {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(loggingMiddleware(cfg.Logger))
+	r.Use(loggingMiddleware(cfg.Logger, cfg.AuditMetrics))
 	r.Use(middleware.Recoverer)
 	if cfg.MaxRequestBytes > 0 {
 		r.Use(bodyLimitMiddleware(cfg.MaxRequestBytes))
@@ -121,7 +125,7 @@ func bodyLimitMiddleware(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
-func loggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+func loggingMiddleware(logger *slog.Logger, audit ControlPlaneAuditMetrics) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -145,7 +149,55 @@ func loggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 				slog.Int("bytes", ww.BytesWritten()),
 				slog.Duration("duration", time.Since(start)),
 				slog.String("request_id", reqID),
+				slog.String("remote_addr", r.RemoteAddr),
+				slog.String("forwarded_for", r.Header.Get("X-Forwarded-For")),
 			)
+
+			// Mounted outside Recoverer, so a panicking handler is
+			// audited with the 500 the recoverer turned it into.
+			if audit != nil {
+				auditControlPlaneMutation(audit, r, ww.Status())
+			}
 		})
 	}
+}
+
+// ControlPlaneAuditMetrics counts mutating requests to the control
+// plane.
+type ControlPlaneAuditMetrics interface {
+	IncControlPlaneMutation(resource, method, outcome string)
+}
+
+// controlPlaneResource returns the resource segment of a matched
+// control-plane route pattern and reports whether pattern is one.
+// Taking the segment from the matched pattern bounds the metric's
+// label set by the routes orla registers, since an unrouted request
+// carries no pattern.
+func controlPlaneResource(pattern string) (string, bool) {
+	rest, ok := strings.CutPrefix(pattern, "/api/v1/")
+	if !ok {
+		return "", false
+	}
+	resource, _, _ := strings.Cut(rest, "/")
+	return resource, resource != ""
+}
+
+// auditControlPlaneMutation counts a write to the control plane and
+// ignores everything else. Every request still reaches its handler,
+// since the audit only observes. Call it after the handler, since both
+// the status and the route chi matched are only known by then.
+func auditControlPlaneMutation(metrics ControlPlaneAuditMetrics, r *http.Request, status int) {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return
+	}
+	resource, ok := controlPlaneResource(chi.RouteContext(r.Context()).RoutePattern())
+	if !ok {
+		return
+	}
+
+	outcome := "success"
+	if status < 200 || status >= 300 {
+		outcome = "error"
+	}
+	metrics.IncControlPlaneMutation(resource, r.Method, outcome)
 }

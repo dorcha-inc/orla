@@ -50,6 +50,19 @@ func TestMetrics_SchedulerRejectionsCounter(t *testing.T) {
 	assert.InDelta(t, 2.0, got, 1e-9)
 }
 
+func TestMetrics_ControlPlaneMutationsCounter(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := metrics.New(reg)
+
+	m.IncControlPlaneMutation("stages", "PATCH", "success")
+	m.IncControlPlaneMutation("stages", "PATCH", "success")
+	m.IncControlPlaneMutation("stages", "PATCH", "error")
+	m.IncControlPlaneMutation("backends", "DELETE", "success")
+
+	got := testutil.ToFloat64(m.ControlPlaneMutationsTotal.WithLabelValues("stages", "PATCH", "success"))
+	assert.InDelta(t, 2.0, got, 1e-9)
+}
+
 func TestMetrics_PolicyDecisionsCounter(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := metrics.New(reg)
