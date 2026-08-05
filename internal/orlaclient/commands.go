@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -29,7 +30,7 @@ func NewRootCmd() *cobra.Command {
 		cmp.Or(os.Getenv("ORLA_ADDR"), "http://localhost:8081"), "orla daemon address")
 
 	client := func() *Client { return New(addr) }
-	root.AddCommand(newBackendCmd(client), newStageCmd(client), newMappingCmd(client), newSchedulerCmd(client), newFeedbackCmd(client))
+	root.AddCommand(newBackendCmd(client), newStageCmd(client), newMappingCmd(client), newSchedulerCmd(client), newCostsCmd(client), newFeedbackCmd(client))
 	return root
 }
 
@@ -77,6 +78,7 @@ func newBackendCreateCmd(client func() *Client) *cobra.Command {
 	f.StringVar(&req.Endpoint, "endpoint", "", "OpenAI-compatible base URL (required)")
 	f.StringVar(&req.ModelID, "model", "", "provider-prefixed model id, e.g. ollama:qwen2.5:0.5b")
 	f.StringVar(&req.APIKeyEnvVar, "api-key-env", "", "env var orla reads the API key from")
+	f.StringVar(&req.CostSource, "cost-source", "", "URL orla polls for the backend's current costs")
 	f.Int32Var(&req.MaxConcurrency, "max-concurrency", 1, "max concurrent requests")
 	f.StringVar(&req.Kind, "kind", "", "backend kind: llm (default) or tool")
 	f.StringVar(&req.ToolKind, "tool-kind", "", "tool kind, for kind=tool")
@@ -211,10 +213,122 @@ func newSchedulerPolicyDisableCmd(client func() *Client) *cobra.Command {
 	}
 }
 
+func newStageMapperCmd(client func() *Client) *cobra.Command {
+	cmd := &cobra.Command{Use: "mapper", Short: "Manage the dynamic stage mapper"}
+	cmd.AddCommand(
+		newStageMapperShowCmd(client),
+		newStageMapperSetCmd(client),
+		newStageMapperDisableCmd(client),
+	)
+	return cmd
+}
+
+func newStageMapperShowCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show",
+		Short: "Show the active dynamic stage mapper",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := client().GetStageMapper(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return printJSON(p)
+		},
+	}
+}
+
+func newStageMapperSetCmd(client func() *Client) *cobra.Command {
+	var (
+		mapperURL string
+		timeoutMS int
+	)
+	cmd := &cobra.Command{
+		Use:   "set --url URL [--timeout-ms N]",
+		Short: "Route stages through an external mapper service, per request",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := client().SetStageMapper(cmd.Context(), wire.StageMapper{
+				URL:       mapperURL,
+				TimeoutMS: timeoutMS,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("stage mapper set: url=%s timeout_ms=%d\n", p.URL, p.TimeoutMS)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&mapperURL, "url", "", "mapper service URL (required)")
+	cmd.Flags().IntVar(&timeoutMS, "timeout-ms", 0, "per-decision timeout in milliseconds (default 50)")
+	_ = cmd.MarkFlagRequired("url")
+	return cmd
+}
+
+func newStageMapperDisableCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "disable",
+		Short: "Revert to static stage routing",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if _, err := client().SetStageMapper(cmd.Context(), wire.StageMapper{URL: ""}); err != nil {
+				return err
+			}
+			fmt.Println("stage mapper disabled, stages route by their static mapping")
+			return nil
+		},
+	}
+}
+
+func newCostsCmd(client func() *Client) *cobra.Command {
+	cmd := &cobra.Command{Use: "costs", Short: "Manage cost polling"}
+	policy := &cobra.Command{Use: "policy", Short: "Manage the cost policy"}
+	policy.AddCommand(
+		newCostPolicyShowCmd(client),
+		newCostPolicySetCmd(client),
+	)
+	cmd.AddCommand(policy)
+	return cmd
+}
+
+func newCostPolicyShowCmd(client func() *Client) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show",
+		Short: "Show the active cost policy",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := client().GetCostPolicy(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return printJSON(p)
+		},
+	}
+}
+
+func newCostPolicySetCmd(client func() *Client) *cobra.Command {
+	var interval time.Duration
+	cmd := &cobra.Command{
+		Use:   "set --refresh-interval DURATION",
+		Short: "Set how often orla refreshes prices from cost sources",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := client().SetCostPolicy(cmd.Context(), wire.CostPolicy{
+				RefreshIntervalMS: int(interval.Milliseconds()),
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("cost policy set: refresh_interval=%s\n",
+				time.Duration(p.RefreshIntervalMS)*time.Millisecond)
+			return nil
+		},
+	}
+	cmd.Flags().DurationVar(&interval, "refresh-interval", 0, "time between cost refreshes, e.g. 30s (required)")
+	_ = cmd.MarkFlagRequired("refresh-interval")
+	return cmd
+}
+
 func newStageCmd(client func() *Client) *cobra.Command {
 	cmd := &cobra.Command{Use: "stage", Short: "Manage stage mappings"}
 	cmd.AddCommand(
 		newStageMapCmd(client),
+		newStageMapperCmd(client),
 		newStagePromptCmd(client),
 		newStageCaptureCmd(client),
 		newStageListCmd(client),

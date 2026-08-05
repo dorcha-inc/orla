@@ -23,6 +23,7 @@ type Backend struct {
 	Rates               []byte
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
+	CostSource          *string
 }
 
 type CompletionIo struct {
@@ -49,6 +50,12 @@ type CompletionRecord struct {
 	Tags             []byte
 	CreatedAt        pgtype.Timestamptz
 	Mapping          string
+}
+
+type CostPolicy struct {
+	ID                bool
+	RefreshIntervalMs int32
+	UpdatedAt         pgtype.Timestamptz
 }
 
 type Feedback struct {
@@ -86,4 +93,11 @@ type Stage struct {
 	UpdatedAt       pgtype.Timestamptz
 	Prompt          string
 	CaptureIo       bool
+}
+
+type StageMapper struct {
+	ID        bool
+	Url       string
+	TimeoutMs int32
+	UpdatedAt pgtype.Timestamptz
 }

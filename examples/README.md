@@ -7,5 +7,11 @@ not change when the routing does.
 
 - [hotpotqa-distractor](hotpotqa-distractor/README.md): multi-hop QA on HotpotQA,
   a fixed select-hop-answer pipeline.
+- [dynamic-costs](dynamic-costs/README.md): a toy cost service Orla polls for
+  time-varying backend prices.
 - [capture-io](capture-io/README.md): capture each stage's request and response
   and read them back, a retrieve-answer pipeline.
+- [mapper_service](mapper_service/README.md): a dynamic stage mapper that
+  routes every stage to the cheapest healthy backend.
+- [energy-pricing](energy-pricing/README.md): serving an LLM workload for less
+  electricity, starting with routing between grid regions by live price.

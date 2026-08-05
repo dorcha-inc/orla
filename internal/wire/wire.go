@@ -21,6 +21,7 @@ type CreateBackendRequest struct {
 	ModelID             string   `json:"model_id,omitempty"`
 	InputCostPerMtoken  *float64 `json:"input_cost_per_mtoken,omitempty"`
 	OutputCostPerMtoken *float64 `json:"output_cost_per_mtoken,omitempty"`
+	CostSource          string   `json:"cost_source,omitempty"`
 
 	ToolKind string             `json:"tool_kind,omitempty"`
 	Rates    map[string]float64 `json:"rates,omitempty"`
@@ -114,6 +115,23 @@ type Stage struct {
 // scheduling decision. Enabled is derived on responses and ignored on
 // input.
 type SchedulerPolicy struct {
+	URL       string `json:"url"`
+	TimeoutMS int    `json:"timeout_ms"`
+	Enabled   bool   `json:"enabled"`
+}
+
+// CostPolicy is the GET and PUT /api/v1/costs/policy body.
+// RefreshIntervalMS is how often the daemon refreshes prices from
+// backend cost sources.
+type CostPolicy struct {
+	RefreshIntervalMS int `json:"refresh_interval_ms"`
+}
+
+// StageMapper is the GET and PUT /api/v1/stage-mapper body. An
+// empty URL means stages route by their static mapping. TimeoutMS
+// bounds a single routing decision. Enabled is derived on responses
+// and ignored on input.
+type StageMapper struct {
 	URL       string `json:"url"`
 	TimeoutMS int    `json:"timeout_ms"`
 	Enabled   bool   `json:"enabled"`

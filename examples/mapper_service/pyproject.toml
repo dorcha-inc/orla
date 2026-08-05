@@ -1,0 +1,23 @@
+[project]
+name = "orla-example-mapper-service"
+version = "0.1.0"
+description = "A minimal dynamic stage mapper for Orla: cheapest healthy backend wins."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi==0.122.1",
+    "uvicorn==0.42.0",
+    "pydantic==2.13.4",
+]
+
+[dependency-groups]
+dev = [
+    "ruff==0.15.20",
+    "ty==0.0.55",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

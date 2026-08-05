@@ -25,11 +25,13 @@ type Querier interface {
 	// Keeping that order lets sqlc reuse the db.Backend row type instead of
 	// emitting a per-query row type.
 	GetBackend(ctx context.Context, name string) (Backend, error)
+	GetCostPolicy(ctx context.Context) (GetCostPolicyRow, error)
 	// The backend override for one (variant, stage). No row means the
 	// request falls through to the stage's live backend.
 	GetMappingOverride(ctx context.Context, arg GetMappingOverrideParams) (string, error)
 	GetSchedulerPolicy(ctx context.Context) (GetSchedulerPolicyRow, error)
 	GetStage(ctx context.Context, id string) (Stage, error)
+	GetStageMapper(ctx context.Context) (GetStageMapperRow, error)
 	InsertBackend(ctx context.Context, arg InsertBackendParams) (Backend, error)
 	// Every override across all variants, ordered so a caller can group
 	// consecutive rows by name.
@@ -48,6 +50,7 @@ type Querier interface {
 	// don't have to deal with NULLs.
 	StageMetricsByBackend(ctx context.Context, arg StageMetricsByBackendParams) ([]StageMetricsByBackendRow, error)
 	UpdateBackend(ctx context.Context, arg UpdateBackendParams) (Backend, error)
+	UpsertCostPolicy(ctx context.Context, refreshIntervalMs int32) error
 	UpsertMappingOverride(ctx context.Context, arg UpsertMappingOverrideParams) error
 	UpsertSchedulerPolicy(ctx context.Context, arg UpsertSchedulerPolicyParams) error
 	// Auto-create a stage with empty fields on first sighting. If the row
@@ -56,6 +59,7 @@ type Querier interface {
 	// no row when the conflict fires, which loses the "fetch existing"
 	// behavior we want here.)
 	UpsertStageDefault(ctx context.Context, id string) (Stage, error)
+	UpsertStageMapper(ctx context.Context, arg UpsertStageMapperParams) error
 }
 
 var _ Querier = (*Queries)(nil)

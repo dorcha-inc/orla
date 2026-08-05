@@ -14,6 +14,7 @@ Each stage returns a Pydantic-typed structured output.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import TypeVar
 
 from openai import OpenAI
@@ -22,7 +23,18 @@ from pydantic import BaseModel
 T = TypeVar("T", bound=BaseModel)
 
 Paragraph = tuple[str, list[str]]
-Call = tuple[str, str]
+
+
+@dataclass(frozen=True)
+class Call:
+    """One model call: which stage made it, what Orla called it, and what it cost
+    in tokens. The token counts are what the energy-pricing examples replay."""
+
+    stage: str
+    completion_id: str
+    prompt_tokens: int
+    completion_tokens: int
+
 
 BASE_URL = os.environ.get("ORLA_BASE_URL", "http://localhost:8081/v1")
 # Generous, not tight: reasoning backends spend output tokens before answering, so
@@ -61,14 +73,13 @@ def _selected_text(nums: list[int], paragraphs: list[Paragraph]) -> str:
 
 
 class HotpotAgent:
-    """Runs one question through select -> hop -> answer. Each call is recorded
-    as (stage, completion_id) on self.calls so the caller can post feedback."""
+    """Runs one question through select -> hop -> answer. Holds no per-question
+    state, so one instance is safe to share across threads."""
 
     def __init__(self, base_url: str = BASE_URL) -> None:
         self._client = OpenAI(base_url=base_url, api_key="orla")
-        self.calls: list[Call] = []
 
-    def _ask(self, stage: str, system: str, user: str, schema: type[T]) -> T | None:
+    def _ask(self, stage: str, system: str, user: str, schema: type[T]) -> tuple[T | None, Call]:
         resp = self._client.chat.completions.parse(
             model="orla",
             messages=[
@@ -80,30 +91,36 @@ class HotpotAgent:
             max_tokens=MAX_TOKENS,
             response_format=schema,
         )
-        self.calls.append((stage, resp.id))
-        return resp.choices[0].message.parsed
+        usage = resp.usage
+        call = Call(
+            stage=stage,
+            completion_id=resp.id,
+            prompt_tokens=usage.prompt_tokens if usage else 0,
+            completion_tokens=usage.completion_tokens if usage else 0,
+        )
+        return resp.choices[0].message.parsed, call
 
     def answer(self, question: str, paragraphs: list[Paragraph]) -> tuple[str, list[Call]]:
-        self.calls = []
         passages = _format(paragraphs)
-        sel = self._ask(
+        sel, sel_call = self._ask(
             "select",
             SELECT_SYSTEM,
             f"Question: {question}\n\nPassages:\n{passages}\n\nWhich passages are needed?",
             Selection,
         )
         text = _selected_text(sel.passages if sel else [], paragraphs)
-        hop = self._ask(
+        hop, hop_call = self._ask(
             "hop",
             HOP_SYSTEM,
             f"Question: {question}\n\nPassages:\n{text}\n\nReason hop by hop, then answer.",
             Hop,
         )
-        final = self._ask(
+        final, answer_call = self._ask(
             "answer",
             ANSWER_SYSTEM,
             f"Question: {question}\n\nReasoning:\n{hop.reasoning if hop else ''}\n"
             f"Draft answer: {hop.answer if hop else ''}\n\nGive the final answer.",
             Answer,
         )
-        return (final.answer.strip() if final else ""), self.calls
+        answer = final.answer.strip() if final else ""
+        return answer, [sel_call, hop_call, answer_call]

@@ -178,3 +178,46 @@ func TestFakeRegistry_ContractMatches(t *testing.T) {
 	_, err = reg.Patch(ctx, "missing", backends.PatchRequest{})
 	assert.ErrorIs(t, err, backends.ErrNotFound)
 }
+
+// costSourceRoundTrip is the shared contract for the cost_source
+// field: insert stores it, patch overwrites it, and patching the
+// empty string clears it back to nil.
+func costSourceRoundTrip(t *testing.T, reg backends.Registry) {
+	t.Helper()
+	ctx := context.Background()
+
+	_, err := reg.Insert(ctx, &backends.Backend{
+		Name: "priced", Endpoint: "x", ModelID: new("openai:gpt-4o"),
+		MaxConcurrency: 1,
+		CostSource:     new("http://localhost:9090/price"),
+	})
+	require.NoError(t, err)
+
+	got, err := reg.Get(ctx, "priced")
+	require.NoError(t, err)
+	require.NotNil(t, got.CostSource)
+	assert.Equal(t, "http://localhost:9090/price", *got.CostSource)
+
+	got, err = reg.Patch(ctx, "priced", backends.PatchRequest{
+		CostSource: new("http://localhost:9191/price"),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got.CostSource)
+	assert.Equal(t, "http://localhost:9191/price", *got.CostSource)
+
+	got, err = reg.Patch(ctx, "priced", backends.PatchRequest{CostSource: new("")})
+	require.NoError(t, err)
+	assert.Nil(t, got.CostSource, "patching the empty string clears cost_source")
+
+	got, err = reg.Patch(ctx, "priced", backends.PatchRequest{Quality: new(0.5)})
+	require.NoError(t, err)
+	assert.Nil(t, got.CostSource, "an unrelated patch leaves a cleared cost_source nil")
+}
+
+func TestPostgresRegistry_CostSourceRoundTrip(t *testing.T) {
+	costSourceRoundTrip(t, backends.NewPostgresRegistry(freshPool(t)))
+}
+
+func TestFakeRegistry_CostSourceRoundTrip(t *testing.T) {
+	costSourceRoundTrip(t, backends.NewFakeRegistry())
+}

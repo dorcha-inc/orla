@@ -176,6 +176,35 @@ func (c *Client) SetSchedulerPolicy(ctx context.Context, req wire.SchedulerPolic
 	return p, err
 }
 
+// GetStageMapper returns the active stage mapper.
+func (c *Client) GetStageMapper(ctx context.Context) (wire.StageMapper, error) {
+	var p wire.StageMapper
+	err := c.do(ctx, http.MethodGet, "/api/v1/stage-mapper", nil, &p)
+	return p, err
+}
+
+// SetStageMapper replaces the active stage mapper. An empty URL
+// reverts to static stage routing.
+func (c *Client) SetStageMapper(ctx context.Context, req wire.StageMapper) (wire.StageMapper, error) {
+	var p wire.StageMapper
+	err := c.do(ctx, http.MethodPut, "/api/v1/stage-mapper", req, &p)
+	return p, err
+}
+
+// GetCostPolicy returns the active cost policy.
+func (c *Client) GetCostPolicy(ctx context.Context) (wire.CostPolicy, error) {
+	var p wire.CostPolicy
+	err := c.do(ctx, http.MethodGet, "/api/v1/costs/policy", nil, &p)
+	return p, err
+}
+
+// SetCostPolicy replaces the active cost policy.
+func (c *Client) SetCostPolicy(ctx context.Context, req wire.CostPolicy) (wire.CostPolicy, error) {
+	var p wire.CostPolicy
+	err := c.do(ctx, http.MethodPut, "/api/v1/costs/policy", req, &p)
+	return p, err
+}
+
 // SubmitFeedback reports the outcome of a completion for a stage. Agents
 // normally post this themselves; the CLI command is for trying the loop
 // by hand.

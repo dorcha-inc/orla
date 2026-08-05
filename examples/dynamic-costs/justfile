@@ -1,0 +1,27 @@
+# Tasks for the dynamic costs example. Requires uv.
+
+# List recipes.
+default:
+    @just --list
+
+# Run the cost service on port 9090.
+run:
+    uv run uvicorn service:app --host 127.0.0.1 --port 9090
+
+# Format the code with ruff.
+fmt:
+    uv run ruff format .
+
+# Lint with ruff (use `just lint --fix` to apply fixes).
+lint *args:
+    uv run ruff check {{ args }} .
+
+# Type-check with ty.
+typecheck:
+    uv run ty check .
+
+# Read-only checks, the way CI would run them.
+check:
+    uv run ruff format --check .
+    uv run ruff check .
+    uv run ty check .

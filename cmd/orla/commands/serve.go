@@ -19,6 +19,7 @@ import (
 	"github.com/harvard-cns/orla/internal/api"
 	"github.com/harvard-cns/orla/internal/backends"
 	"github.com/harvard-cns/orla/internal/config"
+	"github.com/harvard-cns/orla/internal/costs"
 	"github.com/harvard-cns/orla/internal/mappings"
 	"github.com/harvard-cns/orla/internal/metrics"
 	"github.com/harvard-cns/orla/internal/provider"
@@ -125,6 +126,24 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		PolicyStore: policyStore,
 		Scheduler:   sched,
 	})
+	costPolicyStore := settings.NewPostgresCostStore(store.Pool())
+	api.RegisterCostRoutes(srv.Router(), api.CostDeps{Store: costPolicyStore})
+
+	// Restore the stage mapper last set through orlactl.
+	stageMapperStore := settings.NewPostgresMapperStore(store.Pool())
+	stageMapperHolder := &mappings.MapperHolder{}
+	mapperCfg, err := stageMapperStore.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("load stage mapper: %w", err)
+	}
+	api.ApplyStageMapper(stageMapperHolder, mapperCfg)
+	if mapperCfg.Enabled() {
+		logger.Info("stage mapper enabled", "url", mapperCfg.URL, "timeout", mapperCfg.Timeout)
+	}
+	api.RegisterStageMapperRoutes(srv.Router(), api.StageMapperDeps{
+		Store:  stageMapperStore,
+		Holder: stageMapperHolder,
+	})
 	completionWriter := telemetry.NewCompletionWriter(telemetry.CompletionWriterConfig{
 		Pool:   store.Pool(),
 		Logger: logger,
@@ -139,12 +158,25 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}))
 	promReg.MustRegister(metrics.NewCompletionIOCollector(completionWriter))
 
+	costStore := costs.NewStore()
+	costPoller := costs.NewPoller(costs.PollerConfig{
+		Registry: backendRegistry,
+		Store:    costStore,
+		Policy:   costPolicyStore,
+		Metrics:  m,
+		Logger:   logger,
+	})
+	costPoller.Start()
+	promReg.MustRegister(metrics.NewCostCollector(costStore))
+
 	api.RegisterProxyRoutes(srv.Router(), api.ProxyDeps{
 		Stages:         stageRegistry,
 		Mappings:       mappingRegistry,
 		Scheduler:      sched,
 		CompletionSink: completionWriter,
 		Metrics:        m,
+		Costs:          costStore,
+		StageMapper:    stageMapperHolder,
 	})
 	api.RegisterFeedbackRoutes(srv.Router(), api.FeedbackDeps{
 		Sink:    feedbackWriter,
@@ -186,6 +218,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	if err := sched.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		logger.Error("scheduler shutdown error", "error", err)
+	}
+	if err := costPoller.Close(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		logger.Error("cost poller shutdown error", "error", err)
 	}
 	if err := completionWriter.Close(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		logger.Error("completion writer shutdown error", "error", err)
