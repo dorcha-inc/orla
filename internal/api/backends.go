@@ -98,6 +98,10 @@ func (h *backendHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "output_cost_per_mtoken must be a non-negative finite number")
 		return
 	}
+	if req.CacheReadCostPerMtoken != nil && !isFiniteNonNegative(*req.CacheReadCostPerMtoken) {
+		writeErrorMsg(w, http.StatusBadRequest, "cache_read_cost_per_mtoken must be a non-negative finite number")
+		return
+	}
 	if msg := validateRates(req.Rates); msg != "" {
 		writeErrorMsg(w, http.StatusBadRequest, msg)
 		return
@@ -133,6 +137,10 @@ func (h *backendHandler) create(w http.ResponseWriter, r *http.Request) {
 			writeErrorMsg(w, http.StatusBadRequest, "cost_source is only valid for kind=llm")
 			return
 		}
+		if req.CacheReadCostPerMtoken != nil {
+			writeErrorMsg(w, http.StatusBadRequest, "cache_read_cost_per_mtoken is only valid for kind=llm")
+			return
+		}
 	default:
 		writeErrorMsg(w, http.StatusBadRequest,
 			"kind must be 'llm' or 'tool'")
@@ -140,16 +148,17 @@ func (h *backendHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	b := &backends.Backend{
-		Name:                req.Name,
-		Endpoint:            req.Endpoint,
-		APIKeyEnvVar:        req.APIKeyEnvVar,
-		MaxConcurrency:      req.MaxConcurrency,
-		InputCostPerMtoken:  req.InputCostPerMtoken,
-		OutputCostPerMtoken: req.OutputCostPerMtoken,
-		Quality:             req.Quality,
-		RatePerSecond:       req.RatePerSecond,
-		Kind:                kind,
-		Rates:               req.Rates,
+		Name:                   req.Name,
+		Endpoint:               req.Endpoint,
+		APIKeyEnvVar:           req.APIKeyEnvVar,
+		MaxConcurrency:         req.MaxConcurrency,
+		InputCostPerMtoken:     req.InputCostPerMtoken,
+		OutputCostPerMtoken:    req.OutputCostPerMtoken,
+		CacheReadCostPerMtoken: req.CacheReadCostPerMtoken,
+		Quality:                req.Quality,
+		RatePerSecond:          req.RatePerSecond,
+		Kind:                   kind,
+		Rates:                  req.Rates,
 	}
 	if req.ModelID != "" {
 		b.ModelID = &req.ModelID
@@ -231,17 +240,26 @@ func (h *backendHandler) patch(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "output_cost_per_mtoken must be a non-negative finite number")
 		return
 	}
+	if req.CacheReadCostPerMtoken != nil && !isFiniteNonNegative(*req.CacheReadCostPerMtoken) {
+		writeErrorMsg(w, http.StatusBadRequest, "cache_read_cost_per_mtoken must be a non-negative finite number")
+		return
+	}
 	if req.Rates != nil {
 		if msg := validateRates(*req.Rates); msg != "" {
 			writeErrorMsg(w, http.StatusBadRequest, msg)
 			return
 		}
 	}
-	if req.CostSource != nil && *req.CostSource != "" {
+	settingCostSource := req.CostSource != nil && *req.CostSource != ""
+	if settingCostSource {
 		if err := validateHTTPURL(*req.CostSource); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("cost_source %w", err))
 			return
 		}
+	}
+	// Both fields price an LLM dispatch, so a tool backend has nothing
+	// that reads them.
+	if settingCostSource || req.CacheReadCostPerMtoken != nil {
 		current, err := h.deps.Registry.Get(r.Context(), name)
 		if err != nil {
 			if errors.Is(err, backends.ErrNotFound) {
@@ -252,7 +270,11 @@ func (h *backendHandler) patch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if current.Kind != backends.KindLLM {
-			writeErrorMsg(w, http.StatusBadRequest, "cost_source is only valid for kind=llm")
+			field := "cache_read_cost_per_mtoken"
+			if settingCostSource {
+				field = "cost_source"
+			}
+			writeErrorMsg(w, http.StatusBadRequest, field+" is only valid for kind=llm")
 			return
 		}
 	}

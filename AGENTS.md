@@ -816,8 +816,13 @@ Two channels exist on backends:
 
 - LLM backends price through `input_cost_per_mtoken` and
   `output_cost_per_mtoken` (per million tokens). The proxy computes
-  `cost_usd = (prompt_tokens × input + completion_tokens × output) /
-  1_000_000` and records it on every completion. An LLM backend whose
+  `cost_usd = ((prompt_tokens - cached_tokens) × input + cached_tokens
+  × cache_read + completion_tokens × output) / 1_000_000` and records
+  it on every completion. `cached_tokens` is the share of the prompt
+  the provider served from its cache, reported as
+  `prompt_tokens_details.cached_tokens`. A backend that declares no
+  `cache_read_cost_per_mtoken` prices a cached token at the input
+  rate. An LLM backend whose
   price changes over time can set `cost_source`, a URL the daemon
   polls for the current per-mtoken costs. A live polled price
   overrides the static columns for cost accounting without rewriting

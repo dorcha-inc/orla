@@ -53,7 +53,7 @@ func (q *Queries) CostByMapping(ctx context.Context, since pgtype.Timestamptz) (
 const listStageCompletions = `-- name: ListStageCompletions :many
 SELECT completion_id, stage_id, workflow_run, backend, status,
        prompt_tokens, completion_tokens, latency_ms, cost_usd,
-       tags, created_at, usage, tool_kind, mapping
+       tags, created_at, usage, tool_kind, mapping, cached_tokens
 FROM completion_records
 WHERE stage_id = $1
   AND created_at > COALESCE($2::timestamptz, '-infinity'::timestamptz)
@@ -82,6 +82,7 @@ type ListStageCompletionsRow struct {
 	Usage            []byte
 	ToolKind         *string
 	Mapping          string
+	CachedTokens     *int32
 }
 
 // Returns completion records for a stage, optionally filtered by
@@ -110,6 +111,7 @@ func (q *Queries) ListStageCompletions(ctx context.Context, arg ListStageComplet
 			&i.Usage,
 			&i.ToolKind,
 			&i.Mapping,
+			&i.CachedTokens,
 		); err != nil {
 			return nil, err
 		}

@@ -352,3 +352,73 @@ func TestBackendHandlers_ListOrderedByName(t *testing.T) {
 	assert.Equal(t, []string{"alpha", "mu", "zeta"},
 		[]string{body.Backends[0].Name, body.Backends[1].Name, body.Backends[2].Name})
 }
+
+func TestBackendHandlers_CreateRejectsCacheReadCostOnTool(t *testing.T) {
+	srv, _ := newBackendTestServer(t)
+	body := mustJSON(t, map[string]any{
+		"name": "boltz", "endpoint": "http://boltz.local", "kind": "tool",
+		"tool_kind": "structure-prediction", "max_concurrency": 1,
+		"rates":                      map[string]float64{"gpu_seconds": 0.001},
+		"cache_read_cost_per_mtoken": 0.30,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/backends", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "cache_read_cost_per_mtoken is only valid for kind=llm")
+}
+
+func TestBackendHandlers_CreateRejectsNegativeCacheReadCost(t *testing.T) {
+	srv, _ := newBackendTestServer(t)
+	body := mustJSON(t, map[string]any{
+		"name": "gpt4o", "endpoint": "https://api.openai.com/v1",
+		"model_id": "openai:gpt-4o", "max_concurrency": 1,
+		"cache_read_cost_per_mtoken": -0.30,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/backends", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "cache_read_cost_per_mtoken must be a non-negative finite number")
+}
+
+func TestBackendHandlers_PatchCacheReadCost(t *testing.T) {
+	srv, reg := newBackendTestServer(t)
+	_, err := reg.Insert(context.Background(), &backends.Backend{
+		Name: "gpt4o", Endpoint: "https://api.openai.com/v1", MaxConcurrency: 1,
+		Kind: backends.KindLLM, ModelID: new("openai:gpt-4o"),
+	})
+	require.NoError(t, err)
+
+	body := mustJSON(t, map[string]any{"cache_read_cost_per_mtoken": 0.30})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/backends/gpt4o", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	got, err := reg.Get(context.Background(), "gpt4o")
+	require.NoError(t, err)
+	require.NotNil(t, got.CacheReadCostPerMtoken)
+	assert.InDelta(t, 0.30, *got.CacheReadCostPerMtoken, 1e-9)
+}
+
+func TestBackendHandlers_PatchRejectsCacheReadCostOnTool(t *testing.T) {
+	srv, reg := newBackendTestServer(t)
+	toolKind := "structure-prediction"
+	_, err := reg.Insert(context.Background(), &backends.Backend{
+		Name: "boltz", Endpoint: "http://boltz.local", MaxConcurrency: 1,
+		Kind: backends.KindTool, ToolKind: &toolKind,
+	})
+	require.NoError(t, err)
+
+	body := mustJSON(t, map[string]any{"cache_read_cost_per_mtoken": 0.30})
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/backends/boltz", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "cache_read_cost_per_mtoken is only valid for kind=llm")
+}

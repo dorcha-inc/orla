@@ -379,7 +379,8 @@ func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request,
 	}
 	prompt := int(resp.Usage.PromptTokens)
 	completion := int(resp.Usage.CompletionTokens)
-	costUSD := h.computeLLMCost(backendName, prompt, completion, completionID)
+	cached := int(resp.Usage.PromptTokensDetails.CachedTokens)
+	costUSD := h.computeLLMCost(backendName, prompt, completion, cached, completionID)
 	var responseContent string
 	if rc.CaptureIO {
 		if b, err := json.Marshal(resp); err == nil {
@@ -393,6 +394,7 @@ func (h *proxyHandler) serveNonStreaming(w http.ResponseWriter, r *http.Request,
 		status:           "success",
 		promptTokens:     &prompt,
 		completionTokens: &completion,
+		cachedTokens:     &cached,
 		latencyMs:        &latencyMs,
 		costUSD:          costUSD,
 		responseContent:  responseContent,
@@ -424,7 +426,7 @@ func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc
 
 	start := time.Now()
 	var completionID string
-	var promptTokens, completionTokens int
+	var promptTokens, completionTokens, cachedTokens int
 	var captured strings.Builder
 
 	stream := p.ChatStream(r.Context(), params)
@@ -448,6 +450,9 @@ func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc
 		}
 		if chunk.Usage.CompletionTokens > 0 {
 			completionTokens = int(chunk.Usage.CompletionTokens)
+		}
+		if chunk.Usage.PromptTokensDetails.CachedTokens > 0 {
+			cachedTokens = int(chunk.Usage.PromptTokensDetails.CachedTokens)
 		}
 		if rc.CaptureIO && len(chunk.Choices) > 0 {
 			captured.WriteString(chunk.Choices[0].Delta.Content)
@@ -492,21 +497,15 @@ func (h *proxyHandler) serveStreaming(w http.ResponseWriter, r *http.Request, rc
 	if completionID == "" {
 		completionID = uuid.NewString()
 	}
-	pt, ct := &promptTokens, &completionTokens
-	if promptTokens == 0 {
-		pt = nil
-	}
-	if completionTokens == 0 {
-		ct = nil
-	}
-	costUSD := h.computeLLMCost(backendName, promptTokens, completionTokens, completionID)
+	costUSD := h.computeLLMCost(backendName, promptTokens, completionTokens, cachedTokens, completionID)
 	h.recordCompletion(&completionInputs{
 		completionID:     completionID,
 		rc:               rc,
 		backend:          backendName,
 		status:           "success",
-		promptTokens:     pt,
-		completionTokens: ct,
+		promptTokens:     reportedCount(promptTokens),
+		completionTokens: reportedCount(completionTokens),
+		cachedTokens:     reportedCount(cachedTokens),
 		latencyMs:        &latencyMs,
 		costUSD:          costUSD,
 		responseContent:  captured.String(),
@@ -533,11 +532,14 @@ func rechunkWithModel(raw string, modelJSON json.RawMessage) string {
 
 // computeLLMCost rolls token counts and the backend's per-million-
 // token rates into a dollar amount. A live polled price takes
-// precedence over the backend's static columns. Returns nil if the
-// backend has no configured rates or the scheduler does not know
-// about this backend name. A non-finite result is dropped with a log
-// line so a configuration error cannot poison cost aggregates.
-func (h *proxyHandler) computeLLMCost(backendName string, promptTokens, completionTokens int, completionID string) *float64 {
+// precedence over the backend's static columns. cachedTokens is the
+// share of promptTokens the provider served from its cache, priced at
+// the backend's cache read rate when it declares one and at the input
+// rate otherwise. Returns nil if the backend has no configured rates
+// or the scheduler does not know about this backend name. A non-finite
+// result is dropped with a log line so a configuration error cannot
+// poison cost aggregates.
+func (h *proxyHandler) computeLLMCost(backendName string, promptTokens, completionTokens, cachedTokens int, completionID string) *float64 {
 	b, ok := h.deps.Scheduler.BackendOf(backendName)
 	if !ok {
 		return nil
@@ -553,7 +555,15 @@ func (h *proxyHandler) computeLLMCost(backendName string, promptTokens, completi
 	}
 	var cost float64
 	if in != nil {
-		cost += float64(promptTokens) * (*in) / 1_000_000.0
+		// A provider can report more cached tokens than prompt tokens.
+		// The clamp holds the uncached share at zero or above.
+		cached := min(max(cachedTokens, 0), promptTokens)
+		cacheRate := *in
+		if b.CacheReadCostPerMtoken != nil {
+			cacheRate = *b.CacheReadCostPerMtoken
+		}
+		cost += float64(promptTokens-cached) * (*in) / 1_000_000.0
+		cost += float64(cached) * cacheRate / 1_000_000.0
 	}
 	if out != nil {
 		cost += float64(completionTokens) * (*out) / 1_000_000.0
@@ -576,9 +586,20 @@ type completionInputs struct {
 	status           string
 	promptTokens     *int
 	completionTokens *int
+	cachedTokens     *int
 	latencyMs        *int
 	costUSD          *float64
 	responseContent  string
+}
+
+// reportedCount returns a pointer to n, or nil when n is zero. A streamed
+// response can finish without ever carrying a usage block, so a zero count
+// there means the upstream reported nothing and records as NULL.
+func reportedCount(n int) *int {
+	if n == 0 {
+		return nil
+	}
+	return &n
 }
 
 // emitMetrics is a no-op when ProxyMetrics is nil.
@@ -602,6 +623,7 @@ func (h *proxyHandler) recordCompletion(in *completionInputs) {
 		Status:           in.status,
 		PromptTokens:     in.promptTokens,
 		CompletionTokens: in.completionTokens,
+		CachedTokens:     in.cachedTokens,
 		LatencyMs:        in.latencyMs,
 		CostUSD:          in.costUSD,
 		Tags:             in.rc.Tags,

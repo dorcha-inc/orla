@@ -26,7 +26,7 @@ const getBackend = `-- name: GetBackend :one
 SELECT name, endpoint, model_id, api_key_env_var, max_concurrency,
        rate_per_second, quality, kind, tool_kind,
        input_cost_per_mtoken, output_cost_per_mtoken, rates,
-       created_at, updated_at, cost_source
+       created_at, updated_at, cost_source, cache_read_cost_per_mtoken
 FROM backends
 WHERE name = $1
 `
@@ -53,6 +53,7 @@ func (q *Queries) GetBackend(ctx context.Context, name string) (Backend, error) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CostSource,
+		&i.CacheReadCostPerMtoken,
 	)
 	return i, err
 }
@@ -61,29 +62,31 @@ const insertBackend = `-- name: InsertBackend :one
 INSERT INTO backends (
     name, endpoint, model_id, api_key_env_var, max_concurrency,
     rate_per_second, quality, kind, tool_kind,
-    input_cost_per_mtoken, output_cost_per_mtoken, rates, cost_source
+    input_cost_per_mtoken, output_cost_per_mtoken, rates, cost_source,
+    cache_read_cost_per_mtoken
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING name, endpoint, model_id, api_key_env_var, max_concurrency,
           rate_per_second, quality, kind, tool_kind,
           input_cost_per_mtoken, output_cost_per_mtoken, rates,
-          created_at, updated_at, cost_source
+          created_at, updated_at, cost_source, cache_read_cost_per_mtoken
 `
 
 type InsertBackendParams struct {
-	Name                string
-	Endpoint            string
-	ModelID             *string
-	ApiKeyEnvVar        string
-	MaxConcurrency      int32
-	RatePerSecond       *float64
-	Quality             *float64
-	Kind                string
-	ToolKind            *string
-	InputCostPerMtoken  *float64
-	OutputCostPerMtoken *float64
-	Rates               []byte
-	CostSource          *string
+	Name                   string
+	Endpoint               string
+	ModelID                *string
+	ApiKeyEnvVar           string
+	MaxConcurrency         int32
+	RatePerSecond          *float64
+	Quality                *float64
+	Kind                   string
+	ToolKind               *string
+	InputCostPerMtoken     *float64
+	OutputCostPerMtoken    *float64
+	Rates                  []byte
+	CostSource             *string
+	CacheReadCostPerMtoken *float64
 }
 
 func (q *Queries) InsertBackend(ctx context.Context, arg InsertBackendParams) (Backend, error) {
@@ -101,6 +104,7 @@ func (q *Queries) InsertBackend(ctx context.Context, arg InsertBackendParams) (B
 		arg.OutputCostPerMtoken,
 		arg.Rates,
 		arg.CostSource,
+		arg.CacheReadCostPerMtoken,
 	)
 	var i Backend
 	err := row.Scan(
@@ -119,6 +123,7 @@ func (q *Queries) InsertBackend(ctx context.Context, arg InsertBackendParams) (B
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CostSource,
+		&i.CacheReadCostPerMtoken,
 	)
 	return i, err
 }
@@ -127,7 +132,7 @@ const listBackends = `-- name: ListBackends :many
 SELECT name, endpoint, model_id, api_key_env_var, max_concurrency,
        rate_per_second, quality, kind, tool_kind,
        input_cost_per_mtoken, output_cost_per_mtoken, rates,
-       created_at, updated_at, cost_source
+       created_at, updated_at, cost_source, cache_read_cost_per_mtoken
 FROM backends
 ORDER BY name
 `
@@ -157,6 +162,7 @@ func (q *Queries) ListBackends(ctx context.Context) ([]Backend, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CostSource,
+			&i.CacheReadCostPerMtoken,
 		); err != nil {
 			return nil, err
 		}
@@ -182,28 +188,30 @@ SET endpoint = $2,
     output_cost_per_mtoken = $11,
     rates = $12,
     cost_source = $13,
+    cache_read_cost_per_mtoken = $14,
     updated_at = now()
 WHERE name = $1
 RETURNING name, endpoint, model_id, api_key_env_var, max_concurrency,
           rate_per_second, quality, kind, tool_kind,
           input_cost_per_mtoken, output_cost_per_mtoken, rates,
-          created_at, updated_at, cost_source
+          created_at, updated_at, cost_source, cache_read_cost_per_mtoken
 `
 
 type UpdateBackendParams struct {
-	Name                string
-	Endpoint            string
-	ModelID             *string
-	ApiKeyEnvVar        string
-	MaxConcurrency      int32
-	RatePerSecond       *float64
-	Quality             *float64
-	Kind                string
-	ToolKind            *string
-	InputCostPerMtoken  *float64
-	OutputCostPerMtoken *float64
-	Rates               []byte
-	CostSource          *string
+	Name                   string
+	Endpoint               string
+	ModelID                *string
+	ApiKeyEnvVar           string
+	MaxConcurrency         int32
+	RatePerSecond          *float64
+	Quality                *float64
+	Kind                   string
+	ToolKind               *string
+	InputCostPerMtoken     *float64
+	OutputCostPerMtoken    *float64
+	Rates                  []byte
+	CostSource             *string
+	CacheReadCostPerMtoken *float64
 }
 
 func (q *Queries) UpdateBackend(ctx context.Context, arg UpdateBackendParams) (Backend, error) {
@@ -221,6 +229,7 @@ func (q *Queries) UpdateBackend(ctx context.Context, arg UpdateBackendParams) (B
 		arg.OutputCostPerMtoken,
 		arg.Rates,
 		arg.CostSource,
+		arg.CacheReadCostPerMtoken,
 	)
 	var i Backend
 	err := row.Scan(
@@ -239,6 +248,7 @@ func (q *Queries) UpdateBackend(ctx context.Context, arg UpdateBackendParams) (B
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CostSource,
+		&i.CacheReadCostPerMtoken,
 	)
 	return i, err
 }

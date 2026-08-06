@@ -3,7 +3,7 @@
 -- created_at > since. Pass a zero timestamptz to skip the filter.
 SELECT completion_id, stage_id, workflow_run, backend, status,
        prompt_tokens, completion_tokens, latency_ms, cost_usd,
-       tags, created_at, usage, tool_kind, mapping
+       tags, created_at, usage, tool_kind, mapping, cached_tokens
 FROM completion_records
 WHERE stage_id = $1
   AND created_at > COALESCE(@since::timestamptz, '-infinity'::timestamptz)

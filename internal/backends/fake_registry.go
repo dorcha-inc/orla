@@ -97,6 +97,10 @@ func (r *FakeRegistry) Patch(_ context.Context, name string, p PatchRequest) (*B
 		v := *p.OutputCostPerMtoken
 		updated.OutputCostPerMtoken = &v
 	}
+	if p.CacheReadCostPerMtoken != nil {
+		v := *p.CacheReadCostPerMtoken
+		updated.CacheReadCostPerMtoken = &v
+	}
 	if p.Quality != nil {
 		v := *p.Quality
 		updated.Quality = &v
@@ -136,6 +140,10 @@ func cloneBackend(b *Backend) *Backend {
 	if b.InputCostPerMtoken != nil {
 		v := *b.InputCostPerMtoken
 		out.InputCostPerMtoken = &v
+	}
+	if b.CacheReadCostPerMtoken != nil {
+		v := *b.CacheReadCostPerMtoken
+		out.CacheReadCostPerMtoken = &v
 	}
 	if b.OutputCostPerMtoken != nil {
 		v := *b.OutputCostPerMtoken

@@ -47,7 +47,7 @@ func newBackendCmd(client func() *Client) *cobra.Command {
 
 func newBackendCreateCmd(client func() *Client) *cobra.Command {
 	var req wire.CreateBackendRequest
-	var inCost, outCost, quality, rate float64
+	var inCost, outCost, cacheReadCost, quality, rate float64
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Register a backend",
@@ -58,6 +58,9 @@ func newBackendCreateCmd(client func() *Client) *cobra.Command {
 			}
 			if f.Changed("output-cost") {
 				req.OutputCostPerMtoken = &outCost
+			}
+			if f.Changed("cache-read-cost") {
+				req.CacheReadCostPerMtoken = &cacheReadCost
 			}
 			if f.Changed("quality") {
 				req.Quality = &quality
@@ -84,6 +87,8 @@ func newBackendCreateCmd(client func() *Client) *cobra.Command {
 	f.StringVar(&req.ToolKind, "tool-kind", "", "tool kind, for kind=tool")
 	f.Float64Var(&inCost, "input-cost", 0, "input cost per million tokens")
 	f.Float64Var(&outCost, "output-cost", 0, "output cost per million tokens")
+	f.Float64Var(&cacheReadCost, "cache-read-cost", 0,
+		"cost per million prompt tokens the provider serves from its cache")
 	f.Float64Var(&quality, "quality", 0, "quality prior")
 	f.Float64Var(&rate, "rate", 0, "requests per second cap")
 	_ = cmd.MarkFlagRequired("name")

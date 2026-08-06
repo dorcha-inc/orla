@@ -194,6 +194,10 @@ func rowToCompletionRecord(row db.ListStageCompletionsRow) (*CompletionRecord, e
 		v := int(*row.CompletionTokens)
 		rec.CompletionTokens = &v
 	}
+	if row.CachedTokens != nil {
+		v := int(*row.CachedTokens)
+		rec.CachedTokens = &v
+	}
 	if row.LatencyMs != nil {
 		v := int(*row.LatencyMs)
 		rec.LatencyMs = &v

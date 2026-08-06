@@ -84,7 +84,7 @@ A mapper is a routing hint and never gates availability. A timeout, an error, or
 
 ## Dynamic cost sources
 
-A backend's per-million-token costs are usually the static `input_cost_per_mtoken` and `output_cost_per_mtoken` columns. A backend whose price changes over time can instead carry a `cost_source` URL. The daemon polls every configured source on one interval and holds the latest price in memory. When the proxy computes `cost_usd` for a completion it uses the live price if one is held and the static columns otherwise. The static columns are never rewritten.
+A backend's per-million-token costs are usually the static `input_cost_per_mtoken` and `output_cost_per_mtoken` columns. A provider that caches a prompt prefix reports the repeat read as `prompt_tokens_details.cached_tokens`, a subset of `prompt_tokens`, and orla prices that share at `cache_read_cost_per_mtoken` when the backend declares one. A backend that declares no cache rate prices a cached token at the input rate. A backend whose price changes over time can instead carry a `cost_source` URL. The daemon polls every configured source on one interval and holds the latest price in memory. When the proxy computes `cost_usd` for a completion it uses the live price if one is held and the static columns otherwise. The static columns are never rewritten.
 
 The polling cadence is control-plane state, not startup configuration. Read it with `GET /api/v1/costs/policy` and change it with `PUT /api/v1/costs/policy` or `orlactl costs policy set --refresh-interval 30s`. It defaults to 60s. The poller re-reads it before every round, so a change takes effect within one round without a restart.
 

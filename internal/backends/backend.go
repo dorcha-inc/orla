@@ -56,6 +56,12 @@ type Backend struct {
 	InputCostPerMtoken  *float64 `json:"input_cost_per_mtoken,omitempty"`
 	OutputCostPerMtoken *float64 `json:"output_cost_per_mtoken,omitempty"`
 
+	// CacheReadCostPerMtoken prices a prompt token the provider served
+	// from its cache, which providers report as a subset of the prompt
+	// tokens. NULL prices a cached token at InputCostPerMtoken. Only
+	// valid for KindLLM.
+	CacheReadCostPerMtoken *float64 `json:"cache_read_cost_per_mtoken,omitempty"`
+
 	// ToolKind identifies the family of tool, such as "structure-prediction"
 	// or "docking". Required for KindTool, unused for KindLLM.
 	ToolKind *string `json:"tool_kind,omitempty"`
@@ -90,13 +96,14 @@ type Backend struct {
 // corresponding field unchanged. Name, Kind, ModelID, and ToolKind
 // cannot be patched. To change them, delete and re-create the backend.
 type PatchRequest struct {
-	Endpoint            *string  `json:"endpoint,omitempty"`
-	APIKeyEnvVar        *string  `json:"api_key_env_var,omitempty"`
-	MaxConcurrency      *int32   `json:"max_concurrency,omitempty"`
-	InputCostPerMtoken  *float64 `json:"input_cost_per_mtoken,omitempty"`
-	OutputCostPerMtoken *float64 `json:"output_cost_per_mtoken,omitempty"`
-	Quality             *float64 `json:"quality,omitempty"`
-	RatePerSecond       *float64 `json:"rate_per_second,omitempty"`
+	Endpoint               *string  `json:"endpoint,omitempty"`
+	APIKeyEnvVar           *string  `json:"api_key_env_var,omitempty"`
+	MaxConcurrency         *int32   `json:"max_concurrency,omitempty"`
+	InputCostPerMtoken     *float64 `json:"input_cost_per_mtoken,omitempty"`
+	OutputCostPerMtoken    *float64 `json:"output_cost_per_mtoken,omitempty"`
+	CacheReadCostPerMtoken *float64 `json:"cache_read_cost_per_mtoken,omitempty"`
+	Quality                *float64 `json:"quality,omitempty"`
+	RatePerSecond          *float64 `json:"rate_per_second,omitempty"`
 
 	// Rates uses a pointer so the patch can distinguish three cases:
 	// an absent field (no change), JSON null or pointer to nil (clear),

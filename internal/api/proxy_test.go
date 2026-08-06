@@ -967,3 +967,97 @@ func TestProxy_StagePromptPreservesToolScratchpad(t *testing.T) {
 	assert.Equal(t, "tool", got[3]["role"])
 	assert.Equal(t, "a snippet", got[3]["content"])
 }
+
+func TestProxy_PricesCachedPromptTokens(t *testing.T) {
+	in, out, cacheRead := 3.0, 15.0, 0.30
+	tests := []struct {
+		name      string
+		cached    int64
+		cacheRate *float64
+		want      float64
+	}{
+		{
+			name: "no cache hit prices every prompt token at the input rate",
+			// 2M × $3 + 1M × $15 = 6 + 15 = $21.
+			cached: 0, cacheRate: &cacheRead, want: 21.0,
+		},
+		{
+			name: "a cache hit prices the hit at the cache read rate",
+			// 1M × $3 + 1M × $0.30 + 1M × $15 = 3 + 0.3 + 15 = $18.30.
+			cached: 1_000_000, cacheRate: &cacheRead, want: 18.3,
+		},
+		{
+			name: "a backend without a cache rate prices the hit at the input rate",
+			// 1M × $3 + 1M × $3 + 1M × $15 = $21.
+			cached: 1_000_000, cacheRate: nil, want: 21.0,
+		},
+		{
+			name: "more cached than prompt tokens never credits the call",
+			// Cached clamps to the 2M prompt tokens. 2M × $0.30 + 1M × $15.
+			cached: 9_000_000, cacheRate: &cacheRead, want: 15.6,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := provider.NewMockProvider().WithName("gpt4o").
+				WithResponse(&openai.ChatCompletion{
+					ID:    "chatcmpl-cache",
+					Model: "openai:gpt-4o",
+					Choices: []openai.ChatCompletionChoice{{
+						Message: openai.ChatCompletionMessage{Role: "assistant", Content: "hi"},
+					}},
+					Usage: openai.CompletionUsage{
+						PromptTokens:     2_000_000,
+						CompletionTokens: 1_000_000,
+						PromptTokensDetails: openai.CompletionUsagePromptTokensDetails{
+							CachedTokens: tt.cached,
+						},
+					},
+				})
+
+			sched := scheduler.New(
+				func(b *backends.Backend) provider.Backend { return mock },
+				slog.New(slog.NewTextHandler(io.Discard, nil)),
+			)
+			t.Cleanup(func() { _ = sched.Shutdown(context.Background()) })
+			sched.Register(&backends.Backend{
+				Name: "gpt4o", Endpoint: "x", ModelID: new("openai:gpt-4o"),
+				MaxConcurrency:         2,
+				InputCostPerMtoken:     &in,
+				OutputCostPerMtoken:    &out,
+				CacheReadCostPerMtoken: tt.cacheRate,
+			})
+
+			stageReg := stages.NewFakeRegistry()
+			_, err := stageReg.Replace(context.Background(), &stages.Stage{
+				ID: "planning", Backend: "gpt4o",
+			})
+			require.NoError(t, err)
+
+			sink := &recordingSink{}
+			srv := NewServer(ServerConfig{
+				ListenAddress: "127.0.0.1:0",
+				Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+			})
+			RegisterProxyRoutes(srv.Router(), ProxyDeps{
+				Stages: stageReg, Scheduler: sched, CompletionSink: sink,
+			})
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+				bytes.NewReader(bodyForChat("hi")))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set(HeaderStage, "planning")
+			rr := httptest.NewRecorder()
+			srv.Router().ServeHTTP(rr, req)
+			require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+			require.Len(t, sink.got, 1)
+			require.NotNil(t, sink.got[0].CostUSD)
+			assert.InDelta(t, tt.want, *sink.got[0].CostUSD, 1e-9)
+			// A non-streamed response always carries a usage block, so the
+			// count records even when nothing came from cache.
+			require.NotNil(t, sink.got[0].CachedTokens)
+			assert.Equal(t, int(tt.cached), *sink.got[0].CachedTokens)
+		})
+	}
+}

@@ -9,21 +9,22 @@ import (
 )
 
 type Backend struct {
-	Name                string
-	Endpoint            string
-	ModelID             *string
-	ApiKeyEnvVar        string
-	MaxConcurrency      int32
-	RatePerSecond       *float64
-	Quality             *float64
-	Kind                string
-	ToolKind            *string
-	InputCostPerMtoken  *float64
-	OutputCostPerMtoken *float64
-	Rates               []byte
-	CreatedAt           pgtype.Timestamptz
-	UpdatedAt           pgtype.Timestamptz
-	CostSource          *string
+	Name                   string
+	Endpoint               string
+	ModelID                *string
+	ApiKeyEnvVar           string
+	MaxConcurrency         int32
+	RatePerSecond          *float64
+	Quality                *float64
+	Kind                   string
+	ToolKind               *string
+	InputCostPerMtoken     *float64
+	OutputCostPerMtoken    *float64
+	Rates                  []byte
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	CostSource             *string
+	CacheReadCostPerMtoken *float64
 }
 
 type CompletionIo struct {
@@ -50,6 +51,7 @@ type CompletionRecord struct {
 	Tags             []byte
 	CreatedAt        pgtype.Timestamptz
 	Mapping          string
+	CachedTokens     *int32
 }
 
 type CostPolicy struct {

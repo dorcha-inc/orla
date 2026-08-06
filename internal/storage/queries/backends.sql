@@ -6,7 +6,7 @@
 SELECT name, endpoint, model_id, api_key_env_var, max_concurrency,
        rate_per_second, quality, kind, tool_kind,
        input_cost_per_mtoken, output_cost_per_mtoken, rates,
-       created_at, updated_at, cost_source
+       created_at, updated_at, cost_source, cache_read_cost_per_mtoken
 FROM backends
 WHERE name = $1;
 
@@ -14,7 +14,7 @@ WHERE name = $1;
 SELECT name, endpoint, model_id, api_key_env_var, max_concurrency,
        rate_per_second, quality, kind, tool_kind,
        input_cost_per_mtoken, output_cost_per_mtoken, rates,
-       created_at, updated_at, cost_source
+       created_at, updated_at, cost_source, cache_read_cost_per_mtoken
 FROM backends
 ORDER BY name;
 
@@ -22,13 +22,14 @@ ORDER BY name;
 INSERT INTO backends (
     name, endpoint, model_id, api_key_env_var, max_concurrency,
     rate_per_second, quality, kind, tool_kind,
-    input_cost_per_mtoken, output_cost_per_mtoken, rates, cost_source
+    input_cost_per_mtoken, output_cost_per_mtoken, rates, cost_source,
+    cache_read_cost_per_mtoken
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING name, endpoint, model_id, api_key_env_var, max_concurrency,
           rate_per_second, quality, kind, tool_kind,
           input_cost_per_mtoken, output_cost_per_mtoken, rates,
-          created_at, updated_at, cost_source;
+          created_at, updated_at, cost_source, cache_read_cost_per_mtoken;
 
 -- name: UpdateBackend :one
 UPDATE backends
@@ -44,12 +45,13 @@ SET endpoint = $2,
     output_cost_per_mtoken = $11,
     rates = $12,
     cost_source = $13,
+    cache_read_cost_per_mtoken = $14,
     updated_at = now()
 WHERE name = $1
 RETURNING name, endpoint, model_id, api_key_env_var, max_concurrency,
           rate_per_second, quality, kind, tool_kind,
           input_cost_per_mtoken, output_cost_per_mtoken, rates,
-          created_at, updated_at, cost_source;
+          created_at, updated_at, cost_source, cache_read_cost_per_mtoken;
 
 -- name: DeleteBackend :execrows
 DELETE FROM backends WHERE name = $1;

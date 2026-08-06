@@ -72,19 +72,20 @@ func (r *PostgresRegistry) Insert(ctx context.Context, b *Backend) (*Backend, er
 		return nil, fmt.Errorf("backends: insert: encode rates: %w", err)
 	}
 	row, err := r.queries.InsertBackend(ctx, db.InsertBackendParams{
-		Name:                b.Name,
-		Endpoint:            b.Endpoint,
-		ModelID:             b.ModelID,
-		ApiKeyEnvVar:        b.APIKeyEnvVar,
-		MaxConcurrency:      b.MaxConcurrency,
-		InputCostPerMtoken:  b.InputCostPerMtoken,
-		OutputCostPerMtoken: b.OutputCostPerMtoken,
-		Quality:             b.Quality,
-		RatePerSecond:       b.RatePerSecond,
-		Kind:                string(kind),
-		ToolKind:            b.ToolKind,
-		Rates:               ratesBytes,
-		CostSource:          b.CostSource,
+		Name:                   b.Name,
+		Endpoint:               b.Endpoint,
+		ModelID:                b.ModelID,
+		ApiKeyEnvVar:           b.APIKeyEnvVar,
+		MaxConcurrency:         b.MaxConcurrency,
+		InputCostPerMtoken:     b.InputCostPerMtoken,
+		OutputCostPerMtoken:    b.OutputCostPerMtoken,
+		CacheReadCostPerMtoken: b.CacheReadCostPerMtoken,
+		Quality:                b.Quality,
+		RatePerSecond:          b.RatePerSecond,
+		Kind:                   string(kind),
+		ToolKind:               b.ToolKind,
+		Rates:                  ratesBytes,
+		CostSource:             b.CostSource,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -153,6 +154,9 @@ func (r *PostgresRegistry) Patch(ctx context.Context, name string, p PatchReques
 	if p.InputCostPerMtoken != nil {
 		current.InputCostPerMtoken = p.InputCostPerMtoken
 	}
+	if p.CacheReadCostPerMtoken != nil {
+		current.CacheReadCostPerMtoken = p.CacheReadCostPerMtoken
+	}
 	if p.OutputCostPerMtoken != nil {
 		current.OutputCostPerMtoken = p.OutputCostPerMtoken
 	}
@@ -181,19 +185,20 @@ func (r *PostgresRegistry) Patch(ctx context.Context, name string, p PatchReques
 	}
 
 	updated, err := q.UpdateBackend(ctx, db.UpdateBackendParams{
-		Name:                current.Name,
-		Endpoint:            current.Endpoint,
-		ModelID:             current.ModelID,
-		ApiKeyEnvVar:        current.ApiKeyEnvVar,
-		MaxConcurrency:      current.MaxConcurrency,
-		InputCostPerMtoken:  current.InputCostPerMtoken,
-		OutputCostPerMtoken: current.OutputCostPerMtoken,
-		Quality:             current.Quality,
-		RatePerSecond:       current.RatePerSecond,
-		Kind:                current.Kind,
-		ToolKind:            current.ToolKind,
-		Rates:               current.Rates,
-		CostSource:          current.CostSource,
+		Name:                   current.Name,
+		Endpoint:               current.Endpoint,
+		ModelID:                current.ModelID,
+		ApiKeyEnvVar:           current.ApiKeyEnvVar,
+		MaxConcurrency:         current.MaxConcurrency,
+		InputCostPerMtoken:     current.InputCostPerMtoken,
+		OutputCostPerMtoken:    current.OutputCostPerMtoken,
+		CacheReadCostPerMtoken: current.CacheReadCostPerMtoken,
+		Quality:                current.Quality,
+		RatePerSecond:          current.RatePerSecond,
+		Kind:                   current.Kind,
+		ToolKind:               current.ToolKind,
+		Rates:                  current.Rates,
+		CostSource:             current.CostSource,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("backends: patch: write: %w", err)
@@ -229,21 +234,22 @@ func toBackend(row db.Backend) (*Backend, error) {
 		return nil, fmt.Errorf("backends: decode rates for %q: %w", row.Name, err)
 	}
 	return &Backend{
-		Name:                row.Name,
-		Endpoint:            row.Endpoint,
-		ModelID:             row.ModelID,
-		APIKeyEnvVar:        row.ApiKeyEnvVar,
-		MaxConcurrency:      row.MaxConcurrency,
-		InputCostPerMtoken:  row.InputCostPerMtoken,
-		OutputCostPerMtoken: row.OutputCostPerMtoken,
-		Quality:             row.Quality,
-		RatePerSecond:       row.RatePerSecond,
-		Kind:                Kind(row.Kind),
-		ToolKind:            row.ToolKind,
-		Rates:               rates,
-		CostSource:          row.CostSource,
-		CreatedAt:           row.CreatedAt.Time,
-		UpdatedAt:           row.UpdatedAt.Time,
+		Name:                   row.Name,
+		Endpoint:               row.Endpoint,
+		ModelID:                row.ModelID,
+		APIKeyEnvVar:           row.ApiKeyEnvVar,
+		MaxConcurrency:         row.MaxConcurrency,
+		InputCostPerMtoken:     row.InputCostPerMtoken,
+		OutputCostPerMtoken:    row.OutputCostPerMtoken,
+		CacheReadCostPerMtoken: row.CacheReadCostPerMtoken,
+		Quality:                row.Quality,
+		RatePerSecond:          row.RatePerSecond,
+		Kind:                   Kind(row.Kind),
+		ToolKind:               row.ToolKind,
+		Rates:                  rates,
+		CostSource:             row.CostSource,
+		CreatedAt:              row.CreatedAt.Time,
+		UpdatedAt:              row.UpdatedAt.Time,
 	}, nil
 }
 

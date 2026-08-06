@@ -221,3 +221,45 @@ func TestPostgresRegistry_CostSourceRoundTrip(t *testing.T) {
 func TestFakeRegistry_CostSourceRoundTrip(t *testing.T) {
 	costSourceRoundTrip(t, backends.NewFakeRegistry())
 }
+
+// cacheReadCostRoundTrip is the shared contract for the
+// cache_read_cost_per_mtoken field: insert stores it, patch overwrites
+// it, and an unrelated patch leaves it alone.
+func cacheReadCostRoundTrip(t *testing.T, reg backends.Registry) {
+	t.Helper()
+	ctx := context.Background()
+
+	_, err := reg.Insert(ctx, &backends.Backend{
+		Name: "cached", Endpoint: "x", ModelID: new("openai:gpt-4o"),
+		MaxConcurrency:         1,
+		InputCostPerMtoken:     new(3.0),
+		CacheReadCostPerMtoken: new(0.30),
+	})
+	require.NoError(t, err)
+
+	got, err := reg.Get(ctx, "cached")
+	require.NoError(t, err)
+	require.NotNil(t, got.CacheReadCostPerMtoken)
+	assert.InDelta(t, 0.30, *got.CacheReadCostPerMtoken, 1e-9)
+
+	got, err = reg.Patch(ctx, "cached", backends.PatchRequest{
+		CacheReadCostPerMtoken: new(0.10),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got.CacheReadCostPerMtoken)
+	assert.InDelta(t, 0.10, *got.CacheReadCostPerMtoken, 1e-9)
+
+	got, err = reg.Patch(ctx, "cached", backends.PatchRequest{Quality: new(0.5)})
+	require.NoError(t, err)
+	require.NotNil(t, got.CacheReadCostPerMtoken)
+	assert.InDelta(t, 0.10, *got.CacheReadCostPerMtoken, 1e-9,
+		"an unrelated patch leaves cache_read_cost_per_mtoken unchanged")
+}
+
+func TestPostgresRegistry_CacheReadCostRoundTrip(t *testing.T) {
+	cacheReadCostRoundTrip(t, backends.NewPostgresRegistry(freshPool(t)))
+}
+
+func TestFakeRegistry_CacheReadCostRoundTrip(t *testing.T) {
+	cacheReadCostRoundTrip(t, backends.NewFakeRegistry())
+}

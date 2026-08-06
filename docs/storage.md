@@ -74,6 +74,7 @@ CREATE TABLE backends (
     tool_kind               TEXT,
     input_cost_per_mtoken   DOUBLE PRECISION,
     output_cost_per_mtoken  DOUBLE PRECISION,
+    cache_read_cost_per_mtoken DOUBLE PRECISION,
     rates                   JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -83,7 +84,9 @@ CREATE TABLE backends (
 
 `kind` discriminates the two backend flavors.
 
-- `'llm'` backends speak OpenAI-compatible chat completions. `model_id` is required. Cost comes from `input_cost_per_mtoken` and `output_cost_per_mtoken`. The orla proxy computes `cost_usd` at write time as `(prompt_tokens × input_cost + completion_tokens × output_cost) / 1_000_000`. The `rates` column is unused for LLM backends and rejected at registration time.
+- `'llm'` backends speak OpenAI-compatible chat completions. `model_id` is required. Cost comes from `input_cost_per_mtoken` and `output_cost_per_mtoken`. The orla proxy computes `cost_usd` at write time as `((prompt_tokens - cached_tokens) × input_cost + cached_tokens × cache_read_cost + completion_tokens × output_cost) / 1_000_000`. The `rates` column is unused for LLM backends and rejected at registration time.
+
+- `cache_read_cost_per_mtoken` prices a prompt token the provider served from its cache. A provider that caches a prompt prefix bills a repeat read at a discount and reports the hit as `prompt_tokens_details.cached_tokens`, a subset of `prompt_tokens`. NULL prices a cached token at `input_cost_per_mtoken`. Only `'llm'` backends may set it.
 
 - `cost_source` is an optional URL the daemon polls for the backend's current per-million-token costs, for prices that change over time. NULL means the static columns price the backend. While a fetched price is live it overrides the static columns for cost accounting, but the columns themselves are never rewritten. Only `'llm'` backends may set it. See [`proxy.md`](proxy.md) for the polling contract.
 
@@ -122,6 +125,7 @@ CREATE TABLE completion_records (
     backend           TEXT NOT NULL,
     status            TEXT NOT NULL,
     prompt_tokens     INTEGER,
+    cached_tokens     INTEGER,
     completion_tokens INTEGER,
     usage             JSONB NOT NULL DEFAULT '{}'::jsonb,
     tool_kind         TEXT,
@@ -138,7 +142,7 @@ CREATE INDEX idx_completion_mapping_time ON completion_records(mapping, created_
 
 `status` is either `"success"` or `"error"`. One row per `/v1/chat/completions` or `/v1/tools/{kind}` dispatch, written async via `BatchWriter`. `tags` carries the `X-Orla-Tag-*` map verbatim. `mapping` is the variant that served the request, empty for the live critical path, which lets `GET /api/v1/costs` sum cost per variant even when critical and shadow traffic interleave.
 
-LLM rows populate `prompt_tokens` and `completion_tokens` and leave `usage` as the empty object. Tool rows leave the token columns NULL and populate `usage` with the resources the wrapper reported, with `tool_kind` set to the backend's tool family. To distinguish tool rows in a query, filter on `tool_kind IS NOT NULL` rather than `prompt_tokens IS NULL`. `cost_usd` is the final dollar amount in both cases, computed by the proxy at write time.
+LLM rows populate `prompt_tokens` and `completion_tokens` and leave `usage` as the empty object. `cached_tokens` holds the share of `prompt_tokens` the provider served from its cache, and follows the same NULL rule as the other token columns. Tool rows leave the token columns NULL and populate `usage` with the resources the wrapper reported, with `tool_kind` set to the backend's tool family. To distinguish tool rows in a query, filter on `tool_kind IS NOT NULL` rather than `prompt_tokens IS NULL`. `cost_usd` is the final dollar amount in both cases, computed by the proxy at write time.
 
 A GIN index on `tags` is not added by default. Most mapper queries filter on `stage_id` first, which the b-tree already covers. Add `CREATE INDEX idx_completion_tags ON completion_records USING gin (tags)` if profiling shows tag-filtered queries are hot.
 
