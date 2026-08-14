@@ -345,7 +345,8 @@ Rules:
 - **Never commit without asking. Never push without asking.** Both are
   separate acts and each needs its own approval. Propose the commit,
   name the files and the message, then wait for the user to say yes.
-  Leave the work uncommitted until they do.
+  The user verifies the results themselves before saying yes, so leave
+  the work uncommitted until they do.
 - **Approval never carries forward.** A yes for one commit is not a
   yes for the next one, and a yes to commit is not a yes to push. Ask
   again every time, however routine the change looks and however many
@@ -685,6 +686,19 @@ build.
   model or a dataclass. Do not pass bare dicts whose shape lives
   only in your head. This is the Python form of the Go rule about
   field-named struct literals.
+- Choose between the two by where the data comes from. Data arriving
+  from outside the process gets a Pydantic model, which covers a JSON
+  response, a file read back in, and a schema an LLM fills in. Data
+  that stays inside gets a dataclass, which covers accumulating
+  state, an aggregate a report prints, and a bundle of dependencies
+  passed down a call stack. Freeze a dataclass that holds a value.
+- Validate at the edge and trust the values after it. A dataclass
+  nested inside a Pydantic model is validated when the parent parses,
+  so a value object built on a hot path out of already-typed data
+  stays a dataclass. A type Pydantic cannot generate a schema for,
+  such as a lock or an open dataset, stays a dataclass as well.
+  Reaching for `arbitrary_types_allowed` turns off the checking that
+  made a model worth having.
 
 ### Imports
 
@@ -724,11 +738,21 @@ The "Writing prose" and "Writing comments" rules apply to Python as
 well. No em-dashes, no semicolons, default to no comment, and comment
 only the non-obvious why.
 
-- Open each module with a one-paragraph docstring. The run scripts
-  put the invocation and the environment variables there so the file
-  is its own usage message.
+- Open each module with a short docstring. A library module gets one
+  paragraph. A runnable script gets whatever makes the file its own
+  usage message, including the invocation and the environment
+  variables, and the examples here run between ten and twenty lines.
+  Say what the module is for and leave the rest to the README.
 - A class or function docstring earns its place only when the
-  contract is non-obvious. The bar is the same as a Go doc comment.
+  contract is non-obvious. The bar is the same as a Go doc comment: a
+  summary sentence, then at most one short paragraph carrying a why
+  that would otherwise be lost. Write the facts a reader needs at the
+  call site, such as what the caller gets back, which errors it
+  raises, and whether the type is safe to share across threads.
+  Wider background belongs in the README.
+- Repeating a README table, a knob list, or a set of defaults in a
+  docstring gives a reader two copies to keep in step. Name the
+  environment variables the module reads and stop.
 
 ### Don't reinvent the wheel
 
@@ -752,7 +776,31 @@ problem it solves.
 Orla speaks the OpenAI wire protocol, so an example talks to it with
 the plain `openai` client. Point `base_url` at Orla, tag every call
 with the `X-Orla-Stage` header, and keep the returned completion id
-so the script can post feedback against it.
+so the script can post feedback against it. A pipeline of single
+calls, a tool-calling loop, and a retrieval chain all fit that shape.
+
+An example whose subject is the agent's own orchestration may reach
+Orla through an agent framework instead. Delegation between agents,
+per-agent budgets, and parallel execution are what such an example
+measures, and writing them by hand moves the thing being measured
+into example code. Name the framework and the reason in the example's
+README, and depend on the most focused package that carries the
+behavior. `examples/deep-research` is the worked case.
+
+Three properties hold whichever client an example uses:
+
+- Every call carries `X-Orla-Stage`, so Orla routes and prices each
+  stage apart.
+- A job spanning several calls carries `X-Orla-Workflow-Run`, so its
+  calls join on one id.
+- Every call's completion id reaches the script, so feedback posts
+  against it.
+
+Pick a framework that exposes all three. A framework that runs its
+own loop keeps the calls inside that loop out of the top-level
+message history, so record them at the model layer. `RecordingModel`
+in [`examples/deep-research/agent.py`](examples/deep-research/agent.py)
+is the pattern.
 
 ## Database and storage
 
