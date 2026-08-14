@@ -1,0 +1,35 @@
+# Tasks for the deep research energy example. Requires uv.
+
+# List recipes.
+default:
+    @just --list
+
+# Serve the per-token energy table as an Orla cost source.
+energy:
+    uv run uvicorn energy_service:app --host 127.0.0.1 --port 9300
+
+# Download the corpus and build the BM25 index without running the benchmark.
+index:
+    uv run python -c 'import corpus; corpus.Corpus(); print("index ready")'
+
+# Run the benchmark (override the sample size with N, e.g. `N=50 just run`).
+run:
+    uv run run.py
+
+# Format the code with ruff.
+fmt:
+    uv run ruff format .
+
+# Lint with ruff (use `just lint --fix` to apply fixes).
+lint *args:
+    uv run ruff check {{ args }} .
+
+# Type-check with ty.
+typecheck:
+    uv run ty check .
+
+# Read-only checks, the way CI would run them.
+check:
+    uv run ruff format --check .
+    uv run ruff check .
+    uv run ty check .

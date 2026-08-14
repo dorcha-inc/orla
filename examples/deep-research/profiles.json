@@ -1,0 +1,78 @@
+{
+  "usd_per_kwh": 0.12,
+  "pue": 1.2,
+  "profiles": {
+    "llama-8b-a100-vllm": {
+      "model": "meta-llama/Llama-3.1-8B-Instruct",
+      "gpu": "NVIDIA A100-SXM4-80GB",
+      "gpu_count": 1,
+      "engine": "vllm",
+      "quantization": "bf16",
+      "batch_size": 32,
+      "context_tokens": 8192,
+      "joules_per_prompt_token": 0.027,
+      "joules_per_completion_token": 0.16,
+      "measured": false
+    },
+    "llama-8b-h100-vllm": {
+      "model": "meta-llama/Llama-3.1-8B-Instruct",
+      "gpu": "NVIDIA H100-SXM5-80GB",
+      "gpu_count": 1,
+      "engine": "vllm",
+      "quantization": "bf16",
+      "batch_size": 32,
+      "context_tokens": 8192,
+      "joules_per_prompt_token": 0.020,
+      "joules_per_completion_token": 0.14,
+      "measured": false
+    },
+    "llama-70b-a100-vllm": {
+      "model": "meta-llama/Llama-3.1-70B-Instruct",
+      "gpu": "NVIDIA A100-SXM4-80GB",
+      "gpu_count": 4,
+      "engine": "vllm",
+      "quantization": "bf16",
+      "batch_size": 32,
+      "context_tokens": 8192,
+      "joules_per_prompt_token": 0.27,
+      "joules_per_completion_token": 1.78,
+      "measured": false
+    },
+    "llama-70b-h100-fp8": {
+      "model": "meta-llama/Llama-3.1-70B-Instruct",
+      "gpu": "NVIDIA H100-SXM5-80GB",
+      "gpu_count": 2,
+      "engine": "vllm",
+      "quantization": "fp8",
+      "batch_size": 32,
+      "context_tokens": 8192,
+      "joules_per_prompt_token": 0.14,
+      "joules_per_completion_token": 1.00,
+      "measured": false
+    },
+    "mixtral-8x7b-h100-vllm": {
+      "model": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+      "gpu": "NVIDIA H100-SXM5-80GB",
+      "gpu_count": 2,
+      "engine": "vllm",
+      "quantization": "bf16",
+      "batch_size": 32,
+      "context_tokens": 8192,
+      "joules_per_prompt_token": 0.10,
+      "joules_per_completion_token": 0.56,
+      "measured": false
+    },
+    "hosted-frontier": {
+      "model": "unpublished",
+      "gpu": "unpublished",
+      "gpu_count": 0,
+      "engine": "unpublished",
+      "quantization": "unpublished",
+      "batch_size": 0,
+      "context_tokens": 200000,
+      "joules_per_prompt_token": 0.30,
+      "joules_per_completion_token": 2.00,
+      "measured": false
+    }
+  }
+}

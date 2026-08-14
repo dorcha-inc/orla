@@ -1,0 +1,28 @@
+[project]
+name = "orla-example-deep-research"
+version = "0.1.0"
+description = "A lead-and-subagents research team on BrowseComp-Plus, profiled for energy and time."
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic-ai-slim[openai]==2.30.0",
+    "subagents-pydantic-ai==0.2.18",
+    "pydantic==2.13.4",
+    "datasets==5.0.0",
+    "bm25s==0.3.10",
+    "scipy==1.15.3",
+    "fastapi==0.122.1",
+    "uvicorn==0.42.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff==0.15.20",
+    "ty==0.0.55",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

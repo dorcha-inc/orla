@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+.ruff_cache/
+.ty_cache/
+index/
+trace.jsonl

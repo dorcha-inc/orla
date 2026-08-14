@@ -15,3 +15,5 @@ not change when the routing does.
   routes every stage to the cheapest healthy backend.
 - [energy-pricing](energy-pricing/README.md): serving an LLM workload for less
   electricity, starting with routing between grid regions by live price.
+- [deep-research](deep-research/README.md): a lead-and-subagents research team
+  on BrowseComp-Plus, reporting joules and seconds per answered question.
