@@ -361,15 +361,16 @@ async def main() -> None:
     if failures:
         detail = ", ".join(f"{c}x {name}" for name, c in failures.most_common())
         print(f"\n{sum(failures.values())} queries failed ({detail}), re-run to retry them")
-    report(started, energy, fresh, wall)
+    report(started, energy, fresh, wall, sum(failures.values()))
 
 
 def orla_stage_costs(since: str) -> dict[str, StageCost]:
     """Dispatch count and electricity cost per stage, from Orla's accounting.
 
-    A null cost means Orla priced a call with no live price and no static
-    columns to fall back on, which would silently understate the run. Fail
-    instead of treating it as free.
+    Orla records no cost for a call it had no price for, and the metrics
+    endpoint sums those rows to zero. Dispatches that cost nothing therefore
+    mean orla held no price when they ran, which would silently understate the
+    run. Fail instead of treating the energy as free.
     """
     query = urllib.parse.urlencode({"since": since})
     out = {}
@@ -377,10 +378,10 @@ def orla_stage_costs(since: str) -> dict[str, StageCost]:
         metrics = api("GET", f"/api/v1/stages/{stage}/metrics?{query}")
         calls, usd, latency_ms = 0, 0.0, 0.0
         for row in metrics["metrics"]:
-            if row["total_cost_usd"] is None:
+            if row["count"] and not row["total_cost_usd"]:
                 raise SystemExit(
-                    f"{stage} on {row['backend']}: no cost recorded, so orla held no "
-                    "price for that backend when the calls ran"
+                    f"{stage} on {row['backend']}: {row['count']} dispatches cost $0, so "
+                    f"orla held no price for {row['backend']} when the calls ran"
                 )
             calls += row["count"]
             usd += row["total_cost_usd"]
@@ -389,7 +390,9 @@ def orla_stage_costs(since: str) -> dict[str, StageCost]:
     return out
 
 
-def report(since: str, energy: Energy, records: list[TraceRecord], wall: float) -> None:
+def report(
+    since: str, energy: Energy, records: list[TraceRecord], wall: float, failed: int
+) -> None:
     """Quality, energy, and time over the queries this run researched.
 
     Orla's cost accounting is filtered to dispatches since this run started, so
@@ -409,7 +412,7 @@ def report(since: str, energy: Energy, records: list[TraceRecord], wall: float) 
     _print_quality(records)
     totals = _print_stages(orla_stage_costs(since), tokens, energy)
     _print_rates(records, totals, energy, wall)
-    _warn_on_drift(totals, energy)
+    _warn_on_drift(totals, energy, failed, sum(len(r.calls) for r in records))
 
 
 def _tokens_by_stage(records: list[TraceRecord]) -> dict[str, TokenCount]:
@@ -489,20 +492,40 @@ def _print_rates(records: list[TraceRecord], totals: Totals, energy: Energy, wal
         print(f"  parallelism within a job    {totals.latency_ms / 1000 / job_seconds:.1f}x")
 
 
-def _warn_on_drift(totals: Totals, energy: Energy) -> None:
-    """Warn when Orla's accounting and the energy table disagree, which happens
-    when some calls were served by a backend on a different profile."""
+def _warn_on_drift(totals: Totals, energy: Energy, failed: int, traced: int) -> None:
+    """Warn when orla's joules and the trace's joules disagree.
+
+    Both price the same tokens from the same table, so a gap means the two
+    counted different calls. The dispatch counts say which calls went missing.
+    """
     expected = (
         totals.prompt * energy.joules_per_prompt_token
         + totals.output * energy.joules_per_completion_token
     )
     drift = abs(expected - totals.joules) / expected if expected else 0.0
-    if drift > 0.01:
-        print(
-            f"\n  orla accounted {totals.joules:,.1f} J where the token counts and the "
-            f"energy table give {expected:,.1f} J, a {drift:.1%} gap. Some calls were "
-            "priced from a different profile than the one reported here."
-        )
+    if drift <= 0.01:
+        return
+    print(f"\n  orla accounted {totals.joules:,.1f} J over {totals.calls:,} dispatches.")
+    print(f"  The trace's {traced:,} calls price at {expected:,.1f} J, a {drift:.1%} gap.")
+
+    missing = totals.calls - traced
+    if missing > 0:
+        print(f"  {missing:,} dispatches never reached the trace.")
+        if failed:
+            noun = "query" if failed == 1 else "queries"
+            print(f"  {failed} {noun} failed this run.")
+            print("  A failed query keeps the calls it already made out of the trace.")
+        else:
+            print("  A call the agent retried after an error is dispatched twice.")
+            print("  Traffic from another client on these stages counts in orla's figure.")
+        print(f"  Joules per query above divides orla's {totals.joules:,.1f} J.")
+        print(f"  The {missing:,} are counted there.")
+    elif missing < 0:
+        print(f"  The trace holds {-missing:,} calls orla never recorded.")
+        print("  Check orla_batch_writer_dropped_total for a full telemetry buffer.")
+    else:
+        print(f"  Both counted {traced:,} calls, so the joules differ on price alone.")
+        print(f"  A backend served some of these stages on a profile other than {PROFILE}.")
 
 
 if __name__ == "__main__":
